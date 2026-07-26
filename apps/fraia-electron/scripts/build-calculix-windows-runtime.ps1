@@ -529,6 +529,41 @@ try {
   $CandidateOneSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $CandidateOne).Hash.ToLowerInvariant()
   $CandidateTwoSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $CandidateTwo).Hash.ToLowerInvariant()
   if ($CandidateOneSha -ne $CandidateTwoSha) {
+    $ReproducibilityFailure = Join-Path $WorkRoot "reproducibility-failure"
+    [IO.Directory]::CreateDirectory($ReproducibilityFailure) | Out-Null
+    Copy-Item -LiteralPath $CandidateOne `
+      -Destination (Join-Path $ReproducibilityFailure "ccx-build-one.exe")
+    Copy-Item -LiteralPath $CandidateTwo `
+      -Destination (Join-Path $ReproducibilityFailure "ccx-build-two.exe")
+    foreach ($CandidateBuild in @(
+      @("one", $CandidateOne),
+      @("two", $CandidateTwo)
+    )) {
+      [string[]]$PeDump = @(& $Tool["objdump"] -x $CandidateBuild[1] 2>&1 | ForEach-Object { "$_" })
+      if ($LASTEXITCODE -ne 0) {
+        throw "objdump failed while recording the build-$($CandidateBuild[0]) reproducibility evidence."
+      }
+      [IO.File]::WriteAllLines(
+        (Join-Path $ReproducibilityFailure "ccx-build-$($CandidateBuild[0])-objdump.txt"),
+        $PeDump,
+        $Utf8NoBom
+      )
+    }
+    [IO.File]::WriteAllLines(
+      (Join-Path $ReproducibilityFailure "REPRODUCIBILITY_FAILURE.txt"),
+      @(
+        "The two complete native Windows builds were not byte-identical.",
+        "No runtime candidate was emitted.",
+        "",
+        "${CandidateOneSha}  ccx-build-one.exe",
+        "${CandidateTwoSha}  ccx-build-two.exe",
+        "",
+        "build-one bytes: $((Get-Item -LiteralPath $CandidateOne).Length)",
+        "build-two bytes: $((Get-Item -LiteralPath $CandidateTwo).Length)"
+      ),
+      $Utf8NoBom
+    )
+    Move-Item -LiteralPath $ReproducibilityFailure -Destination $ResolvedEvidence
     throw "The two native Windows builds are not byte-identical: ${CandidateOneSha}, ${CandidateTwoSha}."
   }
 
@@ -710,7 +745,7 @@ try {
   $Recipe = @(
     "# Fraia CalculiX ${CalculixVersion} win32-x64 build recipe",
     "",
-    "Build revision: ``fraia-calculix-windows-v10``",
+    "Build revision: ``fraia-calculix-windows-v11``",
     "",
     "- Native host: ``$([Environment]::OSVersion.VersionString)``",
     "- Minimum Windows contract: ``Windows ${MinimumWindowsMajor}.${MinimumWindowsMinor}``",

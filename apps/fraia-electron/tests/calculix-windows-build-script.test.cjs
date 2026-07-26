@@ -66,7 +66,12 @@ test('Windows CalculiX vendor build is native, source-built, and reproducible', 
   assert.match(script, /void \\\*genratiomt/);
   assert.match(script, /genratiomt thread return is not preserved exactly once/);
   assert.doesNotMatch(script, /\$ReadNewMeshSource\.Replace\("return NULL;", "return;"\)/);
-  assert.match(script, /fraia-calculix-windows-v10/);
+  assert.match(script, /reproducibility-failure/);
+  assert.match(script, /ccx-build-one\.exe/);
+  assert.match(script, /ccx-build-two\.exe/);
+  assert.match(script, /No runtime candidate was emitted/);
+  assert.match(script, /Move-Item -LiteralPath \$ReproducibilityFailure -Destination \$ResolvedEvidence/);
+  assert.match(script, /fraia-calculix-windows-v11/);
   assert.doesNotMatch(script, /calculix_2\.23_4win|ccx_static\.exe/);
 });
 
