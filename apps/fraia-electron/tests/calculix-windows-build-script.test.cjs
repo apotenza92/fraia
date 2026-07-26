@@ -53,7 +53,8 @@ test('Windows CalculiX vendor build is native, source-built, and reproducible', 
   assert.match(script, /IVinit\(nfront, 0\)/);
   assert.match(script, /correction no longer applies exactly three times/);
   assert.match(script, /list\(FILTER SPOOLES_SOURCES EXCLUDE REGEX `"\x2fMPI\x2f`"\)/);
-  assert.match(script, /fraia-calculix-windows-v5/);
+  assert.match(script, /\[A-Za-z0-9_\.\]\+\[.\]\(\?:c\|f\)/);
+  assert.match(script, /fraia-calculix-windows-v6/);
   assert.doesNotMatch(script, /calculix_2\.23_4win|ccx_static\.exe/);
 });
 

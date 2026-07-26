@@ -412,7 +412,7 @@ try {
     )
     $MakefileInc = Get-Content -LiteralPath (Join-Path $CalculixSource "Makefile.inc") -Raw
     $ListedSources = @(
-      [regex]::Matches($MakefileInc, "(?m)([A-Za-z0-9_]+[.](?:c|f))") |
+      [regex]::Matches($MakefileInc, "(?m)^\s*([A-Za-z0-9_.]+[.](?:c|f))\s*\\?\s*$") |
         ForEach-Object { $_.Groups[1].Value } |
         Sort-Object -Unique
     )
@@ -680,7 +680,7 @@ try {
   $Recipe = @(
     "# Fraia CalculiX ${CalculixVersion} win32-x64 build recipe",
     "",
-    "Build revision: ``fraia-calculix-windows-v5``",
+    "Build revision: ``fraia-calculix-windows-v6``",
     "",
     "- Native host: ``$([Environment]::OSVersion.VersionString)``",
     "- Minimum Windows contract: ``Windows ${MinimumWindowsMajor}.${MinimumWindowsMinor}``",
