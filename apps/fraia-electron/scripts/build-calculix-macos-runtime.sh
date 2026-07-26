@@ -298,10 +298,9 @@ install_compiler_dependency libmpc "$LIBMPC_VERSION" "$libmpc_bottle_sha256" lib
 install_compiler_dependency zstd "$ZSTD_VERSION" "$zstd_bottle_sha256" libzstd.1.dylib
 
 for owner in "$gfortran_f951" "$compiler_support_directory"/*.dylib; do
-  codesign --remove-signature "$owner" >/dev/null 2>&1 || true
   while IFS= read -r dependency; do
     case "$dependency" in
-      /usr/lib/*|/System/Library/*|@loader_path/*)
+      /usr/lib/*|/System/Library/*)
         continue
         ;;
     esac
@@ -311,19 +310,15 @@ for owner in "$gfortran_f951" "$compiler_support_directory"/*.dylib; do
         "$owner" "$dependency" >&2
       exit 1
     fi
-    install_name_tool \
-      -change "$dependency" "@loader_path/$dependency_basename" "$owner"
   done < <(
     otool -L "$owner" |
       tail -n +2 |
       sed -E 's/^[[:space:]]*([^[:space:]]+).*/\1/'
   )
-  if [[ "$owner" == *.dylib ]]; then
-    install_name_tool -id "@loader_path/$(basename "$owner")" "$owner"
-  fi
-  codesign --force --sign - "$owner" >/dev/null
   codesign --verify --strict "$owner"
 done
+export DYLD_LIBRARY_PATH="$compiler_support_directory"
+"$gfortran_f951" --version >/dev/null
 
 macos_sdk=$(xcrun --sdk macosx --show-sdk-path)
 macos_sdk_version=$(xcrun --sdk macosx --show-sdk-version)

@@ -51,6 +51,12 @@ test('macOS CalculiX vendor build pins every downloaded input', () => {
   assert.doesNotMatch(script, /command -v gfortran/);
   assert.match(script, /install_compiler_dependency gmp/);
   assert.match(script, /install_compiler_dependency zstd/);
+  assert.match(script, /export DYLD_LIBRARY_PATH="\$compiler_support_directory"/);
+  const compilerRelocationBlock = script.slice(
+    script.indexOf('for owner in "$gfortran_f951"'),
+    script.indexOf('macos_sdk='),
+  );
+  assert.doesNotMatch(compilerRelocationBlock, /install_name_tool/);
   assert.match(script, /install_name_tool -id "@loader_path/);
   assert.match(script, /codesign --verify --strict "\$owner"/);
   assert.match(script, /chmod 600 "\$auth_config"/);
