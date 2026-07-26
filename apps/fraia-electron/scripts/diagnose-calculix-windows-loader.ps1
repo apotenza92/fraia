@@ -47,6 +47,19 @@ function Get-PeMachine {
   }
 }
 
+function Format-UnsignedExitCode {
+  param(
+    [Parameter(Mandatory = $true)]
+    [int]$ExitCode
+  )
+
+  $UnsignedExitCode = [BitConverter]::ToUInt32(
+    [BitConverter]::GetBytes([int32]$ExitCode),
+    0
+  )
+  return ('0x{0:x8}' -f $UnsignedExitCode)
+}
+
 if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne "X64") {
   throw "CalculiX win32-x64 loader diagnostics require a native Windows x64 host."
 }
@@ -247,16 +260,82 @@ public static class FraiaNativeLoaderDiagnostics {
     -NoNewWindow `
     -RedirectStandardOutput $DirectStdout `
     -RedirectStandardError $DirectStderr
-  $UnsignedExitCode = [BitConverter]::ToUInt32(
-    [BitConverter]::GetBytes([int32]$DirectProcess.ExitCode),
-    0
-  )
   Write-Lines -Path (Join-Path $Staging "direct-process.txt") -Lines @(
     "Signed exit code: $($DirectProcess.ExitCode)",
-    "Unsigned exit code: $('0x{0:x8}' -f $UnsignedExitCode)",
+    "Unsigned exit code: $(Format-UnsignedExitCode -ExitCode $DirectProcess.ExitCode)",
     "Standard output bytes: $((Get-Item -LiteralPath $DirectStdout).Length)",
     "Standard error bytes: $((Get-Item -LiteralPath $DirectStderr).Length)"
   )
+
+  $LlvmStrip = Join-Path $LlvmBin "llvm-strip.exe"
+  if (-not (Test-Path -LiteralPath $LlvmStrip -PathType Leaf)) {
+    throw "The hosted Windows image is missing llvm-strip.exe."
+  }
+  foreach ($Variant in @(
+    @("strip-debug", "--strip-debug"),
+    @("strip-all", "--strip-all")
+  )) {
+    $VariantName = $Variant[0]
+    $StripArgument = $Variant[1]
+    $VariantRoot = Join-Path $Staging $VariantName
+    $VariantCase = Join-Path $VariantRoot "case"
+    [IO.Directory]::CreateDirectory($VariantCase) | Out-Null
+    Copy-Item -LiteralPath (Join-Path $CaseDirectory "spring1.inp") -Destination $VariantCase
+    $VariantExecutable = Join-Path $VariantRoot "ccx-${VariantName}.exe"
+    [string[]]$StripOutput = @(
+      & $LlvmStrip $StripArgument -o $VariantExecutable $Candidate 2>&1
+    )
+    Write-Lines -Path (Join-Path $VariantRoot "llvm-strip.txt") -Lines $StripOutput
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $VariantExecutable -PathType Leaf)) {
+      throw "llvm-strip failed while creating the ${VariantName} diagnostic variant."
+    }
+    [string[]]$VariantHeaders = @(
+      & $LlvmReadObj --file-headers --sections $VariantExecutable 2>&1
+    )
+    Write-Lines -Path (Join-Path $VariantRoot "llvm-readobj.txt") -Lines $VariantHeaders
+    if ($LASTEXITCODE -ne 0) {
+      throw "llvm-readobj failed while inspecting the ${VariantName} diagnostic variant."
+    }
+    $VariantStdout = Join-Path $VariantRoot "spring1.stdout"
+    $VariantStderr = Join-Path $VariantRoot "spring1.stderr"
+    $VariantProcess = Start-Process `
+      -FilePath $VariantExecutable `
+      -ArgumentList "spring1" `
+      -WorkingDirectory $VariantCase `
+      -Wait `
+      -PassThru `
+      -NoNewWindow `
+      -RedirectStandardOutput $VariantStdout `
+      -RedirectStandardError $VariantStderr
+    $ExpectedOutputs = @(
+      foreach ($Extension in @("dat", "frd", "sta")) {
+        $ResultPath = Join-Path $VariantCase "spring1.${Extension}"
+        $ResultExists = Test-Path -LiteralPath $ResultPath -PathType Leaf
+        [pscustomobject]@{
+          extension = $Extension
+          present = $ResultExists
+          bytes = if ($ResultExists) {
+            (Get-Item -LiteralPath $ResultPath).Length
+          } else {
+            0
+          }
+        }
+      }
+    )
+    $ReportedCompletion = (Get-Item -LiteralPath $VariantStdout).Length -gt 0 -and (
+      Select-String -LiteralPath $VariantStdout -SimpleMatch "Job finished" -Quiet
+    )
+    Write-Lines -Path (Join-Path $VariantRoot "result.txt") -Lines @(
+      "Variant: ${VariantName}",
+      "Transformation: llvm-strip ${StripArgument}",
+      "SHA-256: $((Get-FileHash -Algorithm SHA256 -LiteralPath $VariantExecutable).Hash.ToLowerInvariant())",
+      "Bytes: $((Get-Item -LiteralPath $VariantExecutable).Length)",
+      "Signed exit code: $($VariantProcess.ExitCode)",
+      "Unsigned exit code: $(Format-UnsignedExitCode -ExitCode $VariantProcess.ExitCode)",
+      "Reported completion: ${ReportedCompletion}",
+      "Result files: $($ExpectedOutputs | ConvertTo-Json -Compress)"
+    )
+  }
 
   $DebuggerRoots = @(
     (Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\Debuggers\x64"),
@@ -287,7 +366,7 @@ public static class FraiaNativeLoaderDiagnostics {
       try {
         & $Cdb `
           -logo (Join-Path $Staging "cdb-loader.log") `
-          -c "g; .lastevent; k; lm; q" `
+          -c ".lastevent; kP; r; lm; q" `
           $Candidate `
           "spring1"
         Write-Lines -Path (Join-Path $Staging "cdb-process.txt") -Lines @(

@@ -198,6 +198,10 @@ test('Windows loader diagnostics reuse and authenticate one exact retained candi
   assert.match(loaderDiagnostic, /Get-PeMachine/);
   assert.match(loaderDiagnostic, /import-resolution\.json/);
   assert.match(loaderDiagnostic, /llvm-readobj\.exe/);
+  assert.match(loaderDiagnostic, /llvm-strip\.exe/);
+  assert.match(loaderDiagnostic, /--strip-debug/);
+  assert.match(loaderDiagnostic, /--strip-all/);
+  assert.match(loaderDiagnostic, /Reported completion/);
   assert.match(loaderDiagnostic, /Start-Process/);
   assert.match(loaderDiagnostic, /Unsigned exit code/);
   assert.match(loaderDiagnostic, /cdb-loader\.log/);
