@@ -1,0 +1,110 @@
+{
+  "applicability": {
+    "applies_to": [
+      "steel member stability assumptions",
+      "portal-frame restraint modeling",
+      "pre-check model review"
+    ],
+    "jurisdiction_or_standard_context": "UK/Eurocode-oriented portal-frame and member-design guidance. Use as concept and modeling guidance only.",
+    "not_applicable_to": [
+      "automatic restraint validity",
+      "final unbraced-length calculation",
+      "connection stiffness certification"
+    ]
+  },
+  "card_id": "KC-member-restraint-and-unbraced-length",
+  "claims": [
+    {
+      "claim_id": "C1",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Member_design#Uniform_members_in_bending",
+          "source_id": "SRC-de331c3f98"
+        }
+      ],
+      "text": "Steel member stability checks depend on whether the member is sufficiently restrained and on the relevant unbraced or buckling length."
+    },
+    {
+      "claim_id": "C2",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Portal_frames#Out-of-plane_stability",
+          "source_id": "SRC-37f553a164"
+        }
+      ],
+      "text": "Portal-frame rafters and columns require out-of-plane restraint assumptions to be tracked separately from the in-plane frame analysis."
+    },
+    {
+      "claim_id": "C3",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Portal_frames#Plan_bracing",
+          "source_id": "SRC-37f553a164"
+        }
+      ],
+      "text": "Purlins, side rails, stays, and bracing can provide useful restraint only when their connectivity, stiffness, and load path are represented explicitly enough for the intended check."
+    }
+  ],
+  "concepts": [
+    "member restraint",
+    "unbraced length",
+    "buckling length",
+    "torsional restraint",
+    "lateral restraint"
+  ],
+  "domain": "steel-stability",
+  "fraia_mapping": {
+    "pipeline_stages": [
+      "structural_model",
+      "realization",
+      "check_inputs"
+    ],
+    "structural_objects": [
+      "Member",
+      "ReleaseAssignment"
+    ]
+  },
+  "limitations": [
+    "The card does not decide whether a restraint is adequate for a code check.",
+    "Secondary members must not be assumed to restrain primary members unless the modeled system and check context justify it."
+  ],
+  "media_links": [
+    {
+      "asset_id": "KA-member-restraint-unbraced-length",
+      "role": "explains"
+    }
+  ],
+  "relationships": [
+    {
+      "relationship_type": "supports",
+      "target": "KC-lateral-torsional-buckling-concepts"
+    },
+    {
+      "relationship_type": "supports",
+      "target": "KC-steel-portal-purlins-and-girts"
+    }
+  ],
+  "schema_version": "knowledge-card.v0",
+  "source_links": [
+    {
+      "pages_used": [
+        "Member design: Uniform members in bending"
+      ],
+      "role": "primary",
+      "source_id": "SRC-de331c3f98"
+    },
+    {
+      "pages_used": [
+        "Portal frames: Out-of-plane stability and Plan bracing"
+      ],
+      "role": "primary",
+      "source_id": "SRC-37f553a164"
+    }
+  ],
+  "status": "draft",
+  "summary": "Member stability reasoning should preserve what restrains a member, which direction it restrains, and the unbraced length implied by those restraints.",
+  "title": "Member Restraint And Unbraced Length"
+}

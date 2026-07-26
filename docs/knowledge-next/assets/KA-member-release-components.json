@@ -1,0 +1,37 @@
+{
+  "alt_text": "Schematic target showing a frame member end with translational and rotational components, including which component is released versus retained.",
+  "asset_id": "KA-member-release-components",
+  "asset_type": "diagram",
+  "caption": "Generated-safe member end release component schematic.",
+  "concept_tags": [
+    "member release",
+    "frame element",
+    "rotational release",
+    "end forces"
+  ],
+  "copyright_status": "unknown",
+  "embed_policy": "generated_derivative_only",
+  "generated_safe_target": {
+    "candidate_output_path": "docs/knowledge-next/generated/diagrams/member-release-components.svg",
+    "description": "Original Fraia schematic of a member end with axial, shear, and moment components, visually marking a rotational release and retaining other components.",
+    "must_avoid": [
+      "copying journal figures",
+      "representing releases as deleted physical members",
+      "hiding retained force components"
+    ],
+    "must_preserve": [
+      "component-by-component release idea",
+      "connection to member end",
+      "distinction between authored release and analysis behavior"
+    ]
+  },
+  "license_notes": "Use literature/source docs only as conceptual reference; generate new schematic before embedding.",
+  "original_locator": "Member end releases in framed structures",
+  "redraw_status": "redraw_planned",
+  "schema_version": "knowledge-asset.v0",
+  "source_id": "SRC-a4257cc619",
+  "title": "Member Release Components",
+  "used_by_cards": [
+    "KC-member-end-releases"
+  ]
+}

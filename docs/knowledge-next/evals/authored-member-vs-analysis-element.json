@@ -1,0 +1,26 @@
+{
+  "eval_id": "KE-authored-member-vs-analysis-element",
+  "expected_card_ids": [
+    "KC-authored-member-analysis-element-separation",
+    "KC-member-end-releases",
+    "KC-load-application-equivalent-loads",
+    "KC-steel-design-action-check-input-separation"
+  ],
+  "expected_concepts": [
+    "authored member",
+    "analysis element",
+    "realization",
+    "member end release",
+    "check result"
+  ],
+  "notes": "Use when explaining why one authored beam/rafter may be split into several analysis elements or why element results must roll back to member-level provenance.",
+  "prompt": "A user sees one rafter in the UI but three beam-column elements in the solver artifact. Explain what knowledge the agent should retrieve.",
+  "schema_version": "knowledge-eval.v0",
+  "title": "Authored Member Vs Analysis Element",
+  "unacceptable_answer_patterns": [
+    "call every split analysis element a separate authored beam",
+    "hide the realization mapping",
+    "lose release or load provenance across element splits",
+    "treat element force output as a final design result"
+  ]
+}

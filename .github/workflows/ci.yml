@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_native_package_preflight:
+        description: Exercise packages that already contain reviewed native CalculiX runtimes
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fraia-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deterministic:
+    name: Deterministic repository checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/fraia-electron/package-lock.json
+
+      - name: Install toolchains and dependencies
+        run: |
+          rustup component add clippy rustfmt
+          npm ci --prefix apps/fraia-electron
+
+      - name: Repository hygiene
+        env:
+          PYTHONPYCACHEPREFIX: /tmp/fraia-pycache
+        run: python3 scripts/check-repository-hygiene.py
+
+      - name: Rust checks
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets --all-features
+          cargo test --workspace --all-features
+
+      - name: Knowledge checks
+        env:
+          PYTHONPYCACHEPREFIX: /tmp/fraia-pycache
+        run: |
+          python3 scripts/lint-knowledge.py
+          python3 scripts/validate-knowledge-next.py
+
+      - name: Electron checks
+        working-directory: apps/fraia-electron
+        run: xvfb-run -a npm test
+
+  native-package-shell:
+    name: Native package shell (${{ matrix.platform }}-${{ matrix.arch }})
+    if: ${{ inputs.run_native_package_preflight }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: darwin
+            arch: arm64
+            runner: macos-15
+          - platform: darwin
+            arch: x64
+            runner: macos-15-intel
+          - platform: win32
+            arch: x64
+            runner: windows-2025
+          - platform: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+          - platform: linux
+            arch: x64
+            runner: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/fraia-electron/package-lock.json
+
+      - name: Verify native runner
+        shell: bash
+        run: test "$(node -p 'process.arch')" = "${{ matrix.arch }}"
+
+      - name: Install dependencies
+        working-directory: apps/fraia-electron
+        run: npm ci
+
+      - name: Require reviewed packaged CalculiX runtime
+        working-directory: apps/fraia-electron
+        run: >-
+          node scripts/verify-calculix-runtimes.cjs
+          --target "${{ matrix.platform }}-${{ matrix.arch }}"
+
+      - name: Build and exercise native packaged shell
+        working-directory: apps/fraia-electron
+        shell: bash
+        env:
+          FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
+        run: |
+          if [ "${{ matrix.platform }}" = linux ]; then
+            xvfb-run -a npm run test:package
+          else
+            npm run test:package
+          fi

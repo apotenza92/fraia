@@ -1,0 +1,123 @@
+{
+  "applicability": {
+    "applies_to": [
+      "determinacy explanation",
+      "restraint sufficiency checks",
+      "mechanism diagnostics",
+      "concept-stage frame and truss reasoning"
+    ],
+    "jurisdiction_or_standard_context": "Open statics and structural-analysis educational sources; not a general solver stability proof.",
+    "not_applicable_to": [
+      "all 3D finite element stability cases",
+      "nonlinear buckling analysis",
+      "project approval"
+    ]
+  },
+  "card_id": "KC-determinacy-restraint-mechanisms",
+  "claims": [
+    {
+      "claim_id": "C1",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "Determininacy and Stability of Beams and Frames",
+          "source_id": "SRC-e0a97ba94d"
+        }
+      ],
+      "text": "A determinate structure can be solved from equilibrium alone, while an indeterminate structure also requires compatibility or stiffness information."
+    },
+    {
+      "claim_id": "C2",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "Stability and Determinacy",
+          "source_id": "SRC-d9c2d2e337"
+        },
+        {
+          "locator": "Determinacy and Stability of Beams and Frames",
+          "source_id": "SRC-e0a97ba94d"
+        }
+      ],
+      "text": "A structure can be unstable if its restraints and member/joint configuration allow a rigid-body or mechanism movement under load."
+    },
+    {
+      "claim_id": "C3",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "Internal Forces in Plane Trusses, ideal truss assumptions",
+          "source_id": "SRC-25c08b9625"
+        }
+      ],
+      "text": "Pin-like joints can be valid for ideal trusses, so Fraia should diagnose release patterns against intended system behaviour rather than treating all pins as errors."
+    }
+  ],
+  "concepts": [
+    "static determinacy",
+    "restraint sufficiency",
+    "mechanism",
+    "truss idealisation",
+    "compatibility"
+  ],
+  "domain": "structural-analysis",
+  "fraia_mapping": {
+    "pipeline_stages": [
+      "structural_model",
+      "realization",
+      "analysis_results"
+    ],
+    "structural_objects": [
+      "Member",
+      "Node",
+      "SupportAssignment",
+      "ReleaseAssignment"
+    ]
+  },
+  "limitations": [
+    "Introductory determinacy formulas do not cover all 3D finite-element, constraint, diaphragm, or nonlinear support cases.",
+    "Mechanism diagnosis must use resolved topology, supports, releases, and constraints, not visual geometry alone."
+  ],
+  "media_links": [],
+  "relationships": [
+    {
+      "relationship_type": "requires",
+      "target": "KC-free-body-equilibrium"
+    },
+    {
+      "relationship_type": "supports",
+      "target": "KC-instability-diagnostics"
+    },
+    {
+      "relationship_type": "see_also",
+      "target": "KC-member-end-releases"
+    }
+  ],
+  "schema_version": "knowledge-card.v0",
+  "source_links": [
+    {
+      "pages_used": [
+        "Equilibrium Structures, Support Reactions, Determinacy and Stability of Beams and Frames"
+      ],
+      "role": "primary",
+      "source_id": "SRC-e0a97ba94d"
+    },
+    {
+      "pages_used": [
+        "Stability and Determinacy"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-d9c2d2e337"
+    },
+    {
+      "pages_used": [
+        "Internal Forces in Plane Trusses"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-25c08b9625"
+    }
+  ],
+  "status": "draft",
+  "summary": "Fraia should distinguish equilibrium solvability, compatibility, restraint sufficiency, and mechanism risk when diagnosing structural models.",
+  "title": "Determinacy, Restraint, and Mechanisms"
+}

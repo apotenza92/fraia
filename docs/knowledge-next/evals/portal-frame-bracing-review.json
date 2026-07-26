@@ -1,0 +1,27 @@
+{
+  "eval_id": "KE-portal-frame-bracing-review",
+  "expected_card_ids": [
+    "KC-steel-portal-frame-system-overview",
+    "KC-steel-bracing-principles",
+    "KC-portal-frame-longitudinal-transverse-stability",
+    "KC-steel-portal-purlins-and-girts",
+    "KC-load-paths"
+  ],
+  "expected_concepts": [
+    "portal frame",
+    "bracing",
+    "longitudinal stability",
+    "transverse stability",
+    "purlin"
+  ],
+  "notes": "Use for concept-stage checks of whether a portal-frame building has plausible roof/wall bracing and secondary-member restraint assumptions.",
+  "prompt": "Review a single-storey steel portal-frame scheme where roof plan bracing is shown but wall bracing and purlin restraint roles are unclear.",
+  "schema_version": "knowledge-eval.v0",
+  "title": "Portal-Frame Bracing Review",
+  "unacceptable_answer_patterns": [
+    "assume transverse frame action provides longitudinal building stability",
+    "assume purlins are adequate restraints without checking their role",
+    "copy portal-frame design formulas into the answer",
+    "give final bracing member sizes"
+  ]
+}

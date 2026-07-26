@@ -1,0 +1,42 @@
+{
+  "alt_text": "Schematic target tracing gravity, wind, and longitudinal actions through a portal-frame building to supports and foundations.",
+  "asset_id": "KA-portal-frame-load-path",
+  "asset_type": "diagram",
+  "caption": "Generated-safe portal-frame load path schematic.",
+  "concept_tags": [
+    "portal frame",
+    "load path",
+    "gravity loads",
+    "lateral loads",
+    "foundation"
+  ],
+  "copyright_status": "unknown",
+  "embed_policy": "generated_derivative_only",
+  "generated_safe_target": {
+    "candidate_output_path": "docs/knowledge-next/generated/diagrams/portal-frame-load-path.svg",
+    "description": "Original Fraia schematic of a portal-frame bay and building length, using colored arrows for roof gravity load, transverse wind, longitudinal wind, bracing transfer, and foundation reactions.",
+    "must_avoid": [
+      "copying SteelConstruction.info portal-frame figures",
+      "using real project imagery",
+      "making design-capacity claims"
+    ],
+    "must_preserve": [
+      "primary frame",
+      "roof and wall secondary members",
+      "vertical bracing",
+      "plan bracing",
+      "support/foundation endpoints"
+    ]
+  },
+  "license_notes": "Generate a new Fraia-native schematic; source figures are discovery/provenance only.",
+  "original_locator": "SteelConstruction.info Portal frames: bracing and plan bracing sections",
+  "redraw_status": "redraw_planned",
+  "schema_version": "knowledge-asset.v0",
+  "source_id": "SRC-37f553a164",
+  "title": "Portal Frame Load Path",
+  "used_by_cards": [
+    "KC-load-paths",
+    "KC-steel-portal-frame-system-overview",
+    "KC-portal-frame-longitudinal-transverse-stability"
+  ]
+}

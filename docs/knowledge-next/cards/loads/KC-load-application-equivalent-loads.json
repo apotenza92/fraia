@@ -1,0 +1,135 @@
+{
+  "applicability": {
+    "applies_to": [
+      "authored load modelling",
+      "load realization",
+      "reaction sanity checks",
+      "solver-ready load provenance"
+    ],
+    "jurisdiction_or_standard_context": "Statics and direct-stiffness/FEM concept guidance from open educational sources; not a complete element load-vector derivation.",
+    "not_applicable_to": [
+      "moving load analysis",
+      "code-specific load combinations",
+      "all element-family load vector formulas"
+    ]
+  },
+  "card_id": "KC-load-application-equivalent-loads",
+  "claims": [
+    {
+      "claim_id": "C1",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "Distributed Loads",
+          "source_id": "SRC-85e8bab79d"
+        }
+      ],
+      "text": "A distributed load can often be replaced by an equivalent resultant for statics equilibrium reasoning, with magnitude and location tied to the distribution."
+    },
+    {
+      "claim_id": "C2",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "Direct stiffness method",
+          "source_id": "SRC-96f3780e82"
+        },
+        {
+          "locator": "Applications of the direct stiffness method",
+          "source_id": "SRC-4a41e74bd1"
+        }
+      ],
+      "text": "Solver-ready loads in stiffness workflows may be nodal loads, member/element loads, equivalent nodal actions, or fixed-end actions depending on the element formulation and load type."
+    },
+    {
+      "claim_id": "C3",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "Finite element method",
+          "source_id": "SRC-8419c2b9c6"
+        }
+      ],
+      "text": "Fraia run artifacts should preserve both authored load intent and resolved solver load representation so reactions and downstream design actions can be audited."
+    }
+  ],
+  "concepts": [
+    "distributed load",
+    "equivalent resultant",
+    "equivalent nodal load",
+    "load realization",
+    "fixed-end action"
+  ],
+  "domain": "loads",
+  "fraia_mapping": {
+    "pipeline_stages": [
+      "structural_model",
+      "realization",
+      "analysis_results"
+    ],
+    "structural_objects": [
+      "LoadAssignment",
+      "Member",
+      "Plate",
+      "Node"
+    ]
+  },
+  "limitations": [
+    "Equivalent static resultants are not always enough to preserve member force and displacement behaviour in analysis.",
+    "Exact load vector derivations belong to solver/element implementation docs."
+  ],
+  "media_links": [
+    {
+      "asset_id": "KA-distributed-load-equivalent-resultant",
+      "role": "explains"
+    },
+    {
+      "asset_id": "KA-local-global-member-axes",
+      "role": "example"
+    }
+  ],
+  "relationships": [
+    {
+      "relationship_type": "requires",
+      "target": "KC-free-body-equilibrium"
+    },
+    {
+      "relationship_type": "supports",
+      "target": "KC-reaction-sanity-checks"
+    }
+  ],
+  "schema_version": "knowledge-card.v0",
+  "source_links": [
+    {
+      "pages_used": [
+        "Distributed Loads"
+      ],
+      "role": "primary",
+      "source_id": "SRC-85e8bab79d"
+    },
+    {
+      "pages_used": [
+        "Direct stiffness method"
+      ],
+      "role": "primary",
+      "source_id": "SRC-96f3780e82"
+    },
+    {
+      "pages_used": [
+        "Applications of the direct stiffness method"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-4a41e74bd1"
+    },
+    {
+      "pages_used": [
+        "Finite element method"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-8419c2b9c6"
+    }
+  ],
+  "status": "draft",
+  "summary": "Fraia should keep authored load assignments distinct from the solver-ready loads and equivalent actions produced during realization.",
+  "title": "Load Application and Equivalent Loads"
+}

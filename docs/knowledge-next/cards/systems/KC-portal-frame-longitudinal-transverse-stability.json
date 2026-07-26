@@ -1,0 +1,113 @@
+{
+  "applicability": {
+    "applies_to": [
+      "portal-frame stability explanation",
+      "scheme-level bracing review",
+      "axis-specific system reasoning"
+    ],
+    "jurisdiction_or_standard_context": "UK/Eurocode-oriented portal-frame guidance. Concept guidance only.",
+    "not_applicable_to": [
+      "final bracing design",
+      "seismic lateral system design",
+      "crane surge design without additional sources"
+    ]
+  },
+  "card_id": "KC-portal-frame-longitudinal-transverse-stability",
+  "claims": [
+    {
+      "claim_id": "C1",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Portal_frames",
+          "source_id": "SRC-37f553a164"
+        }
+      ],
+      "text": "The transverse portal frame can be stable in its own plane through frame continuity and bending stiffness, while the building still needs longitudinal stability provisions."
+    },
+    {
+      "claim_id": "C2",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Portal_frames#Vertical_bracing",
+          "source_id": "SRC-37f553a164"
+        }
+      ],
+      "text": "Vertical bracing in side walls commonly carries longitudinal horizontal actions to the ground."
+    },
+    {
+      "claim_id": "C3",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Portal_frames#Plan_bracing",
+          "source_id": "SRC-37f553a164"
+        }
+      ],
+      "text": "Plan bracing in the roof commonly transfers gable wind forces and roof drag forces to vertical wall bracing."
+    }
+  ],
+  "concepts": [
+    "portal frame stability",
+    "transverse stability",
+    "longitudinal stability",
+    "vertical bracing",
+    "plan bracing"
+  ],
+  "domain": "steel-systems",
+  "fraia_mapping": {
+    "pipeline_stages": [
+      "builder_graph",
+      "structural_model",
+      "realization",
+      "analysis_results"
+    ],
+    "structural_objects": [
+      "Member",
+      "SupportAssignment",
+      "LoadAssignment"
+    ]
+  },
+  "limitations": [
+    "This card does not select or size a lateral system.",
+    "Portalised bays, crane surge, fire boundary conditions, and expansion joints need additional project-specific modeling."
+  ],
+  "media_links": [
+    {
+      "asset_id": "KA-portal-frame-bracing-stability-axes",
+      "role": "explains"
+    },
+    {
+      "asset_id": "KA-portal-frame-load-path",
+      "role": "example"
+    }
+  ],
+  "relationships": [
+    {
+      "relationship_type": "requires",
+      "target": "KC-steel-bracing-principles"
+    },
+    {
+      "relationship_type": "requires",
+      "target": "KC-load-paths"
+    },
+    {
+      "relationship_type": "see_also",
+      "target": "KC-instability-diagnostics"
+    }
+  ],
+  "schema_version": "knowledge-card.v0",
+  "source_links": [
+    {
+      "pages_used": [
+        "Portal frames: opening description, Vertical bracing, Plan bracing"
+      ],
+      "role": "primary",
+      "source_id": "SRC-37f553a164"
+    }
+  ],
+  "status": "draft",
+  "summary": "Portal-frame reasoning should distinguish transverse frame action from longitudinal building stability and explicitly connect roof and wall bracing load paths.",
+  "title": "Portal Frame Longitudinal And Transverse Stability"
+}

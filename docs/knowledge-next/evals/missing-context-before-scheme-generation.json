@@ -1,0 +1,27 @@
+{
+  "eval_id": "KE-missing-context-before-scheme-generation",
+  "expected_card_ids": [
+    "KC-load-paths",
+    "KC-support-reactions-idealisation",
+    "KC-steel-portal-frame-system-overview",
+    "KC-portal-frame-base-fixity-tradeoffs",
+    "KC-steel-design-action-check-input-separation"
+  ],
+  "expected_concepts": [
+    "load path",
+    "support idealisation",
+    "portal frame",
+    "base fixity",
+    "check input"
+  ],
+  "notes": "Use before generating a structural scheme when spans, support conditions, loads, intended system, or check context are underspecified.",
+  "prompt": "The user asks for a portal-frame scheme but only gives building width and height. What should the agent retrieve and ask about before generating members?",
+  "schema_version": "knowledge-eval.v0",
+  "title": "Missing Context Before Scheme Generation",
+  "unacceptable_answer_patterns": [
+    "generate final member sizes from width and height alone",
+    "choose a base fixity without exposing the assumption",
+    "skip load path and support questions",
+    "present generated scheme text as a completed design check"
+  ]
+}

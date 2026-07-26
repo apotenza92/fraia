@@ -1,0 +1,111 @@
+{
+  "applicability": {
+    "applies_to": [
+      "steel member concept selection",
+      "section-family retrieval",
+      "early modeling assumptions"
+    ],
+    "jurisdiction_or_standard_context": "SteelConstruction.info guidance is UK/Eurocode-oriented; AISC sources provide US structural-steel context. This card is concept guidance only.",
+    "not_applicable_to": [
+      "final material specification",
+      "project-specific durability or toughness selection",
+      "code compliance checks"
+    ]
+  },
+  "card_id": "KC-steel-material-and-section-families",
+  "claims": [
+    {
+      "claim_id": "C1",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Steel_material_properties#Material_properties_required_for_design",
+          "source_id": "SRC-6d2d387325"
+        }
+      ],
+      "text": "Structural steel selection depends on strength, toughness, ductility, weldability, and durability, with design values tied to the applicable product standard."
+    },
+    {
+      "claim_id": "C2",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Steel_section_sizes",
+          "source_id": "SRC-2836969f03"
+        }
+      ],
+      "text": "Common section-family data for hot rolled open sections and hollow sections is published through section-property references such as the Blue Book and manufacturer catalogs."
+    },
+    {
+      "claim_id": "C3",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "https://www.aisc.org/aisc/explore-aisc/aisc-360/",
+          "source_id": "SRC-aeb2330d27"
+        }
+      ],
+      "text": "A steel knowledge card should distinguish material and section properties from the separate design rules that check a member under actions."
+    }
+  ],
+  "concepts": [
+    "structural steel",
+    "material properties",
+    "section family",
+    "section properties",
+    "product standard"
+  ],
+  "domain": "steel-design",
+  "fraia_mapping": {
+    "pipeline_stages": [
+      "structural_model",
+      "design_actions",
+      "check_inputs"
+    ],
+    "structural_objects": [
+      "Member"
+    ]
+  },
+  "limitations": [
+    "Do not infer final steel grade, toughness subgrade, corrosion protection, or weldability acceptance from this card alone.",
+    "Section-property catalogs are source data for modeling and checks, not proof that a section is adequate."
+  ],
+  "media_links": [],
+  "relationships": [
+    {
+      "relationship_type": "supports",
+      "target": "KC-steel-bending-members"
+    },
+    {
+      "relationship_type": "supports",
+      "target": "KC-steel-compression-members"
+    }
+  ],
+  "schema_version": "knowledge-card.v0",
+  "source_links": [
+    {
+      "pages_used": [
+        "Steel material properties"
+      ],
+      "role": "primary",
+      "source_id": "SRC-6d2d387325"
+    },
+    {
+      "pages_used": [
+        "Steel section sizes"
+      ],
+      "role": "primary",
+      "source_id": "SRC-2836969f03"
+    },
+    {
+      "pages_used": [
+        "Specification for Structural Steel Buildings landing page"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-aeb2330d27"
+    }
+  ],
+  "status": "draft",
+  "summary": "Steel material and section-family knowledge should feed modeling and check inputs without pretending to be a final specification or code design.",
+  "title": "Steel Material And Section Families"
+}

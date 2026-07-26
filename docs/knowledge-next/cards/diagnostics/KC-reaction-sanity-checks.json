@@ -1,0 +1,151 @@
+{
+  "applicability": {
+    "applies_to": [
+      "post-analysis reaction review",
+      "support diagnostic explanation",
+      "load-path sanity checks",
+      "pre-design-action review"
+    ],
+    "jurisdiction_or_standard_context": "Fraia diagnostic workflow backed by public statics/load/support concepts; not a foundation design check.",
+    "not_applicable_to": [
+      "foundation sizing",
+      "support capacity checks",
+      "final tolerance policy"
+    ]
+  },
+  "card_id": "KC-reaction-sanity-checks",
+  "claims": [
+    {
+      "claim_id": "C1",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "Free Body Diagrams",
+          "source_id": "SRC-764acec0a5"
+        },
+        {
+          "locator": "Conditions for Static Equilibrium",
+          "source_id": "SRC-f9a8b7e202"
+        }
+      ],
+      "text": "A reaction sanity check must define the body, coordinate frame, sign convention, applied loads, and support reactions before comparing totals."
+    },
+    {
+      "claim_id": "C2",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "Support characteristics and reaction components",
+          "source_id": "SRC-e0a97ba94d"
+        },
+        {
+          "locator": "Supports, DOF notation",
+          "source_id": "SRC-1fa009051f"
+        }
+      ],
+      "text": "Expected reaction components must match the support DOFs and support idealisation used in the solved model."
+    },
+    {
+      "claim_id": "C3",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "Distributed Loads",
+          "source_id": "SRC-85e8bab79d"
+        },
+        {
+          "locator": "Direct stiffness method",
+          "source_id": "SRC-96f3780e82"
+        }
+      ],
+      "text": "Reaction checks should compare against the resolved loads in the run, including distributed or element loads converted into equivalent solver actions."
+    }
+  ],
+  "concepts": [
+    "reaction sanity check",
+    "support reaction",
+    "load balance",
+    "sign convention",
+    "resolved load"
+  ],
+  "domain": "diagnostics",
+  "fraia_mapping": {
+    "pipeline_stages": [
+      "analysis_results",
+      "design_actions",
+      "check_inputs"
+    ],
+    "structural_objects": [
+      "SupportAssignment",
+      "LoadAssignment",
+      "Node"
+    ]
+  },
+  "limitations": [
+    "Global reaction balance is necessary but not sufficient; local mechanisms, disconnected topology, or wrong stiffness can still exist.",
+    "This card does not define final numeric tolerances or reporting schemas."
+  ],
+  "media_links": [],
+  "relationships": [
+    {
+      "relationship_type": "requires",
+      "target": "KC-free-body-equilibrium"
+    },
+    {
+      "relationship_type": "requires",
+      "target": "KC-support-reactions-idealisation"
+    },
+    {
+      "relationship_type": "requires",
+      "target": "KC-load-application-equivalent-loads"
+    }
+  ],
+  "schema_version": "knowledge-card.v0",
+  "source_links": [
+    {
+      "pages_used": [
+        "Free Body Diagrams"
+      ],
+      "role": "primary",
+      "source_id": "SRC-764acec0a5"
+    },
+    {
+      "pages_used": [
+        "12.1 Conditions for Static Equilibrium"
+      ],
+      "role": "primary",
+      "source_id": "SRC-f9a8b7e202"
+    },
+    {
+      "pages_used": [
+        "Support characteristics"
+      ],
+      "role": "primary",
+      "source_id": "SRC-e0a97ba94d"
+    },
+    {
+      "pages_used": [
+        "Supports"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-1fa009051f"
+    },
+    {
+      "pages_used": [
+        "Distributed Loads"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-85e8bab79d"
+    },
+    {
+      "pages_used": [
+        "Direct stiffness method"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-96f3780e82"
+    }
+  ],
+  "status": "draft",
+  "summary": "Fraia reaction sanity checks should compare solved reactions to the selected body, support DOFs, sign convention, and resolved run loads before downstream checks trust the result.",
+  "title": "Reaction Sanity Checks"
+}

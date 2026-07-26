@@ -1,0 +1,165 @@
+name: Native CalculiX Runtime Audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Exact native CalculiX review candidate to build
+        required: true
+        type: choice
+        default: darwin-arm64
+        options:
+          - darwin-arm64
+          - darwin-x64
+          - linux-arm64
+          - linux-x64
+          - win32-x64
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fraia-calculix-runtime-audit-${{ inputs.target }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macOS candidate (${{ matrix.target }})
+    if: ${{ startsWith(inputs.target, 'darwin-') }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.target == 'darwin-arm64' && '[{"target":"darwin-arm64","runner":"macos-15"}]' || '[{"target":"darwin-x64","runner":"macos-15-intel"}]') }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Build and test candidate
+        working-directory: apps/fraia-electron
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p '${{ runner.temp }}/${{ matrix.target }}'
+          scripts/build-calculix-macos-runtime.sh \
+            --target '${{ matrix.target }}' \
+            --output '${{ runner.temp }}/${{ matrix.target }}/runtime' \
+            --evidence '${{ runner.temp }}/${{ matrix.target }}/evidence'
+
+      - name: Upload review candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: calculix-${{ matrix.target }}
+          path: ${{ runner.temp }}/${{ matrix.target }}
+          if-no-files-found: error
+          retention-days: 14
+
+  windows:
+    name: Windows candidate (win32-x64)
+    if: ${{ inputs.target == 'win32-x64' }}
+    runs-on: windows-2025
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Add LLVM tools
+        shell: pwsh
+        run: |
+          $llvm = Join-Path $env:ProgramFiles 'LLVM\bin'
+          if (-not (Test-Path -LiteralPath $llvm)) {
+            throw "The hosted runner does not contain LLVM tools at $llvm."
+          }
+          $llvm | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Build and test candidate
+        working-directory: apps/fraia-electron
+        shell: pwsh
+        run: |
+          $root = Join-Path '${{ runner.temp }}' 'win32-x64'
+          New-Item -ItemType Directory -Path $root | Out-Null
+          ./scripts/build-calculix-windows-runtime.ps1 `
+            -OutputDirectory (Join-Path $root 'runtime') `
+            -EvidenceDirectory (Join-Path $root 'evidence')
+
+      - name: Upload review candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: calculix-win32-x64
+          path: ${{ runner.temp }}/win32-x64
+          if-no-files-found: error
+          retention-days: 14
+
+  linux:
+    name: Linux candidate (${{ matrix.target }})
+    if: ${{ startsWith(inputs.target, 'linux-') }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    container:
+      image: ubuntu:22.04@sha256:0e0a0fc6d18feda9db1590da249ac93e8d5abfea8f4c3c0c849ce512b5ef8982
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.target == 'linux-arm64' && '[{"target":"linux-arm64","runner":"ubuntu-24.04-arm"}]' || '[{"target":"linux-x64","runner":"ubuntu-24.04"}]') }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install snapshot-pinned build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          printf '%s\n' \
+            'deb [check-valid-until=no] https://snapshot.ubuntu.com/ubuntu/20260720T000000Z jammy main universe' \
+            'deb [check-valid-until=no] https://snapshot.ubuntu.com/ubuntu/20260720T000000Z jammy-updates main universe' \
+            'deb [check-valid-until=no] https://snapshot.ubuntu.com/ubuntu/20260720T000000Z jammy-security main universe' \
+            > /etc/apt/sources.list
+          # The digest-pinned minimal image has no CA bundle. apt still verifies
+          # Ubuntu's signed repository metadata during this one-package bootstrap.
+          apt-get update \
+            -o Acquire::Check-Valid-Until=false \
+            -o Acquire::https::Verify-Peer=false
+          apt-get install --no-install-recommends --yes \
+            -o Acquire::https::Verify-Peer=false \
+            ca-certificates
+          apt-get update -o Acquire::Check-Valid-Until=false
+          apt-get install --no-install-recommends --yes \
+            binutils \
+            build-essential \
+            bzip2 \
+            cmake \
+            curl \
+            file \
+            gfortran \
+            ninja-build \
+            patchelf
+
+      - name: Build and test candidate
+        working-directory: apps/fraia-electron
+        run: |
+          set -euo pipefail
+          mkdir -p '/tmp/${{ matrix.target }}'
+          scripts/build-calculix-linux-runtime.sh \
+            --target '${{ matrix.target }}' \
+            --output '/tmp/${{ matrix.target }}/runtime' \
+            --evidence '/tmp/${{ matrix.target }}/evidence'
+
+      - name: Upload review candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: calculix-${{ matrix.target }}
+          path: /tmp/${{ matrix.target }}
+          if-no-files-found: error
+          retention-days: 14

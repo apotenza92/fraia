@@ -1,0 +1,39 @@
+{
+  "alt_text": "Schematic target showing authored model data flowing into analysis results, design actions, check inputs, check results, and explanation artifacts with source citations attached.",
+  "asset_id": "KA-design-action-check-provenance-flow",
+  "asset_type": "generated_diagram",
+  "caption": "Generated-safe Fraia provenance flow for steel design actions and check inputs.",
+  "concept_tags": [
+    "provenance",
+    "design actions",
+    "check inputs",
+    "check results",
+    "Fraia pipeline"
+  ],
+  "copyright_status": "generated_original",
+  "embed_policy": "generated_derivative_only",
+  "generated_safe_target": {
+    "candidate_output_path": "docs/knowledge-next/generated/diagrams/design-action-check-provenance-flow.svg",
+    "description": "Fraia-native block diagram showing authored structural objects, resolved model, analysis results, design actions, check inputs, check results, and retrieved knowledge citations as separate nodes.",
+    "must_avoid": [
+      "copying external diagrams",
+      "collapsing analysis results and design checks",
+      "presenting public knowledge retrieval as a check result"
+    ],
+    "must_preserve": [
+      "distinct pipeline stages",
+      "source citation side-channel",
+      "immutable run/check artifacts",
+      "directional data flow"
+    ]
+  },
+  "license_notes": "Generated-original target based on Fraia architecture policy and public modeling/check-source context; no external media should be embedded.",
+  "original_locator": "Fraia-native generated target informed by SteelConstruction.info Modelling and analysis",
+  "redraw_status": "redraw_planned",
+  "schema_version": "knowledge-asset.v0",
+  "source_id": "SRC-9be980a1af",
+  "title": "Design Action Check Provenance Flow",
+  "used_by_cards": [
+    "KC-steel-design-action-check-input-separation"
+  ]
+}

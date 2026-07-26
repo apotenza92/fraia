@@ -1,0 +1,14 @@
+[package]
+name = "fraia-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "fraia"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+serde_json.workspace = true
+fraia-core = { path = "../../crates/fraia-core" }
