@@ -10,6 +10,10 @@ const builder = fs.readFileSync(path.join(__dirname, '..', 'electron-builder.con
 const signing = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'build-signed-macos.cjs'), 'utf8');
 const updaterTest = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'test-macos-update.cjs'), 'utf8');
 const continuousIntegration = fs.readFileSync(path.join(repositoryRoot, '.github', 'workflows', 'ci.yml'), 'utf8');
+const runtimeAudit = fs.readFileSync(
+  path.join(repositoryRoot, '.github', 'workflows', 'calculix-runtime-audit.yml'),
+  'utf8',
+);
 const mainProcess = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
 
 function jobSource(jobId) {
@@ -139,6 +143,13 @@ test('manual CI keeps deterministic checks default and native package preflight 
   assert.match(continuousIntegration, /FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'/);
   assert.doesNotMatch(continuousIntegration, /build-calculix-(?:macos|linux)-runtime|build-calculix-windows-runtime/);
   assert.doesNotMatch(continuousIntegration, /curl |wget |actions\/download-artifact/);
+});
+
+test('native runtime audit uses Bash for strict Linux container execution', () => {
+  const linuxJob = runtimeAudit.match(/^  linux:\n([\s\S]*?)\n  [A-Za-z0-9_-]+:\n/m)?.[1]
+    ?? runtimeAudit.match(/^  linux:\n([\s\S]*)$/m)?.[1];
+  assert.ok(linuxJob, 'Linux runtime audit job is missing');
+  assert.match(linuxJob, /working-directory: apps\/fraia-electron\n\s+shell: bash\n\s+run: \|\n\s+set -euo pipefail/);
 });
 
 test('native updater menu exposes manual checking and every supported persisted frequency', () => {

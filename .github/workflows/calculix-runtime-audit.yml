@@ -148,6 +148,7 @@ jobs:
 
       - name: Build and test candidate
         working-directory: apps/fraia-electron
+        shell: bash
         run: |
           set -euo pipefail
           mkdir -p '/tmp/${{ matrix.target }}'
