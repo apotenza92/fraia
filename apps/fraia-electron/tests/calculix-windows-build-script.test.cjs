@@ -211,6 +211,9 @@ test('Windows loader diagnostics reuse and authenticate one exact retained candi
   assert.match(loaderDiagnostic, /header-no-resource/);
   assert.match(loaderDiagnostic, /header-no-relocations/);
   assert.match(loaderDiagnostic, /header-no-imports/);
+  assert.match(loaderDiagnostic, /header-required-os-6/);
+  assert.match(loaderDiagnostic, /header-subsystem-6/);
+  assert.match(loaderDiagnostic, /header-required-os-and-subsystem-6/);
   assert.match(loaderDiagnostic, /header-minimal-loader-contract/);
   assert.match(loaderDiagnostic, /cdb-initialize-process-trace\.log/);
   assert.match(loaderDiagnostic, /ntdll!LdrpInitializeProcess/);

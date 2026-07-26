@@ -226,7 +226,9 @@ function New-PeHeaderDiagnosticVariant {
     [string]$OutputPath,
     [switch]$DisableAslr,
     [int[]]$ClearDataDirectoryIndices = @(),
-    [switch]$UseDirectUcrtImports
+    [switch]$UseDirectUcrtImports,
+    [int]$RequiredOsMajor = -1,
+    [int]$SubsystemMajor = -1
   )
 
   if (Test-Path -LiteralPath $OutputPath) {
@@ -246,6 +248,25 @@ function New-PeHeaderDiagnosticVariant {
       $Bytes,
       $DllCharacteristicsOffset
     )
+  }
+
+  foreach ($VersionField in @(
+    @("required OS", $RequiredOsMajor, 40),
+    @("subsystem", $SubsystemMajor, 48)
+  )) {
+    $VersionName = $VersionField[0]
+    $VersionMajor = $VersionField[1]
+    $VersionOffset = $Layout.optionalHeaderOffset + $VersionField[2]
+    if ($VersionMajor -ge 0) {
+      if ($VersionMajor -gt [uint16]::MaxValue) {
+        throw "The PE diagnostic ${VersionName} major version is invalid: ${VersionMajor}"
+      }
+      if ([BitConverter]::ToUInt16($Bytes, $VersionOffset) -ne 10 -or
+          [BitConverter]::ToUInt16($Bytes, $VersionOffset + 2) -ne 0) {
+        throw "The PE diagnostic input does not declare ${VersionName} version 10.0."
+      }
+      [BitConverter]::GetBytes([uint16]$VersionMajor).CopyTo($Bytes, $VersionOffset)
+    }
   }
 
   foreach ($DirectoryIndex in $ClearDataDirectoryIndices) {
@@ -635,6 +656,8 @@ public static class FraiaNativeLoaderDiagnostics {
       disableAslr = $true
       clearDirectories = @()
       directUcrt = $false
+      requiredOsMajor = -1
+      subsystemMajor = -1
       transformation = "clear PE32+ DYNAMIC_BASE and HIGH_ENTROPY_VA flags"
     },
     @{
@@ -642,6 +665,8 @@ public static class FraiaNativeLoaderDiagnostics {
       disableAslr = $false
       clearDirectories = @(9)
       directUcrt = $false
+      requiredOsMajor = -1
+      subsystemMajor = -1
       transformation = "clear PE32+ TLS data-directory entry"
     },
     @{
@@ -649,6 +674,8 @@ public static class FraiaNativeLoaderDiagnostics {
       disableAslr = $false
       clearDirectories = @(3)
       directUcrt = $false
+      requiredOsMajor = -1
+      subsystemMajor = -1
       transformation = "clear PE32+ exception data-directory entry"
     },
     @{
@@ -656,6 +683,8 @@ public static class FraiaNativeLoaderDiagnostics {
       disableAslr = $false
       clearDirectories = @()
       directUcrt = $true
+      requiredOsMajor = -1
+      subsystemMajor = -1
       transformation = "rewrite API-set CRT import names to ucrtbase.dll in place"
     },
     @{
@@ -663,6 +692,8 @@ public static class FraiaNativeLoaderDiagnostics {
       disableAslr = $false
       clearDirectories = @(2)
       directUcrt = $false
+      requiredOsMajor = -1
+      subsystemMajor = -1
       transformation = "clear PE32+ resource data-directory entry"
     },
     @{
@@ -670,6 +701,8 @@ public static class FraiaNativeLoaderDiagnostics {
       disableAslr = $true
       clearDirectories = @(5)
       directUcrt = $false
+      requiredOsMajor = -1
+      subsystemMajor = -1
       transformation = "clear ASLR flags and PE32+ base-relocation data-directory entry"
     },
     @{
@@ -677,13 +710,44 @@ public static class FraiaNativeLoaderDiagnostics {
       disableAslr = $false
       clearDirectories = @(1, 12)
       directUcrt = $false
+      requiredOsMajor = -1
+      subsystemMajor = -1
       transformation = "clear PE32+ import and import-address-table data-directory entries"
+    },
+    @{
+      name = "header-required-os-6"
+      disableAslr = $false
+      clearDirectories = @()
+      directUcrt = $false
+      requiredOsMajor = 6
+      subsystemMajor = -1
+      transformation = "lower only the PE32+ required operating-system version from 10.0 to 6.0"
+    },
+    @{
+      name = "header-subsystem-6"
+      disableAslr = $false
+      clearDirectories = @()
+      directUcrt = $false
+      requiredOsMajor = -1
+      subsystemMajor = 6
+      transformation = "lower only the PE32+ subsystem version from 10.0 to 6.0"
+    },
+    @{
+      name = "header-required-os-and-subsystem-6"
+      disableAslr = $false
+      clearDirectories = @()
+      directUcrt = $false
+      requiredOsMajor = 6
+      subsystemMajor = 6
+      transformation = "lower PE32+ required operating-system and subsystem versions from 10.0 to 6.0"
     },
     @{
       name = "header-minimal-loader-contract"
       disableAslr = $true
       clearDirectories = @(1, 2, 3, 5, 9, 12)
       directUcrt = $false
+      requiredOsMajor = -1
+      subsystemMajor = -1
       transformation = "clear ASLR flags and every nonempty PE32+ data-directory entry"
     }
   )) {
@@ -698,7 +762,9 @@ public static class FraiaNativeLoaderDiagnostics {
       -OutputPath $VariantExecutable `
       -DisableAslr:$($Variant.disableAslr) `
       -ClearDataDirectoryIndices $Variant.clearDirectories `
-      -UseDirectUcrtImports:$($Variant.directUcrt)
+      -UseDirectUcrtImports:$($Variant.directUcrt) `
+      -RequiredOsMajor $Variant.requiredOsMajor `
+      -SubsystemMajor $Variant.subsystemMajor
     [string[]]$VariantHeaders = @(
       & $LlvmReadObj --file-headers --sections --coff-imports $VariantExecutable 2>&1
     )
