@@ -49,6 +49,10 @@ test('Windows CalculiX vendor build is native, source-built, and reproducible', 
   assert.match(script, /SOURCE_DATE_EPOCH/);
   assert.match(script, /--no-insert-timestamp/);
   assert.match(script, /-ffile-prefix-map=/);
+  assert.match(script, /IVinit\(nfront, NULL\)/);
+  assert.match(script, /IVinit\(nfront, 0\)/);
+  assert.match(script, /correction no longer applies exactly three times/);
+  assert.match(script, /fraia-calculix-windows-v4/);
   assert.doesNotMatch(script, /calculix_2\.23_4win|ccx_static\.exe/);
 });
 

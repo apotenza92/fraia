@@ -287,6 +287,17 @@ try {
     Copy-Item `
       -LiteralPath (Join-Path $BuildRoot "correction\CalculiX\ccx_2.23\SPOOLES.2.2\I2Ohash\src\util.c") `
       -Destination (Join-Path $BuildRoot "spooles\I2Ohash\src\util.c")
+    $SpoolesTransform = Join-Path $BuildRoot "spooles\ETree\src\transform.c"
+    $SpoolesTransformSource = [IO.File]::ReadAllText($SpoolesTransform)
+    $LegacyInitializer = "IVinit(nfront, NULL)"
+    if ([regex]::Matches($SpoolesTransformSource, [regex]::Escape($LegacyInitializer)).Count -ne 3) {
+      throw "The reviewed SPOOLES integer-initializer correction no longer applies exactly three times."
+    }
+    [IO.File]::WriteAllText(
+      $SpoolesTransform,
+      $SpoolesTransformSource.Replace($LegacyInitializer, "IVinit(nfront, 0)"),
+      $Utf8NoBom
+    )
     $BuildRootUnix = $BuildRoot -replace "\\", "/"
     $SpoolesRootUnix = (Join-Path $BuildRoot "spooles") -replace "\\", "/"
     $SpoolesProject = Join-Path $BuildRoot "spooles-project"
@@ -668,7 +679,7 @@ try {
   $Recipe = @(
     "# Fraia CalculiX ${CalculixVersion} win32-x64 build recipe",
     "",
-    "Build revision: ``fraia-calculix-windows-v3``",
+    "Build revision: ``fraia-calculix-windows-v4``",
     "",
     "- Native host: ``$([Environment]::OSVersion.VersionString)``",
     "- Minimum Windows contract: ``Windows ${MinimumWindowsMajor}.${MinimumWindowsMinor}``",
