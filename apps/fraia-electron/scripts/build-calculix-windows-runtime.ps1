@@ -309,6 +309,7 @@ try {
         "cmake_minimum_required(VERSION 3.24)",
         "project(FraiaSPOOLES C)",
         "file(GLOB_RECURSE SPOOLES_SOURCES CONFIGURE_DEPENDS `"${SpoolesRootUnix}/*/src/*.c`")",
+        "list(FILTER SPOOLES_SOURCES EXCLUDE REGEX `"/MPI/`")",
         "list(SORT SPOOLES_SOURCES)",
         "add_library(spooles STATIC `${SPOOLES_SOURCES})",
         "target_include_directories(spooles PUBLIC `"${SpoolesRootUnix}`")",
@@ -679,7 +680,7 @@ try {
   $Recipe = @(
     "# Fraia CalculiX ${CalculixVersion} win32-x64 build recipe",
     "",
-    "Build revision: ``fraia-calculix-windows-v4``",
+    "Build revision: ``fraia-calculix-windows-v5``",
     "",
     "- Native host: ``$([Environment]::OSVersion.VersionString)``",
     "- Minimum Windows contract: ``Windows ${MinimumWindowsMajor}.${MinimumWindowsMinor}``",
