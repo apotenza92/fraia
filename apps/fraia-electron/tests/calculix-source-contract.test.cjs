@@ -12,6 +12,8 @@ const {
   correspondingSourceUrl,
 } = require('../calculix-source-contract.cjs');
 const { writeDeterministicTar } = require('../scripts/assemble-calculix-corresponding-source.cjs');
+const { verifyCorrespondingSource } = require('../scripts/verify-calculix-corresponding-source.cjs');
+const { SUPPORTED_TARGETS } = require('../package-boundary.cjs');
 
 const electronRoot = path.resolve(__dirname, '..');
 
@@ -57,6 +59,43 @@ test('tar writer produces byte-identical archives with fixed metadata', () => {
   assert.deepEqual(
     listing.stdout.trim().split(/\r?\n/),
     ['bundle/', 'bundle/a/', 'bundle/a/input.txt', 'bundle/z.txt'],
+  );
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('one corresponding-source byte stream must match every runtime manifest', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-source-manifests-'));
+  const bundlePath = path.join(root, CALCULIX_SOURCE_ASSET_NAME);
+  const runtimeRoot = path.join(root, 'runtimes');
+  fs.writeFileSync(bundlePath, 'reviewed corresponding source\n');
+  const sourceSha256 = digest(bundlePath);
+  const sourceUrl = correspondingSourceUrl('apotenza92/fraia', 'v0.0.1');
+  for (const target of SUPPORTED_TARGETS) {
+    const directory = path.join(runtimeRoot, target);
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(
+      path.join(directory, 'runtime-manifest.json'),
+      `${JSON.stringify({ redistribution: { sourceSha256, sourceUrl } }, null, 2)}\n`,
+    );
+  }
+  assert.deepEqual(
+    verifyCorrespondingSource({
+      bundlePath,
+      repository: 'apotenza92/fraia',
+      runtimeRoot,
+      tag: 'v0.0.1',
+    }),
+    { sha256: sourceSha256, sourceUrl },
+  );
+  fs.appendFileSync(path.join(runtimeRoot, 'darwin-arm64', 'runtime-manifest.json'), 'changed');
+  assert.throws(
+    () => verifyCorrespondingSource({
+      bundlePath,
+      repository: 'apotenza92/fraia',
+      runtimeRoot,
+      tag: 'v0.0.1',
+    }),
+    /JSON/,
   );
   fs.rmSync(root, { recursive: true, force: true });
 });

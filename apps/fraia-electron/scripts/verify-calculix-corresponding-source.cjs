@@ -31,7 +31,7 @@ function verifyCorrespondingSource({
   const expectedUrl = correspondingSourceUrl(repository, tag);
   const expectedSha256 = sha256(bundlePath);
   for (const target of SUPPORTED_TARGETS) {
-    const manifestPath = path.join(runtimeRoot, `${target.platform}-${target.arch}`, 'runtime-manifest.json');
+    const manifestPath = path.join(runtimeRoot, target, 'runtime-manifest.json');
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
     if (manifest.redistribution?.sourceUrl !== expectedUrl) {
       throw new Error(`${manifestPath} redistribution.sourceUrl does not match ${expectedUrl}.`);
