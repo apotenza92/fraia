@@ -99,7 +99,7 @@ function Invoke-LoggedCommand {
     [string]$LogPath
   )
 
-  $Lines = @(& $Executable @Arguments 2>&1 | ForEach-Object { "$_" })
+  [string[]]$Lines = @(& $Executable @Arguments 2>&1 | ForEach-Object { "$_" })
   [IO.File]::AppendAllLines($LogPath, $Lines, $Utf8NoBom)
   if ($LASTEXITCODE -ne 0) {
     $Tail = Get-Content -LiteralPath $LogPath -Tail 120

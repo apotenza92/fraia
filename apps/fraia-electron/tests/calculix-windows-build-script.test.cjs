@@ -46,6 +46,11 @@ test('Windows CalculiX vendor build is native, source-built, and reproducible', 
   assert.doesNotMatch(script, /calculix_2\.23_4win|ccx_static\.exe/);
 });
 
+test('Windows CalculiX vendor build records command output with a typed string collection', () => {
+  assert.match(script, /\[string\[\]\]\$Lines = @\(/);
+  assert.match(script, /AppendAllLines\(\$LogPath, \$Lines, \$Utf8NoBom\)/);
+});
+
 test('Windows CalculiX vendor build enforces architecture, Windows 10, and dependency closure', () => {
   assert.match(script, /\$Machine -ne 0x8664/);
   assert.match(script, /MajorOSystemVersion/);
