@@ -49,6 +49,11 @@ test('Windows CalculiX vendor build is native, source-built, and reproducible', 
   assert.match(script, /SOURCE_DATE_EPOCH/);
   assert.match(script, /--no-insert-timestamp/);
   assert.match(script, /-ffile-prefix-map=/);
+  assert.match(script, /-fcanon-prefix-map/);
+  assert.match(script, /prefix-map-probe\.f90/);
+  assert.match(script, /retained the native build path despite canonical prefix mapping/);
+  assert.match(script, /did not emit the reviewed canonical source path/);
+  assert.match(script, /@\(\$WorkRoot, \$WorkRootUnix\)/);
   assert.match(script, /IVinit\(nfront, NULL\)/);
   assert.match(script, /IVinit\(nfront, 0\)/);
   assert.match(script, /correction no longer applies exactly three times/);
@@ -71,7 +76,7 @@ test('Windows CalculiX vendor build is native, source-built, and reproducible', 
   assert.match(script, /ccx-build-two\.exe/);
   assert.match(script, /No runtime candidate was emitted/);
   assert.match(script, /Move-Item -LiteralPath \$ReproducibilityFailure -Destination \$ResolvedEvidence/);
-  assert.match(script, /fraia-calculix-windows-v11/);
+  assert.match(script, /fraia-calculix-windows-v12/);
   assert.doesNotMatch(script, /calculix_2\.23_4win|ccx_static\.exe/);
 });
 

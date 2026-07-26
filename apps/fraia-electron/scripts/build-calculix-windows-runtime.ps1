@@ -193,6 +193,7 @@ if ($ResolvedOutput.StartsWith("${ResolvedEvidence}\", [StringComparison]::Ordin
 
 $WorkRoot = Join-Path ([IO.Path]::GetTempPath()) "fraia-calculix-windows-$([guid]::NewGuid())"
 [IO.Directory]::CreateDirectory($WorkRoot) | Out-Null
+$WorkRootUnix = $WorkRoot -replace "\\", "/"
 
 try {
   $Downloads = Join-Path $WorkRoot "downloads"
@@ -299,6 +300,42 @@ try {
       $Utf8NoBom
     )
     $BuildRootUnix = $BuildRoot -replace "\\", "/"
+    $PrefixMapProbeSource = Join-Path $BuildRoot "prefix-map-probe.f90"
+    $PrefixMapProbeObject = Join-Path $BuildRoot "prefix-map-probe.obj"
+    [IO.File]::WriteAllLines(
+      $PrefixMapProbeSource,
+      @(
+        "subroutine prefix_map_probe(name)",
+        "  character(len=*), intent(in) :: name",
+        "  print *, name",
+        "end subroutine prefix_map_probe"
+      ),
+      $Utf8NoBom
+    )
+    Invoke-LoggedCommand -Executable $Tool["gfortran"] -Arguments @(
+      "-c",
+      "-O2",
+      "-g0",
+      "-ffile-prefix-map=${BuildRootUnix}=/usr/src/fraia-runtime",
+      "-fcanon-prefix-map",
+      $PrefixMapProbeSource,
+      "-o",
+      $PrefixMapProbeObject
+    ) -LogPath (Join-Path $BuildRoot "logs\prefix-map-probe.log")
+    [string[]]$PrefixMapProbeStrings = @(
+      & $Tool["strings"] $PrefixMapProbeObject 2>&1 | ForEach-Object { "$_" }
+    )
+    if ($LASTEXITCODE -ne 0) {
+      throw "strings failed while inspecting the gfortran prefix-map probe."
+    }
+    if ($PrefixMapProbeStrings |
+      Select-String -SimpleMatch -Pattern @($BuildRoot, $BuildRootUnix) -Quiet) {
+      throw "The pinned gfortran retained the native build path despite canonical prefix mapping."
+    }
+    if (-not ($PrefixMapProbeStrings |
+      Select-String -SimpleMatch "/usr/src/fraia-runtime/prefix-map-probe.f90" -Quiet)) {
+      throw "The pinned gfortran did not emit the reviewed canonical source path."
+    }
     $SpoolesRootUnix = (Join-Path $BuildRoot "spooles") -replace "\\", "/"
     $SpoolesProject = Join-Path $BuildRoot "spooles-project"
     $SpoolesBuild = Join-Path $BuildRoot "spooles-build"
@@ -313,7 +350,7 @@ try {
         "list(SORT SPOOLES_SOURCES)",
         "add_library(spooles STATIC `${SPOOLES_SOURCES})",
         "target_include_directories(spooles PUBLIC `"${SpoolesRootUnix}`")",
-        "target_compile_options(spooles PRIVATE -O2 -g0 -std=gnu17 -ffile-prefix-map=${BuildRootUnix}=/usr/src/fraia-runtime)",
+        "target_compile_options(spooles PRIVATE -O2 -g0 -std=gnu17 -ffile-prefix-map=${BuildRootUnix}=/usr/src/fraia-runtime -fcanon-prefix-map)",
         "set_target_properties(spooles PROPERTIES OUTPUT_NAME spooles PREFIX lib)"
       ),
       $Utf8NoBom
@@ -355,8 +392,8 @@ try {
       "-DUSE_OPENMP=OFF",
       "-DUSE_THREAD=ON",
       "-DNUM_THREADS=64",
-      "-DCMAKE_C_FLAGS_RELEASE=-O2 -g0 -ffile-prefix-map=${BuildRootUnix}=/usr/src/fraia-runtime",
-      "-DCMAKE_Fortran_FLAGS_RELEASE=-O2 -g0 -fallow-argument-mismatch -ffile-prefix-map=${BuildRootUnix}=/usr/src/fraia-runtime"
+      "-DCMAKE_C_FLAGS_RELEASE=-O2 -g0 -ffile-prefix-map=${BuildRootUnix}=/usr/src/fraia-runtime -fcanon-prefix-map",
+      "-DCMAKE_Fortran_FLAGS_RELEASE=-O2 -g0 -fallow-argument-mismatch -ffile-prefix-map=${BuildRootUnix}=/usr/src/fraia-runtime -fcanon-prefix-map"
     ) -LogPath (Join-Path $BuildRoot "logs\openblas-configure.log")
     Invoke-LoggedCommand -Executable $Tool["cmake"] -Arguments @(
       "--build", $OpenBlasBuild, "--parallel", "2"
@@ -383,8 +420,8 @@ try {
       "-DMPI=OFF",
       "-DICB=OFF",
       "-DEXAMPLES=OFF",
-      "-DCMAKE_C_FLAGS_RELEASE=-O2 -g0 -ffile-prefix-map=${BuildRootUnix}=/usr/src/fraia-runtime",
-      "-DCMAKE_Fortran_FLAGS_RELEASE=-O2 -g0 -fallow-argument-mismatch -ffile-prefix-map=${BuildRootUnix}=/usr/src/fraia-runtime",
+      "-DCMAKE_C_FLAGS_RELEASE=-O2 -g0 -ffile-prefix-map=${BuildRootUnix}=/usr/src/fraia-runtime -fcanon-prefix-map",
+      "-DCMAKE_Fortran_FLAGS_RELEASE=-O2 -g0 -fallow-argument-mismatch -ffile-prefix-map=${BuildRootUnix}=/usr/src/fraia-runtime -fcanon-prefix-map",
       "-DBLAS_LIBRARIES=$($OpenBlasLibrary.FullName)",
       "-DLAPACK_LIBRARIES=$($OpenBlasLibrary.FullName)"
     ) -LogPath (Join-Path $BuildRoot "logs\arpack-configure.log")
@@ -473,13 +510,13 @@ try {
       "target_include_directories(ccxcore PRIVATE `"${SpoolesRootUnix}`")",
       "target_compile_definitions(ccxcore PRIVATE ARCH=Linux SPOOLES ARPACK MATRIXSTORAGE NETWORKOUT USE_MT=1)",
       "target_compile_options(ccxcore PRIVATE",
-      "  `$<`$<COMPILE_LANGUAGE:C>:-O2;-g0;-std=gnu17;-ffile-prefix-map=${BuildRootUnix}=/usr/src/fraia-runtime>",
-      "  `$<`$<COMPILE_LANGUAGE:Fortran>:-O2;-g0;-fallow-argument-mismatch;-fopenmp;-cpp;-ffile-prefix-map=${BuildRootUnix}=/usr/src/fraia-runtime>",
+      "  `$<`$<COMPILE_LANGUAGE:C>:-O2;-g0;-std=gnu17;-ffile-prefix-map=${BuildRootUnix}=/usr/src/fraia-runtime;-fcanon-prefix-map>",
+      "  `$<`$<COMPILE_LANGUAGE:Fortran>:-O2;-g0;-fallow-argument-mismatch;-fopenmp;-cpp;-ffile-prefix-map=${BuildRootUnix}=/usr/src/fraia-runtime;-fcanon-prefix-map>",
       ")",
       "add_executable(ccx `"${CalculixSourceUnix}/ccx_2.23.c`")",
       "target_include_directories(ccx PRIVATE `"${SpoolesRootUnix}`")",
       "target_compile_definitions(ccx PRIVATE ARCH=Linux SPOOLES ARPACK MATRIXSTORAGE NETWORKOUT USE_MT=1)",
-      "target_compile_options(ccx PRIVATE -O2 -g0 -std=gnu17 -ffile-prefix-map=${BuildRootUnix}=/usr/src/fraia-runtime)",
+      "target_compile_options(ccx PRIVATE -O2 -g0 -std=gnu17 -ffile-prefix-map=${BuildRootUnix}=/usr/src/fraia-runtime -fcanon-prefix-map)",
       "set_property(TARGET ccx PROPERTY LINKER_LANGUAGE Fortran)",
       "target_link_options(ccx PRIVATE",
       "  -O2 -g0 -fopenmp -static -static-libgcc -static-libgfortran",
@@ -602,7 +639,8 @@ try {
     if ($LASTEXITCODE -ne 0) {
       throw "strings failed while inspecting ${Candidate}."
     }
-    if ($EmbeddedStrings | Select-String -SimpleMatch $WorkRoot -Quiet) {
+    if ($EmbeddedStrings |
+      Select-String -SimpleMatch -Pattern @($WorkRoot, $WorkRootUnix) -Quiet) {
       throw "The source-built CalculiX executable contains an absolute build path."
     }
   }
@@ -745,7 +783,7 @@ try {
   $Recipe = @(
     "# Fraia CalculiX ${CalculixVersion} win32-x64 build recipe",
     "",
-    "Build revision: ``fraia-calculix-windows-v11``",
+    "Build revision: ``fraia-calculix-windows-v12``",
     "",
     "- Native host: ``$([Environment]::OSVersion.VersionString)``",
     "- Minimum Windows contract: ``Windows ${MinimumWindowsMajor}.${MinimumWindowsMinor}``",
