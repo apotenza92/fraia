@@ -659,11 +659,32 @@ public static class FraiaNativeLoaderDiagnostics {
       transformation = "rewrite API-set CRT import names to ucrtbase.dll in place"
     },
     @{
+      name = "header-no-resource"
+      disableAslr = $false
+      clearDirectories = @(2)
+      directUcrt = $false
+      transformation = "clear PE32+ resource data-directory entry"
+    },
+    @{
+      name = "header-no-relocations"
+      disableAslr = $true
+      clearDirectories = @(5)
+      directUcrt = $false
+      transformation = "clear ASLR flags and PE32+ base-relocation data-directory entry"
+    },
+    @{
+      name = "header-no-imports"
+      disableAslr = $false
+      clearDirectories = @(1, 12)
+      directUcrt = $false
+      transformation = "clear PE32+ import and import-address-table data-directory entries"
+    },
+    @{
       name = "header-minimal-loader-contract"
       disableAslr = $true
-      clearDirectories = @(3, 9)
-      directUcrt = $true
-      transformation = "clear ASLR, exception, and TLS metadata; rewrite CRT imports to ucrtbase.dll"
+      clearDirectories = @(1, 2, 3, 5, 9, 12)
+      directUcrt = $false
+      transformation = "clear ASLR flags and every nonempty PE32+ data-directory entry"
     }
   )) {
     $VariantName = $Variant.name
@@ -761,6 +782,24 @@ public static class FraiaNativeLoaderDiagnostics {
         Write-Lines -Path (Join-Path $Staging "cdb-process.txt") -Lines @(
           "cdb exit code: ${LASTEXITCODE}"
         )
+      } finally {
+        Pop-Location
+      }
+      Push-Location $CaseDirectory
+      try {
+        & $Cdb `
+          -logo (Join-Path $Staging "cdb-initialize-process-trace.log") `
+          -xe ld `
+          -c "sxd ld; bu ntdll!LdrpInitializeProcess; g; wt -l 8 -m ntdll -or; .lastevent; kP; r; q" `
+          $Candidate `
+          "spring1"
+        Write-Lines `
+          -Path (Join-Path $Staging "cdb-initialize-process-trace.txt") `
+          -Lines @(
+            "cdb trace exit code: ${LASTEXITCODE}",
+            "breakpoint: ntdll!LdrpInitializeProcess",
+            "trace: wt -l 8 -m ntdll -or"
+          )
       } finally {
         Pop-Location
       }

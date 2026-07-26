@@ -208,7 +208,13 @@ test('Windows loader diagnostics reuse and authenticate one exact retained candi
   assert.match(loaderDiagnostic, /header-no-tls/);
   assert.match(loaderDiagnostic, /header-no-exception/);
   assert.match(loaderDiagnostic, /header-direct-ucrt/);
+  assert.match(loaderDiagnostic, /header-no-resource/);
+  assert.match(loaderDiagnostic, /header-no-relocations/);
+  assert.match(loaderDiagnostic, /header-no-imports/);
   assert.match(loaderDiagnostic, /header-minimal-loader-contract/);
+  assert.match(loaderDiagnostic, /cdb-initialize-process-trace\.log/);
+  assert.match(loaderDiagnostic, /ntdll!LdrpInitializeProcess/);
+  assert.match(loaderDiagnostic, /wt -l 8 -m ntdll -or/);
   assert.match(loaderDiagnostic, /Reported completion/);
   assert.match(loaderDiagnostic, /Start-Process/);
   assert.match(loaderDiagnostic, /Unsigned exit code/);
