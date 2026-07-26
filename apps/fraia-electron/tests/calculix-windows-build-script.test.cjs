@@ -191,6 +191,7 @@ test('Windows loader diagnostics reuse and authenticate one exact retained candi
   assert.match(loaderDiagnostic, /native Windows x64 host/);
   assert.match(loaderDiagnostic, /ccx-build-one\.sha256/);
   assert.match(loaderDiagnostic, /Get-FileHash -Algorithm SHA256/);
+  assert.match(loaderDiagnostic, /\[AllowEmptyString\(\)\]/);
   assert.match(loaderDiagnostic, /LoadLibraryExW/);
   assert.match(loaderDiagnostic, /GetProcAddress/);
   assert.match(loaderDiagnostic, /GetModuleFileNameW/);

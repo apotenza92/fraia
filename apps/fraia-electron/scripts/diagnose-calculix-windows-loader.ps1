@@ -16,6 +16,7 @@ function Write-Lines {
     [string]$Path,
     [Parameter(Mandatory = $true)]
     [AllowEmptyCollection()]
+    [AllowEmptyString()]
     [string[]]$Lines
   )
 
