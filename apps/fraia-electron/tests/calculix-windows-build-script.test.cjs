@@ -50,6 +50,9 @@ test('Windows CalculiX vendor build is native, source-built, and reproducible', 
   assert.match(script, /--no-insert-timestamp/);
   assert.match(script, /-ffile-prefix-map=/);
   assert.match(script, /-fcanon-prefix-map/);
+  assert.match(script, /\$NativePrefixMap = "-ffile-prefix-map=\$\{BuildRoot\}=/);
+  assert.match(script, /\$UnixPrefixMap = "-ffile-prefix-map=\$\{BuildRootUnix\}=/);
+  assert.match(script, /\[=\[\$\{NativePrefixMap\}\]=\]/);
   assert.match(script, /prefix-map-probe\.f90/);
   assert.match(script, /retained the native build path despite canonical prefix mapping/);
   assert.match(script, /did not emit the reviewed canonical source path/);
@@ -62,7 +65,7 @@ test('Windows CalculiX vendor build is native, source-built, and reproducible', 
   assert.match(script, /listed-but-absent source set/);
   assert.match(script, /\$MissingListedSources -join "`n"\) -ne "mafillmm\.c"/);
   assert.match(script, /Join-Path \$CalculixSource "mafillmm\.f"/);
-  assert.match(script, /COMPILE_LANGUAGE:Fortran>:-O2;-g0;-fallow-argument-mismatch;-fopenmp;-cpp;-ffile-prefix-map=/);
+  assert.match(script, /COMPILE_LANGUAGE:Fortran>:-O2;-g0;-fallow-argument-mismatch;-fopenmp;-cpp>/);
   assert.doesNotMatch(script, /`"-ffile-prefix-map=\$\{BuildRootUnix\}/);
   assert.match(script, /ccx_2\.23\.c", "ccx_2\.23step\.c/);
   assert.match(script, /MinGW output-format correction no longer applies exactly once/);
@@ -76,7 +79,7 @@ test('Windows CalculiX vendor build is native, source-built, and reproducible', 
   assert.match(script, /ccx-build-two\.exe/);
   assert.match(script, /No runtime candidate was emitted/);
   assert.match(script, /Move-Item -LiteralPath \$ReproducibilityFailure -Destination \$ResolvedEvidence/);
-  assert.match(script, /fraia-calculix-windows-v12/);
+  assert.match(script, /fraia-calculix-windows-v13/);
   assert.doesNotMatch(script, /calculix_2\.23_4win|ccx_static\.exe/);
 });
 
