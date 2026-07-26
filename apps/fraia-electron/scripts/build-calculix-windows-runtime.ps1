@@ -3,7 +3,8 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$OutputDirectory,
   [Parameter(Mandatory = $true)]
-  [string]$EvidenceDirectory
+  [string]$EvidenceDirectory,
+  [string]$ReviewedSourceDirectory
 )
 
 $ErrorActionPreference = "Stop"
@@ -196,6 +197,15 @@ $WorkRoot = Join-Path ([IO.Path]::GetTempPath()) "fraia-calculix-windows-$([guid
 try {
   $Downloads = Join-Path $WorkRoot "downloads"
   [IO.Directory]::CreateDirectory($Downloads) | Out-Null
+  $ReviewedSourceRoot = if ($ReviewedSourceDirectory) {
+    $CandidateRoot = [IO.Path]::GetFullPath($ReviewedSourceDirectory)
+    if (-not (Test-Path -LiteralPath $CandidateRoot -PathType Container)) {
+      throw "The reviewed source directory is unavailable: ${CandidateRoot}"
+    }
+    $CandidateRoot
+  } else {
+    $null
+  }
   $Inputs = [ordered]@{
     "ccx_2.23.src.tar.bz2" = @($CalculixSourceUrl, $CalculixSourceSha256)
     "ccx_2.23.test.tar.bz2" = @($CalculixTestUrl, $CalculixTestSha256)
@@ -209,10 +219,21 @@ try {
     "mingw-w64-v14.0.0.tar.gz" = @($MingwSourceUrl, $MingwSourceSha256)
   }
   foreach ($Entry in $Inputs.GetEnumerator()) {
-    Invoke-ReviewedDownload `
-      -Url $Entry.Value[0] `
-      -Destination (Join-Path $Downloads $Entry.Key) `
-      -Sha256 $Entry.Value[1]
+    $Destination = Join-Path $Downloads $Entry.Key
+    $ReviewedInput = if ($ReviewedSourceRoot) {
+      Join-Path $ReviewedSourceRoot $Entry.Key
+    } else {
+      $null
+    }
+    if ($ReviewedInput -and (Test-Path -LiteralPath $ReviewedInput -PathType Leaf)) {
+      Copy-Item -LiteralPath $ReviewedInput -Destination $Destination
+      Assert-Sha256 -Path $Destination -Expected $Entry.Value[1]
+    } else {
+      Invoke-ReviewedDownload `
+        -Url $Entry.Value[0] `
+        -Destination $Destination `
+        -Sha256 $Entry.Value[1]
+    }
   }
 
   $ToolchainRoot = Join-Path $WorkRoot "toolchain"

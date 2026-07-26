@@ -152,6 +152,16 @@ test('native runtime audit uses Bash for strict Linux container execution', () =
   assert.match(linuxJob, /working-directory: apps\/fraia-electron\n\s+shell: bash\n\s+run: \|\n\s+set -euo pipefail/);
 });
 
+test('Windows runtime audit reuses only hash-reviewed source evidence from an exact run', () => {
+  assert.match(runtimeAudit, /reviewed_source_run_id:/);
+  assert.match(runtimeAudit, /actions: read/);
+  assert.match(runtimeAudit, /win32-x64 requires reviewed_source_run_id/);
+  assert.match(runtimeAudit, /actions\/download-artifact@[a-f0-9]{40}/);
+  assert.match(runtimeAudit, /github-token: \$\{\{ github\.token \}\}/);
+  assert.match(runtimeAudit, /run-id: \$\{\{ inputs\.reviewed_source_run_id \}\}/);
+  assert.match(runtimeAudit, /-ReviewedSourceDirectory/);
+});
+
 test('native updater menu exposes manual checking and every supported persisted frequency', () => {
   for (const label of ['Never', 'On Startup', 'Hourly', 'Every 6 Hours', 'Every 12 Hours', 'Daily', 'Weekly']) {
     assert.match(mainProcess, new RegExp(label));
