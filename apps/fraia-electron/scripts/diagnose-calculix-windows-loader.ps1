@@ -60,6 +60,88 @@ function Format-UnsignedExitCode {
   return ('0x{0:x8}' -f $UnsignedExitCode)
 }
 
+function Set-PeSectionShortName {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$InputPath,
+    [Parameter(Mandatory = $true)]
+    [string]$OutputPath,
+    [Parameter(Mandatory = $true)]
+    [string]$LongName,
+    [Parameter(Mandatory = $true)]
+    [string]$ShortName
+  )
+
+  $ShortNameBytes = [Text.Encoding]::ASCII.GetBytes($ShortName)
+  if ($ShortNameBytes.Length -gt 8) {
+    throw "The replacement PE section name exceeds eight bytes: ${ShortName}"
+  }
+  if (Test-Path -LiteralPath $OutputPath) {
+    throw "The PE section-name output already exists: ${OutputPath}"
+  }
+  [byte[]]$Bytes = [IO.File]::ReadAllBytes($InputPath)
+  if ($Bytes.Length -lt 64 -or [BitConverter]::ToUInt16($Bytes, 0) -ne 0x5a4d) {
+    throw "The section-name input has no valid DOS header."
+  }
+  $PeOffset = [BitConverter]::ToUInt32($Bytes, 0x3c)
+  if ($PeOffset + 24 -gt $Bytes.Length -or
+      [BitConverter]::ToUInt32($Bytes, [int]$PeOffset) -ne 0x00004550) {
+    throw "The section-name input has no valid PE signature."
+  }
+  $SectionCount = [BitConverter]::ToUInt16($Bytes, [int]$PeOffset + 6)
+  $PointerToSymbolTable = [BitConverter]::ToUInt32($Bytes, [int]$PeOffset + 12)
+  $SymbolCount = [BitConverter]::ToUInt32($Bytes, [int]$PeOffset + 16)
+  if ($SymbolCount -ne 0) {
+    throw "The PE section-name input still contains COFF symbols."
+  }
+  $OptionalHeaderSize = [BitConverter]::ToUInt16($Bytes, [int]$PeOffset + 20)
+  $SectionTableOffset = [int]$PeOffset + 24 + $OptionalHeaderSize
+  $StringTableOffset = [int64]$PointerToSymbolTable + ([int64]$SymbolCount * 18)
+  if ($SectionTableOffset + ($SectionCount * 40) -gt $Bytes.Length -or
+      $StringTableOffset + 4 -gt $Bytes.Length) {
+    throw "The section-name input has invalid section or string-table bounds."
+  }
+
+  $ReplacementCount = 0
+  for ($SectionIndex = 0; $SectionIndex -lt $SectionCount; $SectionIndex += 1) {
+    $NameOffset = $SectionTableOffset + ($SectionIndex * 40)
+    $RawName = [Text.Encoding]::ASCII.GetString($Bytes, $NameOffset, 8).TrimEnd([char]0)
+    $ResolvedName = $RawName
+    if ($RawName -match "^/([0-9]+)$") {
+      $LongNameOffset = $StringTableOffset + [int64]$Matches[1]
+      if ($LongNameOffset -ge $Bytes.Length) {
+        throw "The PE section string-table offset is out of bounds."
+      }
+      $LongNameEnd = $LongNameOffset
+      while ($LongNameEnd -lt $Bytes.Length -and $Bytes[$LongNameEnd] -ne 0) {
+        $LongNameEnd += 1
+      }
+      if ($LongNameEnd -eq $Bytes.Length) {
+        throw "The PE section string-table name is unterminated."
+      }
+      $ResolvedName = [Text.Encoding]::ASCII.GetString(
+        $Bytes,
+        [int]$LongNameOffset,
+        [int]($LongNameEnd - $LongNameOffset)
+      )
+    }
+    if ($ResolvedName -eq $LongName) {
+      for ($ByteIndex = 0; $ByteIndex -lt 8; $ByteIndex += 1) {
+        $Bytes[$NameOffset + $ByteIndex] = 0
+      }
+      $ShortNameBytes.CopyTo($Bytes, $NameOffset)
+      $ReplacementCount += 1
+    }
+  }
+  if ($ReplacementCount -ne 1) {
+    throw "Expected exactly one ${LongName} PE section, received ${ReplacementCount}."
+  }
+  for ($ByteIndex = 0; $ByteIndex -lt 4; $ByteIndex += 1) {
+    $Bytes[[int]$PeOffset + 12 + $ByteIndex] = 0
+  }
+  [IO.File]::WriteAllBytes($OutputPath, $Bytes)
+}
+
 if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne "X64") {
   throw "CalculiX win32-x64 loader diagnostics require a native Windows x64 host."
 }
@@ -268,11 +350,8 @@ public static class FraiaNativeLoaderDiagnostics {
   )
 
   $LlvmStrip = Join-Path $LlvmBin "llvm-strip.exe"
-  $LlvmObjcopy = Join-Path $LlvmBin "llvm-objcopy.exe"
-  foreach ($Tool in @($LlvmStrip, $LlvmObjcopy)) {
-    if (-not (Test-Path -LiteralPath $Tool -PathType Leaf)) {
-      throw "The hosted Windows image is missing the reviewed LLVM transformation tool: ${Tool}"
-    }
+  if (-not (Test-Path -LiteralPath $LlvmStrip -PathType Leaf)) {
+    throw "The hosted Windows image is missing llvm-strip.exe."
   }
   foreach ($Variant in @(
     @("strip-debug", "--strip-debug", $false),
@@ -300,16 +379,11 @@ public static class FraiaNativeLoaderDiagnostics {
       throw "llvm-strip failed while creating the ${VariantName} diagnostic variant."
     }
     if ($RenameEhFrame) {
-      [string[]]$ObjcopyOutput = @(
-        & $LlvmObjcopy `
-          --rename-section=.eh_frame=.ehfrm `
-          $StripDestination `
-          $VariantExecutable 2>&1
-      )
-      Write-Lines -Path (Join-Path $VariantRoot "llvm-objcopy.txt") -Lines $ObjcopyOutput
-      if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $VariantExecutable -PathType Leaf)) {
-        throw "llvm-objcopy failed while renaming .eh_frame in the ${VariantName} variant."
-      }
+      Set-PeSectionShortName `
+        -InputPath $StripDestination `
+        -OutputPath $VariantExecutable `
+        -LongName ".eh_frame" `
+        -ShortName ".ehfrm"
       Remove-Item -LiteralPath $StripDestination -Force
     }
     [string[]]$VariantHeaders = @(
@@ -350,7 +424,7 @@ public static class FraiaNativeLoaderDiagnostics {
     )
     $Transformation = "llvm-strip ${StripArgument}"
     if ($RenameEhFrame) {
-      $Transformation += "; llvm-objcopy --rename-section=.eh_frame=.ehfrm"
+      $Transformation += "; validated PE section rename .eh_frame=.ehfrm and clear unused COFF string-table pointer"
     }
     Write-Lines -Path (Join-Path $VariantRoot "result.txt") -Lines @(
       "Variant: ${VariantName}",
