@@ -59,8 +59,9 @@ test('macOS CalculiX vendor build pins every downloaded input', () => {
   assert.doesNotMatch(compilerRelocationBlock, /install_name_tool/);
   assert.match(script, /install_name_tool -id "@loader_path/);
   assert.match(script, /codesign --verify --strict "\$owner"/);
-  assert.match(script, /unsigned, exact SHA-256 verified/);
-  assert.match(script, /"\$owner" != "\$gfortran_f951"/);
+  assert.match(script, /unsigned, pinned archive and file SHA-256 recorded/);
+  assert.match(script, /compiler-input-signatures\.txt/);
+  assert.match(script, /toolchain\/SIGNATURES\.txt/);
   assert.match(script, /chmod 600 "\$auth_config"/);
   assert.match(script, /--config "\$auth_config"/);
   assert.match(script, /unset registry_token/);

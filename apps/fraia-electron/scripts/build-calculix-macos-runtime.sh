@@ -297,7 +297,8 @@ install_compiler_dependency mpfr "$MPFR_VERSION" "$mpfr_bottle_sha256" libmpfr.6
 install_compiler_dependency libmpc "$LIBMPC_VERSION" "$libmpc_bottle_sha256" libmpc.3.dylib
 install_compiler_dependency zstd "$ZSTD_VERSION" "$zstd_bottle_sha256" libzstd.1.dylib
 
-gfortran_f951_signature_status='verified'
+compiler_signature_report="$work_root/compiler-input-signatures.txt"
+: >"$compiler_signature_report"
 for owner in "$gfortran_f951" "$compiler_support_directory"/*.dylib; do
   while IFS= read -r dependency; do
     case "$dependency" in
@@ -317,16 +318,22 @@ for owner in "$gfortran_f951" "$compiler_support_directory"/*.dylib; do
       sed -E 's/^[[:space:]]*([^[:space:]]+).*/\1/'
   )
   if ! signature_output=$(codesign --verify --strict "$owner" 2>&1); then
-    if [[ "$owner" != "$gfortran_f951" ]] ||
-      ! grep -Fq 'code object is not signed at all' <<<"$signature_output"; then
+    if ! grep -Fq 'code object is not signed at all' <<<"$signature_output"; then
       printf '%s\n' "$signature_output" >&2
       exit 1
     fi
-    # Homebrew's reviewed Intel bottle leaves this exact, SHA-pinned compiler
-    # helper unsigned. It is an ephemeral build input, never a bundled runtime
-    # file; accepting its reviewed unsigned state preserves its source bytes.
-    gfortran_f951_signature_status='unsigned, exact SHA-256 verified'
+    # Homebrew's reviewed Intel bottles leave these compiler inputs unsigned.
+    # They are ephemeral build inputs from exact SHA-pinned archives, never
+    # bundled runtime files; retaining and hashing their source bytes is safer
+    # than mutating the controlled toolchain with an ad-hoc signature.
+    signature_status='unsigned, pinned archive and file SHA-256 recorded'
+  else
+    signature_status='verified'
   fi
+  printf '%s  %s  %s\n' \
+    "$(shasum -a 256 "$owner" | awk '{print $1}')" \
+    "$(basename "$owner")" \
+    "$signature_status" >>"$compiler_signature_report"
 done
 export DYLD_LIBRARY_PATH="$compiler_support_directory"
 "$gfortran_f951" --version >/dev/null
@@ -745,8 +752,9 @@ done
   printf 'macOS SDK version: %s\n' "$macos_sdk_version"
   printf 'MACOSX_DEPLOYMENT_TARGET: %s\n' "$MACOSX_DEPLOYMENT_TARGET"
   printf 'clang version: %s\n' "$clang_version"
-  printf 'gfortran f951 signature: %s\n' "$gfortran_f951_signature_status"
+  printf 'Compiler input signatures: see SIGNATURES.txt\n'
 } >"$evidence_staging/toolchain/ENVIRONMENT.txt"
+cp "$compiler_signature_report" "$evidence_staging/toolchain/SIGNATURES.txt"
 for tool_name in ar clang codesign install_name_tool ld make otool ranlib xcrun; do
   tool_path=$(command -v "$tool_name")
   printf '%s  %s\n' \
