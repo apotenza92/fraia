@@ -419,12 +419,18 @@ try {
     if ($ListedSources.Count -lt 100) {
       throw "CalculiX Makefile.inc yielded an unexpectedly small source set."
     }
+    $MissingListedSources = @(
+      $ListedSources |
+        Where-Object { -not (Test-Path -LiteralPath (Join-Path $CalculixSource $_) -PathType Leaf) }
+    )
+    if (($MissingListedSources -join "`n") -ne "mafillmm.c" -or
+        -not (Test-Path -LiteralPath (Join-Path $CalculixSource "mafillmm.f") -PathType Leaf)) {
+      throw "CalculiX Makefile.inc has an unexpected listed-but-absent source set: $($MissingListedSources -join ', ')."
+    }
+    $ListedSources = @($ListedSources | Where-Object { $_ -ne "mafillmm.c" })
     $CalculixSourceLines = @()
     foreach ($SourceName in $ListedSources) {
       $SourcePath = Join-Path $CalculixSource $SourceName
-      if (-not (Test-Path -LiteralPath $SourcePath -PathType Leaf)) {
-        throw "CalculiX source listed by Makefile.inc is missing: ${SourceName}"
-      }
       $SourceUnix = $SourcePath -replace "\\", "/"
       $CalculixSourceLines += "  `"${SourceUnix}`""
     }
@@ -680,7 +686,7 @@ try {
   $Recipe = @(
     "# Fraia CalculiX ${CalculixVersion} win32-x64 build recipe",
     "",
-    "Build revision: ``fraia-calculix-windows-v6``",
+    "Build revision: ``fraia-calculix-windows-v7``",
     "",
     "- Native host: ``$([Environment]::OSVersion.VersionString)``",
     "- Minimum Windows contract: ``Windows ${MinimumWindowsMajor}.${MinimumWindowsMinor}``",
