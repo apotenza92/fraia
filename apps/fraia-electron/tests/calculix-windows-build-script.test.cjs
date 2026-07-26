@@ -7,6 +7,10 @@ const script = fs.readFileSync(
   path.resolve(__dirname, '../scripts/build-calculix-windows-runtime.ps1'),
   'utf8',
 );
+const loaderDiagnostic = fs.readFileSync(
+  path.resolve(__dirname, '../scripts/diagnose-calculix-windows-loader.ps1'),
+  'utf8',
+);
 
 test('Windows CalculiX vendor build pins every source and toolchain input', () => {
   for (const hash of [
@@ -181,4 +185,23 @@ test('Windows CalculiX vendor build preserves actionable failure evidence', () =
   assert.match(script, /strings-error\.txt/);
   assert.match(script, /No runtime candidate was emitted/);
   assert.match(script, /Move-Item -LiteralPath \$FailureStaging -Destination \$ResolvedEvidence/);
+});
+
+test('Windows loader diagnostics reuse and authenticate one exact retained candidate', () => {
+  assert.match(loaderDiagnostic, /native Windows x64 host/);
+  assert.match(loaderDiagnostic, /ccx-build-one\.sha256/);
+  assert.match(loaderDiagnostic, /Get-FileHash -Algorithm SHA256/);
+  assert.match(loaderDiagnostic, /LoadLibraryExW/);
+  assert.match(loaderDiagnostic, /GetProcAddress/);
+  assert.match(loaderDiagnostic, /GetModuleFileNameW/);
+  assert.match(loaderDiagnostic, /Get-PeMachine/);
+  assert.match(loaderDiagnostic, /import-resolution\.json/);
+  assert.match(loaderDiagnostic, /llvm-readobj\.exe/);
+  assert.match(loaderDiagnostic, /Start-Process/);
+  assert.match(loaderDiagnostic, /Unsigned exit code/);
+  assert.match(loaderDiagnostic, /cdb-loader\.log/);
+  assert.match(loaderDiagnostic, /gflags\.exe/);
+  assert.match(loaderDiagnostic, /windows-events\.txt/);
+  assert.match(loaderDiagnostic, /DIAGNOSTIC_FAILURE\.txt/);
+  assert.doesNotMatch(loaderDiagnostic, /Invoke-WebRequest|curl|wget/);
 });

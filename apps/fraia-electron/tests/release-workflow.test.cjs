@@ -162,6 +162,17 @@ test('Windows runtime audit reuses only hash-reviewed source evidence from an ex
   assert.match(runtimeAudit, /-ReviewedSourceDirectory/);
 });
 
+test('Windows loader diagnostics reuse one exact failed artifact on a native x64 runner', () => {
+  assert.match(runtimeAudit, /diagnostic:FAILED_RUN_ID/);
+  assert.match(runtimeAudit, /startsWith\(inputs\.reviewed_source_run_id, 'diagnostic:'\)/);
+  assert.match(runtimeAudit, /runs-on: windows-2025/);
+  assert.match(runtimeAudit, /name: calculix-win32-x64-reproducibility-failure/);
+  assert.match(runtimeAudit, /run-id: \$\{\{ steps\.failed-run\.outputs\.run_id \}\}/);
+  assert.match(runtimeAudit, /diagnose-calculix-windows-loader\.ps1/);
+  assert.match(runtimeAudit, /calculix-win32-x64-loader-diagnostic-/);
+  assert.match(runtimeAudit, /if: \$\{\{ always\(\) \}\}/);
+});
+
 test('native updater menu exposes manual checking and every supported persisted frequency', () => {
   for (const label of ['Never', 'On Startup', 'Hourly', 'Every 6 Hours', 'Every 12 Hours', 'Daily', 'Weekly']) {
     assert.match(mainProcess, new RegExp(label));
