@@ -383,7 +383,7 @@ build_once() {
     FC="$gfortran_driver" \
     CFLAGS="-O2 -g0 -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET -ffile-prefix-map=$build_root=/usr/src/fraia-runtime -I$build_root/spooles -DARCH=Linux -DSPOOLES -DARPACK -DMATRIXSTORAGE -DUSE_MT=1" \
     FFLAGS="-O2 -g0 -isysroot $macos_sdk -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET -ffile-prefix-map=$build_root=/usr/src/fraia-runtime -fopenmp -cpp" \
-    LIBS="-L$gcc_runtime_directory -Wl,-search_paths_first -Wl,-rpath,@loader_path $build_root/spooles/spooles.a $build_root/libarpack.a -framework Accelerate -lpthread -lm -lc" \
+    LIBS="-L$gcc_runtime_directory -Wl,-search_paths_first -Wl,-no_adhoc_codesign -Wl,-rpath,@loader_path $build_root/spooles/spooles.a $build_root/libarpack.a -framework Accelerate -lpthread -lm -lc" \
     >"$build_root/ccx-build.log" 2>&1
   cp "$ccx_source/ccx_2.23" "$build_root/payload/ccx"
   chmod 755 "$build_root/payload/ccx"
@@ -434,9 +434,9 @@ build_once() {
   done
 
   local owner
-  for owner in "$build_root"/payload/*; do
-    codesign --remove-signature "$owner" >/dev/null 2>&1 || true
-  done
+  # Preserve each Mach-O's link-edit layout while install_name_tool rewrites it.
+  # The completed payload is deliberately stripped of signatures only after all
+  # loader commands are final, then a disposable copy is signed for solver QA.
   while IFS= read -r runpath; do
     [[ -n "$runpath" && "$runpath" != '@loader_path' ]] || continue
     install_name_tool -delete_rpath "$runpath" "$build_root/payload/ccx"
@@ -621,7 +621,7 @@ macos_version=$(sw_vers -productVersion)
 macos_build=$(sw_vers -buildVersion)
 {
   printf '# Fraia CalculiX %s %s build recipe\n\n' "$CCX_VERSION" "$target"
-  printf 'Build revision: `fraia-calculix-macos-v4`\n\n'
+  printf 'Build revision: `fraia-calculix-macos-v5`\n\n'
   printf -- '- CalculiX source SHA-256: `%s`\n' "$CCX_SOURCE_SHA256"
   printf -- '- CalculiX tests SHA-256: `%s`\n' "$CCX_TEST_SHA256"
   printf -- '- SPOOLES source SHA-256: `%s`\n' "$SPOOLES_SHA256"

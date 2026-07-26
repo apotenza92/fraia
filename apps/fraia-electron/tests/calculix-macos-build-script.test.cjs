@@ -78,7 +78,9 @@ test('macOS CalculiX vendor build is native, reproducible, and solver-tested', (
   assert.doesNotMatch(script, /-isysroot=\$macos_sdk/);
   assert.match(script, /minimum macOS %s exceeds the reviewed %s ceiling/);
   assert.match(script, /-Wl,-rpath,@loader_path/);
+  assert.match(script, /-Wl,-no_adhoc_codesign/);
   assert.match(script, /install_name_tool -delete_rpath/);
+  assert.match(script, /stripped of signatures only after all/);
   assert.match(script, /owner_basename" == \*\.dylib/);
   assert.match(
     script,
