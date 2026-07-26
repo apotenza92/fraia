@@ -95,7 +95,7 @@ test('Windows CalculiX vendor build is native, source-built, and reproducible', 
   assert.match(script, /ccx-build-two\.exe/);
   assert.match(script, /No runtime candidate was emitted/);
   assert.match(script, /Move-Item -LiteralPath \$ReproducibilityFailure -Destination \$ResolvedEvidence/);
-  assert.match(script, /fraia-calculix-windows-v19/);
+  assert.match(script, /fraia-calculix-windows-v20/);
   assert.doesNotMatch(script, /calculix_2\.23_4win|ccx_static\.exe/);
 });
 
@@ -114,6 +114,9 @@ test('Windows CalculiX vendor build enforces architecture, Windows 10, and depen
   assert.match(script, /MajorOSystemVersion/);
   assert.match(script, /MajorSubsystemVersion/);
   assert.match(script, /MinimumWindowsMajor = 10/);
+  assert.match(script, /WindowsSubsystemMajor = 6/);
+  assert.match(script, /--major-subsystem-version,\$\{WindowsSubsystemMajor\}/);
+  assert.match(script, /Windows console subsystem/);
   assert.match(script, /Get-PeImports/);
   assert.match(script, /AllowedSystemImports/);
   assert.match(script, /UnexpectedImports/);

@@ -43,6 +43,8 @@ $MingwSourceSha256 = "d71cc644cd5a37c337f2719f3e0c79d89e8d8d5fb9e2952a62d3fa2362
 $SourceDateEpoch = "1762047462"
 $MinimumWindowsMajor = 10
 $MinimumWindowsMinor = 0
+$WindowsSubsystemMajor = 6
+$WindowsSubsystemMinor = 0
 $ControlledBuildDrive = "R:"
 
 $AllowedSystemImports = @(
@@ -574,8 +576,8 @@ try {
       "  `"SHELL:-Wl,--no-insert-timestamp`"",
       "  `"SHELL:-Wl,--major-os-version,${MinimumWindowsMajor}`"",
       "  `"SHELL:-Wl,--minor-os-version,${MinimumWindowsMinor}`"",
-      "  `"SHELL:-Wl,--major-subsystem-version,${MinimumWindowsMajor}`"",
-      "  `"SHELL:-Wl,--minor-subsystem-version,${MinimumWindowsMinor}`"",
+      "  `"SHELL:-Wl,--major-subsystem-version,${WindowsSubsystemMajor}`"",
+      "  `"SHELL:-Wl,--minor-subsystem-version,${WindowsSubsystemMinor}`"",
       ")",
       "target_link_libraries(ccx PRIVATE",
       "  `"-Wl,--start-group`" ccxcore `"$($SpoolesLibrary.FullName -replace "\\", "/")`"",
@@ -723,9 +725,9 @@ try {
     }
     if ((Get-PeHeaderValue -Header $PeHeader -Name "MajorOSystemVersion") -ne $MinimumWindowsMajor -or
         (Get-PeHeaderValue -Header $PeHeader -Name "MinorOSystemVersion") -ne $MinimumWindowsMinor -or
-        (Get-PeHeaderValue -Header $PeHeader -Name "MajorSubsystemVersion") -ne $MinimumWindowsMajor -or
-        (Get-PeHeaderValue -Header $PeHeader -Name "MinorSubsystemVersion") -ne $MinimumWindowsMinor) {
-      throw "The source-built CalculiX executable does not declare the reviewed Windows 10 minimum."
+        (Get-PeHeaderValue -Header $PeHeader -Name "MajorSubsystemVersion") -ne $WindowsSubsystemMajor -or
+        (Get-PeHeaderValue -Header $PeHeader -Name "MinorSubsystemVersion") -ne $WindowsSubsystemMinor) {
+      throw "The source-built CalculiX executable does not declare the reviewed Windows 10 OS and console subsystem contracts."
     }
     $ObservedImports = @(Get-PeImports -Executable $Candidate -Objdump $Tool["objdump"])
     $UnexpectedImports = @($ObservedImports | Where-Object { $_ -notin $AllowedSystemImports })
@@ -855,10 +857,11 @@ try {
   $Recipe = @(
     "# Fraia CalculiX ${CalculixVersion} win32-x64 build recipe",
     "",
-    "Build revision: ``fraia-calculix-windows-v19``",
+    "Build revision: ``fraia-calculix-windows-v20``",
     "",
     "- Native host: ``$([Environment]::OSVersion.VersionString)``",
     "- Minimum Windows contract: ``Windows ${MinimumWindowsMajor}.${MinimumWindowsMinor}``",
+    "- Windows console subsystem contract: ``${WindowsSubsystemMajor}.${WindowsSubsystemMinor}``",
     "- WinLibs tag: ``${WinLibsTag}``",
     "- WinLibs source commit: ``${WinLibsCommit}``",
     "- WinLibs x64 UCRT archive SHA-256: ``${WinLibsArchiveSha256}``",
@@ -967,6 +970,7 @@ try {
     @(
       "PE machine: 0x8664 (x86-64)",
       "Minimum Windows: ${MinimumWindowsMajor}.${MinimumWindowsMinor}",
+      "Windows console subsystem: ${WindowsSubsystemMajor}.${WindowsSubsystemMinor}",
       "Bundled native libraries: none; compiler, OpenMP, winpthreads, SPOOLES, ARPACK-NG, and OpenBLAS are statically linked.",
       "All observed dynamic imports are in the reviewed Windows system allowlist.",
       "Physical machine-path scan: pass",
@@ -983,6 +987,7 @@ try {
       "WinLibs tag: ${WinLibsTag}",
       "WinLibs source commit: ${WinLibsCommit}",
       "Minimum Windows: ${MinimumWindowsMajor}.${MinimumWindowsMinor}",
+      "Windows console subsystem: ${WindowsSubsystemMajor}.${WindowsSubsystemMinor}",
       "Controlled compiler source root: ${ControlledBuildDrive}\ (temporary subst mapping)",
       "SOURCE_DATE_EPOCH: ${SourceDateEpoch}",
       "gcc: ${GccVersionOutput}",
