@@ -414,13 +414,24 @@ try {
       )
     }
     $ReadNewMesh = Join-Path $CalculixSource "readnewmesh.c"
-    $ReadNewMeshSource = [IO.File]::ReadAllText($ReadNewMesh)
-    if (-not $ReadNewMeshSource.Contains("return NULL;")) {
-      throw "The reviewed readnewmesh.c compatibility correction no longer applies."
+    $ReadNewMeshSource = [IO.File]::ReadAllText($ReadNewMesh).Replace("`r`n", "`n")
+    $VoidReadNewMeshReturn = "  return NULL;`n`n}`n`n/* subroutine for multithreading of calcenergy */"
+    if ([regex]::Matches($ReadNewMeshSource, [regex]::Escape($VoidReadNewMeshReturn)).Count -ne 1) {
+      throw "The reviewed readnewmesh.c void-return correction no longer applies exactly once."
+    }
+    $ReadNewMeshSource = $ReadNewMeshSource.Replace(
+      $VoidReadNewMeshReturn,
+      "  return;`n`n}`n`n/* subroutine for multithreading of calcenergy */"
+    )
+    if ([regex]::Matches(
+      $ReadNewMeshSource,
+      "(?s)void \*genratiomt\(ITG \*i\)\{.*?return NULL;\s*\}"
+    ).Count -ne 1) {
+      throw "The reviewed genratiomt thread return is not preserved exactly once."
     }
     [IO.File]::WriteAllText(
       $ReadNewMesh,
-      $ReadNewMeshSource.Replace("return NULL;", "return;"),
+      $ReadNewMeshSource,
       $Utf8NoBom
     )
     $MakefileInc = Get-Content -LiteralPath (Join-Path $CalculixSource "Makefile.inc") -Raw
@@ -699,7 +710,7 @@ try {
   $Recipe = @(
     "# Fraia CalculiX ${CalculixVersion} win32-x64 build recipe",
     "",
-    "Build revision: ``fraia-calculix-windows-v9``",
+    "Build revision: ``fraia-calculix-windows-v10``",
     "",
     "- Native host: ``$([Environment]::OSVersion.VersionString)``",
     "- Minimum Windows contract: ``Windows ${MinimumWindowsMajor}.${MinimumWindowsMinor}``",

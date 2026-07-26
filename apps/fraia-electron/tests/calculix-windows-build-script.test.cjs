@@ -62,7 +62,11 @@ test('Windows CalculiX vendor build is native, source-built, and reproducible', 
   assert.match(script, /ccx_2\.23\.c", "ccx_2\.23step\.c/);
   assert.match(script, /MinGW output-format correction no longer applies exactly once/);
   assert.match(script, /\$SourceText\.Replace\(\$GlobalWindowsFormatBlock, ""\)/);
-  assert.match(script, /fraia-calculix-windows-v9/);
+  assert.match(script, /readnewmesh\.c void-return correction no longer applies exactly once/);
+  assert.match(script, /void \\\*genratiomt/);
+  assert.match(script, /genratiomt thread return is not preserved exactly once/);
+  assert.doesNotMatch(script, /\$ReadNewMeshSource\.Replace\("return NULL;", "return;"\)/);
+  assert.match(script, /fraia-calculix-windows-v10/);
   assert.doesNotMatch(script, /calculix_2\.23_4win|ccx_static\.exe/);
 });
 
