@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "target": "linux-x64",
+  "calculixVersion": "2.23",
+  "upstream": {
+    "sourceUrl": "https://www.dhondt.de/ccx_2.23.src.tar.bz2",
+    "sourceSha256": "9c88385c10fb04f5dc6c4e98027a51bebdd8aee3920e05190d6c1dd08357d6e7",
+    "revision": "calculix-2.23"
+  },
+  "build": {
+    "recipe": "BUILD_RECIPE.md",
+    "recipeSha256": "d5e897d79c6e3affa5713c4ed973ab5001f7460c4b8ae18e3df1060320a79394",
+    "revision": "fraia-calculix-linux-v3"
+  },
+  "redistribution": {
+    "sourceUrl": "https://github.com/apotenza92/fraia/releases/download/v0.0.1/Fraia-CalculiX-Corresponding-Source.tar",
+    "sourceSha256": "5fce2fdb615c77dd29a621dbe7fc3f0d0a36089590f4dd73bad737d38cdb8190",
+    "sourceAsset": "Fraia-CalculiX-Corresponding-Source.tar",
+    "licenseIdentifiers": [
+      "GPL-2.0-only",
+      "LicenseRef-SPOOLES-Public-Domain",
+      "BSD-3-Clause",
+      "GPL-3.0-or-later WITH GCC-exception-3.1"
+    ]
+  },
+  "files": {
+    "executable": {
+      "path": "ccx",
+      "sha256": "f9e94ddf20a56de7c93ff3a732652f66a584b45ec3db5f33fce930f7387fb0c1"
+    },
+    "notices": {
+      "path": "THIRD_PARTY_NOTICES.txt",
+      "sha256": "db42b82456f0db26e4dd011db00d7c6d11f5588c84fcf4bcb987ff95f87e320e"
+    },
+    "dependencies": [
+      {
+        "name": "ld-linux-x86-64.so.2",
+        "kind": "system"
+      },
+      {
+        "name": "libc.so.6",
+        "kind": "system"
+      },
+      {
+        "name": "libm.so.6",
+        "kind": "system"
+      },
+      {
+        "name": "libquadmath.so.0",
+        "kind": "bundled",
+        "path": "libquadmath.so.0",
+        "sha256": "a962d0383ce4c2a39a81017ffd9e5b51f32fd314e411c09ddd6da21593079a8c"
+      },
+      {
+        "name": "linux-vdso.so.1",
+        "kind": "system"
+      }
+    ]
+  }
+}

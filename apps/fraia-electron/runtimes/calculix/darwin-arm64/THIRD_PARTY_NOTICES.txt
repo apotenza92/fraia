@@ -1,0 +1,9 @@
+Fraia CalculiX 2.23 native runtime notices
+
+CalculiX: GPL-2.0-only. See licenses/CALCULIX-LICENSE-NOTICE.txt and licenses/GPL-2.0.txt.
+SPOOLES 2.2: public domain with included NIST notice. See licenses/SPOOLES-NOTICE.txt.
+ARPACK-NG: BSD-3-Clause. See licenses/ARPACK-BSD-3-Clause.txt.
+Bundled GCC runtime libraries: GPL-3.0-or-later WITH GCC-exception-3.1.
+See licenses/GPL-3.0.txt and licenses/GCC-Runtime-Library-Exception-3.1.txt.
+
+Corresponding-source publication is recorded separately in runtime-manifest.json.

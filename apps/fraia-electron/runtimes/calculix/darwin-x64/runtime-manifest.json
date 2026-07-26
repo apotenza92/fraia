@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "target": "darwin-x64",
+  "calculixVersion": "2.23",
+  "upstream": {
+    "sourceUrl": "https://www.dhondt.de/ccx_2.23.src.tar.bz2",
+    "sourceSha256": "9c88385c10fb04f5dc6c4e98027a51bebdd8aee3920e05190d6c1dd08357d6e7",
+    "revision": "calculix-2.23"
+  },
+  "build": {
+    "recipe": "BUILD_RECIPE.md",
+    "recipeSha256": "7d0caefd47c355160c7d59006cf43e30ea220ee778ae0ed076d5999dc016dc6b",
+    "revision": "fraia-calculix-macos-v5"
+  },
+  "redistribution": {
+    "sourceUrl": "https://github.com/apotenza92/fraia/releases/download/v0.0.1/Fraia-CalculiX-Corresponding-Source.tar",
+    "sourceSha256": "5fce2fdb615c77dd29a621dbe7fc3f0d0a36089590f4dd73bad737d38cdb8190",
+    "sourceAsset": "Fraia-CalculiX-Corresponding-Source.tar",
+    "licenseIdentifiers": [
+      "GPL-2.0-only",
+      "LicenseRef-SPOOLES-Public-Domain",
+      "BSD-3-Clause",
+      "GPL-3.0-or-later WITH GCC-exception-3.1"
+    ]
+  },
+  "files": {
+    "executable": {
+      "path": "ccx",
+      "sha256": "f4aeea0901a0b0822a0c87c6ab2e98c4b8204ee7cf81a1a71ebc6c8d775022df"
+    },
+    "notices": {
+      "path": "THIRD_PARTY_NOTICES.txt",
+      "sha256": "99caa30636e257e1223261d9d2312ab397c96f7e65395a0a64a8e6d1cb3f71d1"
+    },
+    "dependencies": [
+      {
+        "name": "Accelerate",
+        "kind": "system"
+      },
+      {
+        "name": "libgcc_s.1.1.dylib",
+        "kind": "bundled",
+        "path": "libgcc_s.1.1.dylib",
+        "sha256": "08407f70764e6cbde545310b5a2158f7420b8f4c4717771c0009e802a7b61cd2"
+      },
+      {
+        "name": "libgfortran.5.dylib",
+        "kind": "bundled",
+        "path": "libgfortran.5.dylib",
+        "sha256": "07cd31befc1651b403dfc31da399784d0a84b072e821a9484b1fcc72f2dce260"
+      },
+      {
+        "name": "libgomp.1.dylib",
+        "kind": "bundled",
+        "path": "libgomp.1.dylib",
+        "sha256": "dbe1d225bfd90b850851714862200974bc03014a4d324e75b072ab4daa8a3c33"
+      },
+      {
+        "name": "libquadmath.0.dylib",
+        "kind": "bundled",
+        "path": "libquadmath.0.dylib",
+        "sha256": "40073b8246567d41d7793a78846777849c791cc76766e588d20c8eeb2ed42e0d"
+      },
+      {
+        "name": "libSystem.B.dylib",
+        "kind": "system"
+      }
+    ]
+  }
+}
