@@ -302,6 +302,10 @@ try {
     $BuildRootUnix = $BuildRoot -replace "\\", "/"
     $NativePrefixMap = "-ffile-prefix-map=${BuildRoot}=/usr/src/fraia-runtime"
     $UnixPrefixMap = "-ffile-prefix-map=${BuildRootUnix}=/usr/src/fraia-runtime"
+    $NativeMacroPrefixMap = "-fmacro-prefix-map=${BuildRoot}=/usr/src/fraia-runtime"
+    $UnixMacroPrefixMap = "-fmacro-prefix-map=${BuildRootUnix}=/usr/src/fraia-runtime"
+    $NativeDebugPrefixMap = "-fdebug-prefix-map=${BuildRoot}=/usr/src/fraia-runtime"
+    $UnixDebugPrefixMap = "-fdebug-prefix-map=${BuildRootUnix}=/usr/src/fraia-runtime"
     $PrefixMapProbeSource = Join-Path $BuildRoot "prefix-map-probe.f90"
     $PrefixMapProbeObject = Join-Path $BuildRoot "prefix-map-probe.obj"
     [IO.File]::WriteAllLines(
@@ -320,6 +324,10 @@ try {
       "-g0",
       $NativePrefixMap,
       $UnixPrefixMap,
+      $NativeMacroPrefixMap,
+      $UnixMacroPrefixMap,
+      $NativeDebugPrefixMap,
+      $UnixDebugPrefixMap,
       "-fcanon-prefix-map",
       $PrefixMapProbeSource,
       "-o",
@@ -353,7 +361,7 @@ try {
         "list(SORT SPOOLES_SOURCES)",
         "add_library(spooles STATIC `${SPOOLES_SOURCES})",
         "target_include_directories(spooles PUBLIC `"${SpoolesRootUnix}`")",
-        "target_compile_options(spooles PRIVATE -O2 -g0 -std=gnu17 [=[${NativePrefixMap}]=] ${UnixPrefixMap} -fcanon-prefix-map)",
+        "target_compile_options(spooles PRIVATE -O2 -g0 -std=gnu17 [=[${NativePrefixMap}]=] ${UnixPrefixMap} [=[${NativeMacroPrefixMap}]=] ${UnixMacroPrefixMap} [=[${NativeDebugPrefixMap}]=] ${UnixDebugPrefixMap} -fcanon-prefix-map)",
         "set_target_properties(spooles PROPERTIES OUTPUT_NAME spooles PREFIX lib)"
       ),
       $Utf8NoBom
@@ -395,8 +403,8 @@ try {
       "-DUSE_OPENMP=OFF",
       "-DUSE_THREAD=ON",
       "-DNUM_THREADS=64",
-      "-DCMAKE_C_FLAGS_RELEASE=-O2 -g0 ${NativePrefixMap} ${UnixPrefixMap} -fcanon-prefix-map",
-      "-DCMAKE_Fortran_FLAGS_RELEASE=-O2 -g0 -fallow-argument-mismatch ${NativePrefixMap} ${UnixPrefixMap} -fcanon-prefix-map"
+      "-DCMAKE_C_FLAGS_RELEASE=-O2 -g0 ${NativePrefixMap} ${UnixPrefixMap} ${NativeMacroPrefixMap} ${UnixMacroPrefixMap} ${NativeDebugPrefixMap} ${UnixDebugPrefixMap} -fcanon-prefix-map",
+      "-DCMAKE_Fortran_FLAGS_RELEASE=-O2 -g0 -fallow-argument-mismatch ${NativePrefixMap} ${UnixPrefixMap} ${NativeMacroPrefixMap} ${UnixMacroPrefixMap} ${NativeDebugPrefixMap} ${UnixDebugPrefixMap} -fcanon-prefix-map"
     ) -LogPath (Join-Path $BuildRoot "logs\openblas-configure.log")
     Invoke-LoggedCommand -Executable $Tool["cmake"] -Arguments @(
       "--build", $OpenBlasBuild, "--parallel", "2"
@@ -423,8 +431,8 @@ try {
       "-DMPI=OFF",
       "-DICB=OFF",
       "-DEXAMPLES=OFF",
-      "-DCMAKE_C_FLAGS_RELEASE=-O2 -g0 ${NativePrefixMap} ${UnixPrefixMap} -fcanon-prefix-map",
-      "-DCMAKE_Fortran_FLAGS_RELEASE=-O2 -g0 -fallow-argument-mismatch ${NativePrefixMap} ${UnixPrefixMap} -fcanon-prefix-map",
+      "-DCMAKE_C_FLAGS_RELEASE=-O2 -g0 ${NativePrefixMap} ${UnixPrefixMap} ${NativeMacroPrefixMap} ${UnixMacroPrefixMap} ${NativeDebugPrefixMap} ${UnixDebugPrefixMap} -fcanon-prefix-map",
+      "-DCMAKE_Fortran_FLAGS_RELEASE=-O2 -g0 -fallow-argument-mismatch ${NativePrefixMap} ${UnixPrefixMap} ${NativeMacroPrefixMap} ${UnixMacroPrefixMap} ${NativeDebugPrefixMap} ${UnixDebugPrefixMap} -fcanon-prefix-map",
       "-DBLAS_LIBRARIES=$($OpenBlasLibrary.FullName)",
       "-DLAPACK_LIBRARIES=$($OpenBlasLibrary.FullName)"
     ) -LogPath (Join-Path $BuildRoot "logs\arpack-configure.log")
@@ -515,6 +523,10 @@ try {
       "target_compile_options(ccxcore PRIVATE",
       "  [=[${NativePrefixMap}]=]",
       "  ${UnixPrefixMap}",
+      "  [=[${NativeMacroPrefixMap}]=]",
+      "  ${UnixMacroPrefixMap}",
+      "  [=[${NativeDebugPrefixMap}]=]",
+      "  ${UnixDebugPrefixMap}",
       "  -fcanon-prefix-map",
       "  `$<`$<COMPILE_LANGUAGE:C>:-O2;-g0;-std=gnu17>",
       "  `$<`$<COMPILE_LANGUAGE:Fortran>:-O2;-g0;-fallow-argument-mismatch;-fopenmp;-cpp>",
@@ -522,7 +534,7 @@ try {
       "add_executable(ccx `"${CalculixSourceUnix}/ccx_2.23.c`")",
       "target_include_directories(ccx PRIVATE `"${SpoolesRootUnix}`")",
       "target_compile_definitions(ccx PRIVATE ARCH=Linux SPOOLES ARPACK MATRIXSTORAGE NETWORKOUT USE_MT=1)",
-      "target_compile_options(ccx PRIVATE -O2 -g0 -std=gnu17 [=[${NativePrefixMap}]=] ${UnixPrefixMap} -fcanon-prefix-map)",
+      "target_compile_options(ccx PRIVATE -O2 -g0 -std=gnu17 [=[${NativePrefixMap}]=] ${UnixPrefixMap} [=[${NativeMacroPrefixMap}]=] ${UnixMacroPrefixMap} [=[${NativeDebugPrefixMap}]=] ${UnixDebugPrefixMap} -fcanon-prefix-map)",
       "set_property(TARGET ccx PROPERTY LINKER_LANGUAGE Fortran)",
       "target_link_options(ccx PRIVATE",
       "  -O2 -g0 -fopenmp -static -static-libgcc -static-libgfortran",
@@ -789,7 +801,7 @@ try {
   $Recipe = @(
     "# Fraia CalculiX ${CalculixVersion} win32-x64 build recipe",
     "",
-    "Build revision: ``fraia-calculix-windows-v13``",
+    "Build revision: ``fraia-calculix-windows-v14``",
     "",
     "- Native host: ``$([Environment]::OSVersion.VersionString)``",
     "- Minimum Windows contract: ``Windows ${MinimumWindowsMajor}.${MinimumWindowsMinor}``",

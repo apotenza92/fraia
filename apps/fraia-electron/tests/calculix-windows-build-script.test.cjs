@@ -49,9 +49,15 @@ test('Windows CalculiX vendor build is native, source-built, and reproducible', 
   assert.match(script, /SOURCE_DATE_EPOCH/);
   assert.match(script, /--no-insert-timestamp/);
   assert.match(script, /-ffile-prefix-map=/);
+  assert.match(script, /-fmacro-prefix-map=/);
+  assert.match(script, /-fdebug-prefix-map=/);
   assert.match(script, /-fcanon-prefix-map/);
   assert.match(script, /\$NativePrefixMap = "-ffile-prefix-map=\$\{BuildRoot\}=/);
   assert.match(script, /\$UnixPrefixMap = "-ffile-prefix-map=\$\{BuildRootUnix\}=/);
+  assert.match(script, /\$NativeMacroPrefixMap = "-fmacro-prefix-map=\$\{BuildRoot\}=/);
+  assert.match(script, /\$UnixMacroPrefixMap = "-fmacro-prefix-map=\$\{BuildRootUnix\}=/);
+  assert.match(script, /\$NativeDebugPrefixMap = "-fdebug-prefix-map=\$\{BuildRoot\}=/);
+  assert.match(script, /\$UnixDebugPrefixMap = "-fdebug-prefix-map=\$\{BuildRootUnix\}=/);
   assert.match(script, /\[=\[\$\{NativePrefixMap\}\]=\]/);
   assert.match(script, /prefix-map-probe\.f90/);
   assert.match(script, /retained the native build path despite canonical prefix mapping/);
@@ -79,7 +85,7 @@ test('Windows CalculiX vendor build is native, source-built, and reproducible', 
   assert.match(script, /ccx-build-two\.exe/);
   assert.match(script, /No runtime candidate was emitted/);
   assert.match(script, /Move-Item -LiteralPath \$ReproducibilityFailure -Destination \$ResolvedEvidence/);
-  assert.match(script, /fraia-calculix-windows-v13/);
+  assert.match(script, /fraia-calculix-windows-v14/);
   assert.doesNotMatch(script, /calculix_2\.23_4win|ccx_static\.exe/);
 });
 
