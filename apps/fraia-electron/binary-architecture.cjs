@@ -25,6 +25,23 @@ function binaryArchitecture(filePath) {
     if (cpuType === 0x01000007) return 'x64';
     throw new Error(`${filePath} has unsupported Mach-O CPU type 0x${cpuType.toString(16)}.`);
   }
+  const bigEndianFatMachO = magic === 'cafebabe' || magic === 'cafebabf';
+  const littleEndianFatMachO = magic === 'bebafeca' || magic === 'bfbafeca';
+  if (bigEndianFatMachO || littleEndianFatMachO) {
+    const readUInt32 = bigEndianFatMachO
+      ? (offset) => file.readUInt32BE(offset)
+      : (offset) => file.readUInt32LE(offset);
+    const architectureCount = readUInt32(4);
+    if (architectureCount !== 1) {
+      throw new Error(
+        `${filePath} must contain exactly one Mach-O architecture, received ${architectureCount}.`,
+      );
+    }
+    const cpuType = readUInt32(8);
+    if (cpuType === 0x0100000c) return 'arm64';
+    if (cpuType === 0x01000007) return 'x64';
+    throw new Error(`${filePath} has unsupported fat Mach-O CPU type 0x${cpuType.toString(16)}.`);
+  }
   throw new Error(`${filePath} is not a supported native executable.`);
 }
 
