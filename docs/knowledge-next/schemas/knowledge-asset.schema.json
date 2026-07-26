@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fraia.local/schemas/knowledge-asset.schema.json",
+  "title": "Fraia KnowledgeAsset",
+  "description": "Candidate typed record for source-linked diagrams, images, figures, and generated-safe visual targets.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "asset_id",
+    "schema_version",
+    "title",
+    "asset_type",
+    "source_id",
+    "original_locator",
+    "copyright_status",
+    "embed_policy",
+    "caption",
+    "concept_tags",
+    "alt_text",
+    "redraw_status"
+  ],
+  "properties": {
+    "asset_id": {
+      "type": "string",
+      "pattern": "^KA-[a-z0-9][a-z0-9-]*$"
+    },
+    "schema_version": {
+      "const": "knowledge-asset.v0"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "asset_type": {
+      "type": "string",
+      "enum": [
+        "diagram",
+        "photo",
+        "figure",
+        "table_image",
+        "generated_diagram",
+        "generated_render"
+      ]
+    },
+    "source_id": {
+      "type": "string",
+      "pattern": "^SRC-[a-f0-9]{10}$"
+    },
+    "original_locator": {
+      "type": "string",
+      "description": "Original source page, section, figure, URL fragment, or logical local locator."
+    },
+    "copyright_status": {
+      "type": "string",
+      "enum": [
+        "open_license",
+        "public_domain",
+        "permission_required",
+        "private_reference_only",
+        "generated_original",
+        "unknown"
+      ]
+    },
+    "embed_policy": {
+      "type": "string",
+      "enum": [
+        "embed_allowed",
+        "link_only",
+        "metadata_only",
+        "generated_derivative_only"
+      ]
+    },
+    "caption": {
+      "type": "string",
+      "minLength": 1
+    },
+    "concept_tags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "alt_text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "redraw_status": {
+      "type": "string",
+      "enum": [
+        "not_needed",
+        "redraw_required",
+        "redraw_planned",
+        "generated_safe_available"
+      ]
+    },
+    "generated_safe_target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "must_preserve": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "must_avoid": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "candidate_output_path": {
+          "type": "string",
+          "description": "Future generated/open-license asset path, not an original copyrighted source path."
+        }
+      }
+    },
+    "license_notes": {
+      "type": "string"
+    },
+    "used_by_cards": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^KC-[a-z0-9][a-z0-9-]*$"
+      },
+      "uniqueItems": true
+    }
+  }
+}

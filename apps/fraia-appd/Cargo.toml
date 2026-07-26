@@ -1,0 +1,19 @@
+[package]
+name = "fraia-appd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "fraia-appd"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+fraia-app-api = { path = "../../crates/fraia-app-api" }
+fraia-core = { path = "../../crates/fraia-core" }
+serde.workspace = true
+serde_json.workspace = true
+reqwest.workspace = true
+tokio.workspace = true

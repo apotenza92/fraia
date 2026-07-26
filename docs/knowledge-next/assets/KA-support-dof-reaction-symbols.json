@@ -1,0 +1,38 @@
+{
+  "alt_text": "Schematic target comparing roller, pin, and fixed support symbols with the reaction components and constrained degrees of freedom each support idealisation implies.",
+  "asset_id": "KA-support-dof-reaction-symbols",
+  "asset_type": "diagram",
+  "caption": "Generated-safe support idealisation diagram for degrees of freedom and reactions.",
+  "concept_tags": [
+    "support",
+    "degrees of freedom",
+    "reactions",
+    "restraint"
+  ],
+  "copyright_status": "unknown",
+  "embed_policy": "generated_derivative_only",
+  "generated_safe_target": {
+    "candidate_output_path": "docs/knowledge-next/generated/diagrams/support-dof-reaction-symbols.svg",
+    "description": "Original Fraia diagram with three support cases, each paired with DOF locks and reaction arrows. Use generic symbols and Fraia visual language.",
+    "must_avoid": [
+      "copying course-note support drawings",
+      "embedding source screenshots",
+      "implying all software support symbols behave identically"
+    ],
+    "must_preserve": [
+      "support idealisation label",
+      "constrained translation/rotation indicators",
+      "reaction component arrows"
+    ]
+  },
+  "license_notes": "Metadata-only until a generated Fraia-native support symbol diagram exists.",
+  "original_locator": "TU Delft Open Textbooks, Supports",
+  "redraw_status": "redraw_planned",
+  "schema_version": "knowledge-asset.v0",
+  "source_id": "SRC-1fa009051f",
+  "title": "Support DOF And Reaction Symbols",
+  "used_by_cards": [
+    "KC-support-reactions-idealisation",
+    "KC-portal-frame-base-fixity-tradeoffs"
+  ]
+}

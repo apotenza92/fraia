@@ -1,0 +1,124 @@
+{
+  "applicability": {
+    "applies_to": [
+      "Fraia knowledge retrieval",
+      "design-check pipeline planning",
+      "steel explanation artifacts"
+    ],
+    "jurisdiction_or_standard_context": "Product-architecture card informed by public steel modeling/check sources; not a public steel design rule.",
+    "not_applicable_to": [
+      "final code compliance",
+      "automatic selection of design standard",
+      "member capacity calculation"
+    ]
+  },
+  "card_id": "KC-steel-design-action-check-input-separation",
+  "claims": [
+    {
+      "claim_id": "C1",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Modelling_and_analysis",
+          "source_id": "SRC-9be980a1af"
+        }
+      ],
+      "text": "Steel modeling and analysis assumptions should be captured before design checks consume forces, moments, restraints, and member properties."
+    },
+    {
+      "claim_id": "C2",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "https://www.aisc.org/aisc/explore-aisc/aisc-360/",
+          "source_id": "SRC-aeb2330d27"
+        }
+      ],
+      "text": "A design standard defines requirements for structural steel design, while Fraia artifacts should record which inputs, assumptions, and results were used for a specific check."
+    },
+    {
+      "claim_id": "C3",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Member_design",
+          "source_id": "SRC-1775f1230f"
+        }
+      ],
+      "text": "Fraia should keep design actions, check inputs, and check results separate so explanations can cite public steel behavior without presenting retrieval text as a completed code check."
+    }
+  ],
+  "concepts": [
+    "design action",
+    "check input",
+    "check result",
+    "provenance",
+    "artifact separation"
+  ],
+  "domain": "fraia-product-architecture",
+  "fraia_mapping": {
+    "pipeline_stages": [
+      "analysis_results",
+      "design_actions",
+      "check_inputs",
+      "check_results"
+    ],
+    "structural_objects": [
+      "Member",
+      "SupportAssignment",
+      "ReleaseAssignment",
+      "LoadAssignment"
+    ]
+  },
+  "limitations": [
+    "This is a Fraia product policy card, not an external steel-design authority.",
+    "Public steel sources justify the need for scoped inputs and checks; Fraia's artifact names are internal vocabulary."
+  ],
+  "media_links": [
+    {
+      "asset_id": "KA-design-action-check-provenance-flow",
+      "role": "explains"
+    }
+  ],
+  "relationships": [
+    {
+      "relationship_type": "supports",
+      "target": "KC-steel-bending-members"
+    },
+    {
+      "relationship_type": "supports",
+      "target": "KC-steel-compression-members"
+    },
+    {
+      "relationship_type": "supports",
+      "target": "KC-reaction-sanity-checks"
+    }
+  ],
+  "schema_version": "knowledge-card.v0",
+  "source_links": [
+    {
+      "pages_used": [
+        "Modelling and analysis"
+      ],
+      "role": "primary",
+      "source_id": "SRC-9be980a1af"
+    },
+    {
+      "pages_used": [
+        "Specification for Structural Steel Buildings landing page"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-aeb2330d27"
+    },
+    {
+      "pages_used": [
+        "Member design"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-1775f1230f"
+    }
+  ],
+  "status": "draft",
+  "summary": "Fraia should preserve design actions, check inputs, and check results as separate artifacts so steel knowledge retrieval supports checks without masquerading as them.",
+  "title": "Steel Design Action And Check Input Separation"
+}

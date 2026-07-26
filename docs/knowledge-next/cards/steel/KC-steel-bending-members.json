@@ -1,0 +1,109 @@
+{
+  "applicability": {
+    "applies_to": [
+      "steel beam concept reasoning",
+      "member force interpretation",
+      "design-action handoff"
+    ],
+    "jurisdiction_or_standard_context": "Primarily UK/Eurocode-oriented SteelConstruction.info guidance, corroborated by public AISC/NSBA steel behavior material. Concept guidance only.",
+    "not_applicable_to": [
+      "final beam design",
+      "formula selection",
+      "connection design"
+    ]
+  },
+  "card_id": "KC-steel-bending-members",
+  "claims": [
+    {
+      "claim_id": "C1",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Member_design#Bending",
+          "source_id": "SRC-1775f1230f"
+        }
+      ],
+      "text": "Steel bending-member checks depend on bending action, section class or section properties, and the relevant resistance model."
+    },
+    {
+      "claim_id": "C2",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Member_design#Shear",
+          "source_id": "SRC-1775f1230f"
+        }
+      ],
+      "text": "Beam interpretation should keep bending, shear, torsion, and axial-force interaction distinct before combining them in a check."
+    },
+    {
+      "claim_id": "C3",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "https://www.aisc.org/bridges/bridge-resource-center/sbdh-chapter-4-strength-behavior-and-design-of-steel/",
+          "source_id": "SRC-a80147d170"
+        }
+      ],
+      "text": "Steel member behavior knowledge is useful for explaining check drivers, but final adequacy still belongs to a scoped design check."
+    }
+  ],
+  "concepts": [
+    "steel beam",
+    "bending member",
+    "bending action",
+    "shear action",
+    "member resistance"
+  ],
+  "domain": "steel-design",
+  "fraia_mapping": {
+    "pipeline_stages": [
+      "analysis_results",
+      "design_actions",
+      "check_inputs",
+      "check_results"
+    ],
+    "structural_objects": [
+      "Member"
+    ]
+  },
+  "limitations": [
+    "No formulas, resistance factors, or Eurocode/AISC design procedure are encoded here.",
+    "The card does not decide whether a member is laterally restrained."
+  ],
+  "media_links": [],
+  "relationships": [
+    {
+      "relationship_type": "requires",
+      "target": "KC-steel-material-and-section-families"
+    },
+    {
+      "relationship_type": "see_also",
+      "target": "KC-lateral-torsional-buckling-concepts"
+    },
+    {
+      "relationship_type": "requires",
+      "target": "KC-steel-design-action-check-input-separation"
+    }
+  ],
+  "schema_version": "knowledge-card.v0",
+  "source_links": [
+    {
+      "pages_used": [
+        "Member design: Bending, Shear, Torsion, Bending and axial force"
+      ],
+      "role": "primary",
+      "source_id": "SRC-1775f1230f"
+    },
+    {
+      "pages_used": [
+        "Steel Bridge Design Handbook Chapter 4 landing page"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-a80147d170"
+    }
+  ],
+  "status": "draft",
+  "summary": "Steel bending-member cards should explain which actions and assumptions matter, while leaving final resistance evaluation to scoped checks.",
+  "title": "Steel Bending Members"
+}

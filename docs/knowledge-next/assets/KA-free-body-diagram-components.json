@@ -1,0 +1,38 @@
+{
+  "alt_text": "Schematic target showing an isolated body with applied loads, dimensions, and reaction components separated from surrounding structure.",
+  "asset_id": "KA-free-body-diagram-components",
+  "asset_type": "diagram",
+  "caption": "Generated-safe free-body diagram component schematic for Fraia equilibrium explanations.",
+  "concept_tags": [
+    "free-body diagram",
+    "equilibrium",
+    "reactions",
+    "loads"
+  ],
+  "copyright_status": "unknown",
+  "embed_policy": "generated_derivative_only",
+  "generated_safe_target": {
+    "candidate_output_path": "docs/knowledge-next/generated/diagrams/free-body-diagram-components.svg",
+    "description": "Clean Fraia-native schematic of a simple beam/body isolated from supports, with arrows for loads and reaction components. Use original line art, not source layout or source labels.",
+    "must_avoid": [
+      "copying source figure composition",
+      "using textbook page crops",
+      "including code formulas"
+    ],
+    "must_preserve": [
+      "isolated body boundary",
+      "external force arrows",
+      "reaction arrows",
+      "minimal dimension/context labels"
+    ]
+  },
+  "license_notes": "Use source only as conceptual reference; generate a new Fraia-native schematic before embedding.",
+  "original_locator": "Engineering LibreTexts, Free Body Diagrams",
+  "redraw_status": "redraw_planned",
+  "schema_version": "knowledge-asset.v0",
+  "source_id": "SRC-764acec0a5",
+  "title": "Free-Body Diagram Components",
+  "used_by_cards": [
+    "KC-free-body-equilibrium"
+  ]
+}

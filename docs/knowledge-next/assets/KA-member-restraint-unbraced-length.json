@@ -1,0 +1,39 @@
+{
+  "alt_text": "Schematic target showing a steel beam or rafter with restraint points, compression flange indication, and unbraced length segments.",
+  "asset_id": "KA-member-restraint-unbraced-length",
+  "asset_type": "diagram",
+  "caption": "Generated-safe member restraint and unbraced length schematic.",
+  "concept_tags": [
+    "unbraced length",
+    "member restraint",
+    "compression flange",
+    "lateral-torsional buckling"
+  ],
+  "copyright_status": "unknown",
+  "embed_policy": "generated_derivative_only",
+  "generated_safe_target": {
+    "candidate_output_path": "docs/knowledge-next/generated/diagrams/member-restraint-unbraced-length.svg",
+    "description": "Original Fraia schematic of a steel member with discrete restraint points, highlighted compression flange, and annotated unbraced length intervals.",
+    "must_avoid": [
+      "copying member-design source figures",
+      "showing code equations",
+      "treating every purlin as automatically adequate restraint"
+    ],
+    "must_preserve": [
+      "restraint point markers",
+      "unbraced length dimension",
+      "compression flange indication",
+      "caveat that restraint adequacy is checked separately"
+    ]
+  },
+  "license_notes": "Generated derivative only; no source figures committed.",
+  "original_locator": "SteelConstruction.info Member design: Lateral torsional buckling resistance",
+  "redraw_status": "redraw_planned",
+  "schema_version": "knowledge-asset.v0",
+  "source_id": "SRC-de331c3f98",
+  "title": "Member Restraint And Unbraced Length",
+  "used_by_cards": [
+    "KC-member-restraint-and-unbraced-length",
+    "KC-lateral-torsional-buckling-concepts"
+  ]
+}

@@ -1,0 +1,112 @@
+{
+  "applicability": {
+    "applies_to": [
+      "portal-frame support modeling",
+      "scheme comparison",
+      "base-assumption review"
+    ],
+    "jurisdiction_or_standard_context": "UK/Eurocode-oriented portal-frame guidance. Concept guidance only.",
+    "not_applicable_to": [
+      "foundation design",
+      "base plate design",
+      "fire boundary condition base requirements"
+    ]
+  },
+  "card_id": "KC-portal-frame-base-fixity-tradeoffs",
+  "claims": [
+    {
+      "claim_id": "C1",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Portal_frames#Column_bases",
+          "source_id": "SRC-37f553a164"
+        }
+      ],
+      "text": "Nominally pinned column bases are common in portal frames because fully rigid bases increase base-detail and foundation moment demands."
+    },
+    {
+      "claim_id": "C2",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Portal_frames#Column_bases",
+          "source_id": "SRC-37f553a164"
+        }
+      ],
+      "text": "If a portal-frame base is modeled as nominally pinned, the support idealisation should be visible in the global analysis and downstream checks."
+    },
+    {
+      "claim_id": "C3",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Modelling_and_analysis",
+          "source_id": "SRC-9be980a1af"
+        }
+      ],
+      "text": "Base fixity is a modeling assumption, not a hidden property of a support symbol; Fraia should retain it as authored and resolved support data."
+    }
+  ],
+  "concepts": [
+    "portal frame",
+    "base fixity",
+    "pinned base",
+    "rigid base",
+    "support idealisation"
+  ],
+  "domain": "steel-systems",
+  "fraia_mapping": {
+    "pipeline_stages": [
+      "structural_model",
+      "realization",
+      "analysis_results",
+      "check_inputs"
+    ],
+    "structural_objects": [
+      "SupportAssignment",
+      "Node",
+      "Member"
+    ]
+  },
+  "limitations": [
+    "This card does not recommend a base type for a real project.",
+    "Fire, robustness, drift, and foundation design may alter base assumptions and require separate sources."
+  ],
+  "media_links": [
+    {
+      "asset_id": "KA-support-dof-reaction-symbols",
+      "role": "example"
+    }
+  ],
+  "relationships": [
+    {
+      "relationship_type": "requires",
+      "target": "KC-support-reactions-idealisation"
+    },
+    {
+      "relationship_type": "see_also",
+      "target": "KC-steel-portal-frame-system-overview"
+    }
+  ],
+  "schema_version": "knowledge-card.v0",
+  "source_links": [
+    {
+      "pages_used": [
+        "Portal frames: Column bases"
+      ],
+      "role": "primary",
+      "source_id": "SRC-37f553a164"
+    },
+    {
+      "pages_used": [
+        "Modelling and analysis"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-9be980a1af"
+    }
+  ],
+  "status": "draft",
+  "summary": "Portal-frame base fixity should be treated as an explicit support idealisation with structural and foundation tradeoffs, not as an invisible default.",
+  "title": "Portal Frame Base Fixity Tradeoffs"
+}
