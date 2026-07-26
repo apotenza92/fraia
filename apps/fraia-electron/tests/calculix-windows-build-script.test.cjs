@@ -91,7 +91,7 @@ test('Windows CalculiX vendor build is native, source-built, and reproducible', 
   assert.match(script, /ccx-build-two\.exe/);
   assert.match(script, /No runtime candidate was emitted/);
   assert.match(script, /Move-Item -LiteralPath \$ReproducibilityFailure -Destination \$ResolvedEvidence/);
-  assert.match(script, /fraia-calculix-windows-v18/);
+  assert.match(script, /fraia-calculix-windows-v19/);
   assert.doesNotMatch(script, /calculix_2\.23_4win|ccx_static\.exe/);
 });
 
@@ -148,6 +148,10 @@ test('Windows CalculiX vendor build runs the pinned official solver fixture', ()
   assert.match(script, /"Job finished"/);
   assert.match(script, /spring1\.stdout/);
   assert.match(script, /spring1\.stderr/);
+  assert.ok(
+    script.indexOf('$Process = Start-Process') < script.indexOf('$CandidateTwo = Build-Once'),
+    'the first complete native candidate must be solver-tested before the second build',
+  );
 });
 
 test('Windows CalculiX vendor build never replaces an output or evidence directory', () => {
@@ -156,4 +160,25 @@ test('Windows CalculiX vendor build never replaces an output or evidence directo
   assert.match(script, /must not contain one another/);
   assert.doesNotMatch(script, /Remove-Item -LiteralPath \$ResolvedOutput/);
   assert.doesNotMatch(script, /Remove-Item -LiteralPath \$ResolvedEvidence/);
+});
+
+test('Windows CalculiX vendor build preserves actionable failure evidence', () => {
+  for (const expected of [
+    'FAILURE.txt',
+    'ccx-build-${BuildName}.exe',
+    'ccx-build-${BuildName}-objdump.txt',
+    'ccx-build-${BuildName}-imports.txt',
+    'ccx-build-${BuildName}-strings.txt',
+    'ccx-build-${BuildName}.sha256',
+    'runtime-test',
+    '${BuildName}-logs',
+  ]) {
+    assert.match(script, new RegExp(expected.replaceAll('.', '\\.').replaceAll('$', '\\$')));
+  }
+  assert.match(script, /@\("build-one", \$BuildOne\)/);
+  assert.match(script, /@\("build-two", \$BuildTwo\)/);
+  assert.match(script, /objdump-error\.txt/);
+  assert.match(script, /strings-error\.txt/);
+  assert.match(script, /No runtime candidate was emitted/);
+  assert.match(script, /Move-Item -LiteralPath \$FailureStaging -Destination \$ResolvedEvidence/);
 });

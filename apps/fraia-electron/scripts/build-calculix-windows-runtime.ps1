@@ -200,6 +200,14 @@ if ($ResolvedOutput.StartsWith("${ResolvedEvidence}\", [StringComparison]::Ordin
 $WorkRoot = Join-Path ([IO.Path]::GetTempPath()) "fraia-calculix-windows-$([guid]::NewGuid())"
 [IO.Directory]::CreateDirectory($WorkRoot) | Out-Null
 $WorkRootUnix = $WorkRoot -replace "\\", "/"
+$CandidateOne = $null
+$CandidateTwo = $null
+$BuildOne = $null
+$BuildTwo = $null
+$RuntimeTestRoot = $null
+$StandardOutput = $null
+$StandardError = $null
+$Tool = $null
 
 try {
   $Downloads = Join-Path $WorkRoot "downloads"
@@ -614,6 +622,42 @@ try {
   $BuildOne = Join-Path $WorkRoot "build-one"
   $BuildTwo = Join-Path $WorkRoot "build-two"
   $CandidateOne = Build-Once -PhysicalBuildRoot $BuildOne
+
+  # Exercise the first complete native payload before spending another full
+  # build cycle. Promotion still requires the independently reproduced second
+  # payload below, and the two payloads must remain byte-identical.
+  $RuntimeTestRoot = Join-Path $WorkRoot "runtime-test"
+  $CaseRoot = Join-Path $RuntimeTestRoot "case"
+  [IO.Directory]::CreateDirectory($CaseRoot) | Out-Null
+  Invoke-LoggedCommand -Executable "tar.exe" -Arguments @(
+    "-xjf", (Join-Path $Downloads "ccx_2.23.test.tar.bz2"), "-C", $CaseRoot,
+    "./CalculiX/ccx_2.23/test/spring1.inp"
+  ) -LogPath (Join-Path $RuntimeTestRoot "extract.log")
+  $CaseDirectory = Join-Path $CaseRoot "CalculiX\ccx_2.23\test"
+  $StandardOutput = Join-Path $RuntimeTestRoot "spring1.stdout"
+  $StandardError = Join-Path $RuntimeTestRoot "spring1.stderr"
+  $Process = Start-Process `
+    -FilePath $CandidateOne `
+    -ArgumentList "spring1" `
+    -WorkingDirectory $CaseDirectory `
+    -Wait `
+    -PassThru `
+    -NoNewWindow `
+    -RedirectStandardOutput $StandardOutput `
+    -RedirectStandardError $StandardError
+  if ($Process.ExitCode -ne 0) {
+    throw "The official spring1 solve failed with exit code $($Process.ExitCode)."
+  }
+  foreach ($Extension in @("dat", "frd", "sta")) {
+    $Result = Join-Path $CaseDirectory "spring1.${Extension}"
+    if (-not (Test-Path -LiteralPath $Result -PathType Leaf) -or (Get-Item $Result).Length -eq 0) {
+      throw "The official spring1 solve did not produce ${Result}."
+    }
+  }
+  if (-not (Select-String -LiteralPath $StandardOutput -SimpleMatch "Job finished" -Quiet)) {
+    throw "The official spring1 solve did not report completion."
+  }
+
   $CandidateTwo = Build-Once -PhysicalBuildRoot $BuildTwo
   $CandidateOneSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $CandidateOne).Hash.ToLowerInvariant()
   $CandidateTwoSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $CandidateTwo).Hash.ToLowerInvariant()
@@ -705,38 +749,6 @@ try {
   $ImportsTwo = @(Get-PeImports -Executable $CandidateTwo -Objdump $Tool["objdump"])
   if (($ImportsOne -join "`n") -ne ($ImportsTwo -join "`n")) {
     throw "The two native Windows builds have different dependency closures."
-  }
-
-  $RuntimeTestRoot = Join-Path $WorkRoot "runtime-test"
-  $CaseRoot = Join-Path $RuntimeTestRoot "case"
-  [IO.Directory]::CreateDirectory($CaseRoot) | Out-Null
-  Invoke-LoggedCommand -Executable "tar.exe" -Arguments @(
-    "-xjf", (Join-Path $Downloads "ccx_2.23.test.tar.bz2"), "-C", $CaseRoot,
-    "./CalculiX/ccx_2.23/test/spring1.inp"
-  ) -LogPath (Join-Path $RuntimeTestRoot "extract.log")
-  $CaseDirectory = Join-Path $CaseRoot "CalculiX\ccx_2.23\test"
-  $StandardOutput = Join-Path $RuntimeTestRoot "spring1.stdout"
-  $StandardError = Join-Path $RuntimeTestRoot "spring1.stderr"
-  $Process = Start-Process `
-    -FilePath $CandidateOne `
-    -ArgumentList "spring1" `
-    -WorkingDirectory $CaseDirectory `
-    -Wait `
-    -PassThru `
-    -NoNewWindow `
-    -RedirectStandardOutput $StandardOutput `
-    -RedirectStandardError $StandardError
-  if ($Process.ExitCode -ne 0) {
-    throw "The official spring1 solve failed with exit code $($Process.ExitCode)."
-  }
-  foreach ($Extension in @("dat", "frd", "sta")) {
-    $Result = Join-Path $CaseDirectory "spring1.${Extension}"
-    if (-not (Test-Path -LiteralPath $Result -PathType Leaf) -or (Get-Item $Result).Length -eq 0) {
-      throw "The official spring1 solve did not produce ${Result}."
-    }
-  }
-  if (-not (Select-String -LiteralPath $StandardOutput -SimpleMatch "Job finished" -Quiet)) {
-    throw "The official spring1 solve did not report completion."
   }
 
   $RuntimeStaging = Join-Path $WorkRoot "runtime"
@@ -843,7 +855,7 @@ try {
   $Recipe = @(
     "# Fraia CalculiX ${CalculixVersion} win32-x64 build recipe",
     "",
-    "Build revision: ``fraia-calculix-windows-v18``",
+    "Build revision: ``fraia-calculix-windows-v19``",
     "",
     "- Native host: ``$([Environment]::OSVersion.VersionString)``",
     "- Minimum Windows contract: ``Windows ${MinimumWindowsMajor}.${MinimumWindowsMinor}``",
@@ -1023,6 +1035,101 @@ try {
   Move-Item -LiteralPath $RuntimeStaging -Destination $ResolvedOutput
   Write-Host "Built and independently reproduced win32-x64 CalculiX ${CalculixVersion} runtime at ${ResolvedOutput}"
   Write-Host "Wrote independently reviewable win32-x64 evidence at ${ResolvedEvidence}"
+}
+catch {
+  $FailureRecord = $_
+  if (-not (Test-Path -LiteralPath $ResolvedEvidence)) {
+    $FailureStaging = Join-Path $WorkRoot "failure-evidence"
+    [IO.Directory]::CreateDirectory($FailureStaging) | Out-Null
+    [IO.File]::WriteAllLines(
+      (Join-Path $FailureStaging "FAILURE.txt"),
+      @(
+        "The controlled win32-x64 build failed closed.",
+        "No runtime candidate was emitted.",
+        "",
+        $FailureRecord.Exception.Message
+      ),
+      $Utf8NoBom
+    )
+    foreach ($CandidateBuild in @(
+      @("one", $CandidateOne),
+      @("two", $CandidateTwo)
+    )) {
+      $BuildName = $CandidateBuild[0]
+      $CandidatePath = $CandidateBuild[1]
+      if ($CandidatePath -and (Test-Path -LiteralPath $CandidatePath -PathType Leaf)) {
+        Copy-Item -LiteralPath $CandidatePath `
+          -Destination (Join-Path $FailureStaging "ccx-build-${BuildName}.exe")
+        if ($Tool -and $Tool["objdump"]) {
+          try {
+            [string[]]$FailurePeDump = @(
+              & $Tool["objdump"] -x $CandidatePath 2>&1 | ForEach-Object { "$_" }
+            )
+            [IO.File]::WriteAllLines(
+              (Join-Path $FailureStaging "ccx-build-${BuildName}-objdump.txt"),
+              $FailurePeDump,
+              $Utf8NoBom
+            )
+            [IO.File]::WriteAllLines(
+              (Join-Path $FailureStaging "ccx-build-${BuildName}-imports.txt"),
+              @(Get-PeImports -Executable $CandidatePath -Objdump $Tool["objdump"]),
+              $Utf8NoBom
+            )
+          } catch {
+            [IO.File]::WriteAllLines(
+              (Join-Path $FailureStaging "ccx-build-${BuildName}-objdump-error.txt"),
+              @($_.Exception.Message),
+              $Utf8NoBom
+            )
+          }
+        }
+        if ($Tool -and $Tool["strings"]) {
+          try {
+            [string[]]$FailureStrings = @(
+              & $Tool["strings"] $CandidatePath 2>&1 | ForEach-Object { "$_" }
+            )
+            [IO.File]::WriteAllLines(
+              (Join-Path $FailureStaging "ccx-build-${BuildName}-strings.txt"),
+              $FailureStrings,
+              $Utf8NoBom
+            )
+          } catch {
+            [IO.File]::WriteAllLines(
+              (Join-Path $FailureStaging "ccx-build-${BuildName}-strings-error.txt"),
+              @($_.Exception.Message),
+              $Utf8NoBom
+            )
+          }
+        }
+        $CandidateSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $CandidatePath).Hash.ToLowerInvariant()
+        [IO.File]::WriteAllLines(
+          (Join-Path $FailureStaging "ccx-build-${BuildName}.sha256"),
+          @("${CandidateSha}  ccx-build-${BuildName}.exe"),
+          $Utf8NoBom
+        )
+      }
+    }
+    if ($RuntimeTestRoot -and (Test-Path -LiteralPath $RuntimeTestRoot -PathType Container)) {
+      Copy-Item -LiteralPath $RuntimeTestRoot `
+        -Destination (Join-Path $FailureStaging "runtime-test") `
+        -Recurse
+    }
+    foreach ($BuildEntry in @(
+      @("build-one", $BuildOne),
+      @("build-two", $BuildTwo)
+    )) {
+      $BuildName = $BuildEntry[0]
+      $BuildRoot = $BuildEntry[1]
+      $Logs = if ($BuildRoot) { Join-Path $BuildRoot "logs" } else { $null }
+      if ($Logs -and (Test-Path -LiteralPath $Logs -PathType Container)) {
+        Copy-Item -LiteralPath $Logs `
+          -Destination (Join-Path $FailureStaging "${BuildName}-logs") `
+          -Recurse
+      }
+    }
+    Move-Item -LiteralPath $FailureStaging -Destination $ResolvedEvidence
+  }
+  throw
 }
 finally {
   if (Test-Path -LiteralPath $WorkRoot) {
