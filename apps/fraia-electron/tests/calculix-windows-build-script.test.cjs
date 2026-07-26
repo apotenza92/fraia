@@ -60,6 +60,7 @@ test('Windows CalculiX vendor build is native, source-built, and reproducible', 
   assert.match(script, /\$UnixDebugPrefixMap = "-fdebug-prefix-map=\$\{BuildRootUnix\}=/);
   assert.match(script, /\[=\[\$\{NativePrefixMap\}\]=\]/);
   assert.match(script, /prefix-map-probe\.f90/);
+  assert.match(script, /Pinned gfortran probe source string/);
   assert.match(script, /retained the native build path despite canonical prefix mapping/);
   assert.match(script, /did not emit the reviewed canonical source path/);
   assert.match(script, /@\(\$WorkRoot, \$WorkRootUnix\)/);
@@ -85,7 +86,7 @@ test('Windows CalculiX vendor build is native, source-built, and reproducible', 
   assert.match(script, /ccx-build-two\.exe/);
   assert.match(script, /No runtime candidate was emitted/);
   assert.match(script, /Move-Item -LiteralPath \$ReproducibilityFailure -Destination \$ResolvedEvidence/);
-  assert.match(script, /fraia-calculix-windows-v14/);
+  assert.match(script, /fraia-calculix-windows-v15/);
   assert.doesNotMatch(script, /calculix_2\.23_4win|ccx_static\.exe/);
 });
 

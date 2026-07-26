@@ -339,6 +339,12 @@ try {
     if ($LASTEXITCODE -ne 0) {
       throw "strings failed while inspecting the gfortran prefix-map probe."
     }
+    foreach ($ProbeSourceString in @(
+      $PrefixMapProbeStrings |
+        Where-Object { $_ -match "prefix-map-probe[.]f90" }
+    )) {
+      Write-Host "Pinned gfortran probe source string: ${ProbeSourceString}"
+    }
     if ($PrefixMapProbeStrings |
       Select-String -SimpleMatch -Pattern @($BuildRoot, $BuildRootUnix) -Quiet) {
       throw "The pinned gfortran retained the native build path despite canonical prefix mapping."
@@ -801,7 +807,7 @@ try {
   $Recipe = @(
     "# Fraia CalculiX ${CalculixVersion} win32-x64 build recipe",
     "",
-    "Build revision: ``fraia-calculix-windows-v14``",
+    "Build revision: ``fraia-calculix-windows-v15``",
     "",
     "- Native host: ``$([Environment]::OSVersion.VersionString)``",
     "- Minimum Windows contract: ``Windows ${MinimumWindowsMajor}.${MinimumWindowsMinor}``",
