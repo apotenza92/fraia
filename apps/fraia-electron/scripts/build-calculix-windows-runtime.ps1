@@ -400,6 +400,19 @@ try {
 
     $CalculixSource = Join-Path $BuildRoot "CalculiX\ccx_2.23\src"
     $CalculixSourceUnix = $CalculixSource -replace "\\", "/"
+    $GlobalWindowsFormatBlock = "#ifdef __WIN32`n_set_output_format(_TWO_DIGIT_EXPONENT);`n#endif`n"
+    foreach ($SourceName in @("ccx_2.23.c", "ccx_2.23step.c")) {
+      $SourcePath = Join-Path $CalculixSource $SourceName
+      $SourceText = [IO.File]::ReadAllText($SourcePath).Replace("`r`n", "`n")
+      if ([regex]::Matches($SourceText, [regex]::Escape($GlobalWindowsFormatBlock)).Count -ne 1) {
+        throw "The reviewed MinGW output-format correction no longer applies exactly once to ${SourceName}."
+      }
+      [IO.File]::WriteAllText(
+        $SourcePath,
+        $SourceText.Replace($GlobalWindowsFormatBlock, ""),
+        $Utf8NoBom
+      )
+    }
     $ReadNewMesh = Join-Path $CalculixSource "readnewmesh.c"
     $ReadNewMeshSource = [IO.File]::ReadAllText($ReadNewMesh)
     if (-not $ReadNewMeshSource.Contains("return NULL;")) {
@@ -686,7 +699,7 @@ try {
   $Recipe = @(
     "# Fraia CalculiX ${CalculixVersion} win32-x64 build recipe",
     "",
-    "Build revision: ``fraia-calculix-windows-v8``",
+    "Build revision: ``fraia-calculix-windows-v9``",
     "",
     "- Native host: ``$([Environment]::OSVersion.VersionString)``",
     "- Minimum Windows contract: ``Windows ${MinimumWindowsMajor}.${MinimumWindowsMinor}``",
