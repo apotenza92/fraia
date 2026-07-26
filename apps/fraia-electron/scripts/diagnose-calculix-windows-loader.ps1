@@ -142,6 +142,191 @@ function Set-PeSectionShortName {
   [IO.File]::WriteAllBytes($OutputPath, $Bytes)
 }
 
+function Get-Pe64Layout {
+  param(
+    [Parameter(Mandatory = $true)]
+    [byte[]]$Bytes
+  )
+
+  if ($Bytes.Length -lt 64 -or [BitConverter]::ToUInt16($Bytes, 0) -ne 0x5a4d) {
+    throw "The PE diagnostic input has no valid DOS header."
+  }
+  $PeOffset = [BitConverter]::ToUInt32($Bytes, 0x3c)
+  if ($PeOffset + 24 -gt $Bytes.Length -or
+      [BitConverter]::ToUInt32($Bytes, [int]$PeOffset) -ne 0x00004550) {
+    throw "The PE diagnostic input has no valid PE signature."
+  }
+  if ([BitConverter]::ToUInt16($Bytes, [int]$PeOffset + 4) -ne 0x8664) {
+    throw "The PE diagnostic input is not an x64 image."
+  }
+  $SectionCount = [BitConverter]::ToUInt16($Bytes, [int]$PeOffset + 6)
+  $OptionalHeaderSize = [BitConverter]::ToUInt16($Bytes, [int]$PeOffset + 20)
+  $OptionalHeaderOffset = [int]$PeOffset + 24
+  if ($OptionalHeaderSize -lt 240 -or
+      $OptionalHeaderOffset + $OptionalHeaderSize -gt $Bytes.Length -or
+      [BitConverter]::ToUInt16($Bytes, $OptionalHeaderOffset) -ne 0x020b) {
+    throw "The PE diagnostic input has no complete PE32+ optional header."
+  }
+  $DataDirectoryCount = [BitConverter]::ToUInt32($Bytes, $OptionalHeaderOffset + 108)
+  if ($DataDirectoryCount -lt 16) {
+    throw "The PE diagnostic input has fewer than sixteen data directories."
+  }
+  $SectionTableOffset = $OptionalHeaderOffset + $OptionalHeaderSize
+  if ($SectionTableOffset + ($SectionCount * 40) -gt $Bytes.Length) {
+    throw "The PE diagnostic input has an invalid section table."
+  }
+
+  $Sections = @(
+    for ($SectionIndex = 0; $SectionIndex -lt $SectionCount; $SectionIndex += 1) {
+      $SectionOffset = $SectionTableOffset + ($SectionIndex * 40)
+      [pscustomobject]@{
+        virtualSize = [BitConverter]::ToUInt32($Bytes, $SectionOffset + 8)
+        virtualAddress = [BitConverter]::ToUInt32($Bytes, $SectionOffset + 12)
+        rawSize = [BitConverter]::ToUInt32($Bytes, $SectionOffset + 16)
+        rawOffset = [BitConverter]::ToUInt32($Bytes, $SectionOffset + 20)
+      }
+    }
+  )
+  return [pscustomobject]@{
+    optionalHeaderOffset = $OptionalHeaderOffset
+    dataDirectoryOffset = $OptionalHeaderOffset + 112
+    sections = $Sections
+  }
+}
+
+function Convert-PeRvaToFileOffset {
+  param(
+    [Parameter(Mandatory = $true)]
+    [uint32]$Rva,
+    [Parameter(Mandatory = $true)]
+    [object]$Layout,
+    [Parameter(Mandatory = $true)]
+    [int64]$FileLength
+  )
+
+  foreach ($Section in $Layout.sections) {
+    $SectionStart = [uint64]$Section.virtualAddress
+    $SectionEnd = $SectionStart + [uint64]$Section.rawSize
+    if ([uint64]$Rva -ge $SectionStart -and [uint64]$Rva -lt $SectionEnd) {
+      $FileOffset = [uint64]$Section.rawOffset + ([uint64]$Rva - $SectionStart)
+      if ($FileOffset -ge [uint64]$FileLength) {
+        throw "The PE diagnostic RVA 0x$($Rva.ToString('x')) maps beyond the file."
+      }
+      return [int]$FileOffset
+    }
+  }
+  throw "The PE diagnostic RVA 0x$($Rva.ToString('x')) has no raw-file mapping."
+}
+
+function New-PeHeaderDiagnosticVariant {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$InputPath,
+    [Parameter(Mandatory = $true)]
+    [string]$OutputPath,
+    [switch]$DisableAslr,
+    [int[]]$ClearDataDirectoryIndices = @(),
+    [switch]$UseDirectUcrtImports
+  )
+
+  if (Test-Path -LiteralPath $OutputPath) {
+    throw "The PE diagnostic variant already exists: ${OutputPath}"
+  }
+  [byte[]]$Bytes = [IO.File]::ReadAllBytes($InputPath)
+  $Layout = Get-Pe64Layout -Bytes $Bytes
+
+  if ($DisableAslr) {
+    $DllCharacteristicsOffset = $Layout.optionalHeaderOffset + 70
+    $DllCharacteristics = [BitConverter]::ToUInt16($Bytes, $DllCharacteristicsOffset)
+    if (($DllCharacteristics -band 0x0060) -ne 0x0060) {
+      throw "The PE diagnostic input does not declare both reviewed ASLR flags."
+    }
+    $DllCharacteristics = $DllCharacteristics -band (-bnot 0x0060)
+    [BitConverter]::GetBytes([uint16]$DllCharacteristics).CopyTo(
+      $Bytes,
+      $DllCharacteristicsOffset
+    )
+  }
+
+  foreach ($DirectoryIndex in $ClearDataDirectoryIndices) {
+    if ($DirectoryIndex -lt 0 -or $DirectoryIndex -gt 15) {
+      throw "The PE diagnostic data-directory index is invalid: ${DirectoryIndex}"
+    }
+    $DirectoryOffset = $Layout.dataDirectoryOffset + ($DirectoryIndex * 8)
+    if ([BitConverter]::ToUInt32($Bytes, $DirectoryOffset) -eq 0 -or
+        [BitConverter]::ToUInt32($Bytes, $DirectoryOffset + 4) -eq 0) {
+      throw "The PE diagnostic data directory ${DirectoryIndex} is already empty."
+    }
+    for ($ByteIndex = 0; $ByteIndex -lt 8; $ByteIndex += 1) {
+      $Bytes[$DirectoryOffset + $ByteIndex] = 0
+    }
+  }
+
+  if ($UseDirectUcrtImports) {
+    $ImportDirectoryOffset = $Layout.dataDirectoryOffset + 8
+    $ImportDirectoryRva = [BitConverter]::ToUInt32($Bytes, $ImportDirectoryOffset)
+    $ImportDirectorySize = [BitConverter]::ToUInt32($Bytes, $ImportDirectoryOffset + 4)
+    if ($ImportDirectoryRva -eq 0 -or $ImportDirectorySize -lt 20) {
+      throw "The PE diagnostic input has no complete import directory."
+    }
+    $ImportDescriptorOffset = Convert-PeRvaToFileOffset `
+      -Rva $ImportDirectoryRva `
+      -Layout $Layout `
+      -FileLength $Bytes.Length
+    $ReplacedImportCount = 0
+    $FoundImportTerminator = $false
+    for (
+      $DescriptorIndex = 0;
+      $DescriptorIndex -lt [Math]::Floor($ImportDirectorySize / 20);
+      $DescriptorIndex += 1
+    ) {
+      $DescriptorOffset = $ImportDescriptorOffset + ($DescriptorIndex * 20)
+      $DescriptorFields = @(
+        for ($FieldIndex = 0; $FieldIndex -lt 5; $FieldIndex += 1) {
+          [BitConverter]::ToUInt32($Bytes, $DescriptorOffset + ($FieldIndex * 4))
+        }
+      )
+      if (@($DescriptorFields | Where-Object { $_ -ne 0 }).Count -eq 0) {
+        $FoundImportTerminator = $true
+        break
+      }
+      $NameRva = $DescriptorFields[3]
+      $NameOffset = Convert-PeRvaToFileOffset `
+        -Rva $NameRva `
+        -Layout $Layout `
+        -FileLength $Bytes.Length
+      $NameEnd = $NameOffset
+      while ($NameEnd -lt $Bytes.Length -and $Bytes[$NameEnd] -ne 0) {
+        $NameEnd += 1
+      }
+      if ($NameEnd -eq $Bytes.Length) {
+        throw "The PE diagnostic import name is unterminated."
+      }
+      $ImportName = [Text.Encoding]::ASCII.GetString(
+        $Bytes,
+        $NameOffset,
+        $NameEnd - $NameOffset
+      )
+      if ($ImportName.StartsWith("api-ms-win-crt-", [StringComparison]::OrdinalIgnoreCase)) {
+        $ReplacementBytes = [Text.Encoding]::ASCII.GetBytes("ucrtbase.dll")
+        if ($ReplacementBytes.Length -gt ($NameEnd - $NameOffset)) {
+          throw "The direct UCRT diagnostic replacement does not fit the import name."
+        }
+        for ($ByteIndex = $NameOffset; $ByteIndex -le $NameEnd; $ByteIndex += 1) {
+          $Bytes[$ByteIndex] = 0
+        }
+        $ReplacementBytes.CopyTo($Bytes, $NameOffset)
+        $ReplacedImportCount += 1
+      }
+    }
+    if (-not $FoundImportTerminator -or $ReplacedImportCount -lt 1) {
+      throw "The PE diagnostic import rewrite found no complete API-set import set."
+    }
+  }
+
+  [IO.File]::WriteAllBytes($OutputPath, $Bytes)
+}
+
 if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne "X64") {
   throw "CalculiX win32-x64 loader diagnostics require a native Windows x64 host."
 }
@@ -429,6 +614,109 @@ public static class FraiaNativeLoaderDiagnostics {
     Write-Lines -Path (Join-Path $VariantRoot "result.txt") -Lines @(
       "Variant: ${VariantName}",
       "Transformation: ${Transformation}",
+      "SHA-256: $((Get-FileHash -Algorithm SHA256 -LiteralPath $VariantExecutable).Hash.ToLowerInvariant())",
+      "Bytes: $((Get-Item -LiteralPath $VariantExecutable).Length)",
+      "Signed exit code: $($VariantProcess.ExitCode)",
+      "Unsigned exit code: $(Format-UnsignedExitCode -ExitCode $VariantProcess.ExitCode)",
+      "Reported completion: ${ReportedCompletion}",
+      "Result files: $($ExpectedOutputs | ConvertTo-Json -Compress)"
+    )
+  }
+
+  $NormalizedBaseline = Join-Path `
+    $Staging `
+    "strip-all-short-eh-frame\ccx-strip-all-short-eh-frame.exe"
+  if (-not (Test-Path -LiteralPath $NormalizedBaseline -PathType Leaf)) {
+    throw "The normalized PE diagnostic baseline is unavailable."
+  }
+  foreach ($Variant in @(
+    @{
+      name = "header-no-aslr"
+      disableAslr = $true
+      clearDirectories = @()
+      directUcrt = $false
+      transformation = "clear PE32+ DYNAMIC_BASE and HIGH_ENTROPY_VA flags"
+    },
+    @{
+      name = "header-no-tls"
+      disableAslr = $false
+      clearDirectories = @(9)
+      directUcrt = $false
+      transformation = "clear PE32+ TLS data-directory entry"
+    },
+    @{
+      name = "header-no-exception"
+      disableAslr = $false
+      clearDirectories = @(3)
+      directUcrt = $false
+      transformation = "clear PE32+ exception data-directory entry"
+    },
+    @{
+      name = "header-direct-ucrt"
+      disableAslr = $false
+      clearDirectories = @()
+      directUcrt = $true
+      transformation = "rewrite API-set CRT import names to ucrtbase.dll in place"
+    },
+    @{
+      name = "header-minimal-loader-contract"
+      disableAslr = $true
+      clearDirectories = @(3, 9)
+      directUcrt = $true
+      transformation = "clear ASLR, exception, and TLS metadata; rewrite CRT imports to ucrtbase.dll"
+    }
+  )) {
+    $VariantName = $Variant.name
+    $VariantRoot = Join-Path $Staging $VariantName
+    $VariantCase = Join-Path $VariantRoot "case"
+    [IO.Directory]::CreateDirectory($VariantCase) | Out-Null
+    Copy-Item -LiteralPath (Join-Path $CaseDirectory "spring1.inp") -Destination $VariantCase
+    $VariantExecutable = Join-Path $VariantRoot "ccx-${VariantName}.exe"
+    New-PeHeaderDiagnosticVariant `
+      -InputPath $NormalizedBaseline `
+      -OutputPath $VariantExecutable `
+      -DisableAslr:$($Variant.disableAslr) `
+      -ClearDataDirectoryIndices $Variant.clearDirectories `
+      -UseDirectUcrtImports:$($Variant.directUcrt)
+    [string[]]$VariantHeaders = @(
+      & $LlvmReadObj --file-headers --sections --coff-imports $VariantExecutable 2>&1
+    )
+    Write-Lines -Path (Join-Path $VariantRoot "llvm-readobj.txt") -Lines $VariantHeaders
+    if ($LASTEXITCODE -ne 0) {
+      throw "llvm-readobj failed while inspecting the ${VariantName} diagnostic variant."
+    }
+    $VariantStdout = Join-Path $VariantRoot "spring1.stdout"
+    $VariantStderr = Join-Path $VariantRoot "spring1.stderr"
+    $VariantProcess = Start-Process `
+      -FilePath $VariantExecutable `
+      -ArgumentList "spring1" `
+      -WorkingDirectory $VariantCase `
+      -Wait `
+      -PassThru `
+      -NoNewWindow `
+      -RedirectStandardOutput $VariantStdout `
+      -RedirectStandardError $VariantStderr
+    $ExpectedOutputs = @(
+      foreach ($Extension in @("dat", "frd", "sta")) {
+        $ResultPath = Join-Path $VariantCase "spring1.${Extension}"
+        $ResultExists = Test-Path -LiteralPath $ResultPath -PathType Leaf
+        [pscustomobject]@{
+          extension = $Extension
+          present = $ResultExists
+          bytes = if ($ResultExists) {
+            (Get-Item -LiteralPath $ResultPath).Length
+          } else {
+            0
+          }
+        }
+      }
+    )
+    $ReportedCompletion = (Get-Item -LiteralPath $VariantStdout).Length -gt 0 -and (
+      Select-String -LiteralPath $VariantStdout -SimpleMatch "Job finished" -Quiet
+    )
+    Write-Lines -Path (Join-Path $VariantRoot "result.txt") -Lines @(
+      "Variant: ${VariantName}",
+      "Transformation: $($Variant.transformation)",
       "SHA-256: $((Get-FileHash -Algorithm SHA256 -LiteralPath $VariantExecutable).Hash.ToLowerInvariant())",
       "Bytes: $((Get-Item -LiteralPath $VariantExecutable).Length)",
       "Signed exit code: $($VariantProcess.ExitCode)",

@@ -203,6 +203,12 @@ test('Windows loader diagnostics reuse and authenticate one exact retained candi
   assert.match(loaderDiagnostic, /--strip-all/);
   assert.match(loaderDiagnostic, /Set-PeSectionShortName/);
   assert.match(loaderDiagnostic, /clear unused COFF string-table pointer/);
+  assert.match(loaderDiagnostic, /New-PeHeaderDiagnosticVariant/);
+  assert.match(loaderDiagnostic, /header-no-aslr/);
+  assert.match(loaderDiagnostic, /header-no-tls/);
+  assert.match(loaderDiagnostic, /header-no-exception/);
+  assert.match(loaderDiagnostic, /header-direct-ucrt/);
+  assert.match(loaderDiagnostic, /header-minimal-loader-contract/);
   assert.match(loaderDiagnostic, /Reported completion/);
   assert.match(loaderDiagnostic, /Start-Process/);
   assert.match(loaderDiagnostic, /Unsigned exit code/);
