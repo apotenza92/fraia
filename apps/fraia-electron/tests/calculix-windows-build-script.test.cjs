@@ -202,7 +202,7 @@ test('Windows loader diagnostics reuse and authenticate one exact retained candi
   assert.match(loaderDiagnostic, /--strip-debug/);
   assert.match(loaderDiagnostic, /--strip-all/);
   assert.match(loaderDiagnostic, /llvm-objcopy\.exe/);
-  assert.match(loaderDiagnostic, /--remove-section=\.eh_frame/);
+  assert.match(loaderDiagnostic, /--rename-section=\.eh_frame=\.ehfrm/);
   assert.match(loaderDiagnostic, /Reported completion/);
   assert.match(loaderDiagnostic, /Start-Process/);
   assert.match(loaderDiagnostic, /Unsigned exit code/);

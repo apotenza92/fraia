@@ -277,18 +277,18 @@ public static class FraiaNativeLoaderDiagnostics {
   foreach ($Variant in @(
     @("strip-debug", "--strip-debug", $false),
     @("strip-all", "--strip-all", $false),
-    @("strip-all-no-eh-frame", "--strip-all", $true)
+    @("strip-all-short-eh-frame", "--strip-all", $true)
   )) {
     $VariantName = $Variant[0]
     $StripArgument = $Variant[1]
-    $RemoveEhFrame = $Variant[2]
+    $RenameEhFrame = $Variant[2]
     $VariantRoot = Join-Path $Staging $VariantName
     $VariantCase = Join-Path $VariantRoot "case"
     [IO.Directory]::CreateDirectory($VariantCase) | Out-Null
     Copy-Item -LiteralPath (Join-Path $CaseDirectory "spring1.inp") -Destination $VariantCase
     $VariantExecutable = Join-Path $VariantRoot "ccx-${VariantName}.exe"
-    $StripDestination = if ($RemoveEhFrame) {
-      Join-Path $VariantRoot "ccx-before-eh-frame-removal.exe"
+    $StripDestination = if ($RenameEhFrame) {
+      Join-Path $VariantRoot "ccx-before-eh-frame-rename.exe"
     } else {
       $VariantExecutable
     }
@@ -299,16 +299,16 @@ public static class FraiaNativeLoaderDiagnostics {
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $StripDestination -PathType Leaf)) {
       throw "llvm-strip failed while creating the ${VariantName} diagnostic variant."
     }
-    if ($RemoveEhFrame) {
+    if ($RenameEhFrame) {
       [string[]]$ObjcopyOutput = @(
         & $LlvmObjcopy `
-          --remove-section=.eh_frame `
+          --rename-section=.eh_frame=.ehfrm `
           $StripDestination `
           $VariantExecutable 2>&1
       )
       Write-Lines -Path (Join-Path $VariantRoot "llvm-objcopy.txt") -Lines $ObjcopyOutput
       if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $VariantExecutable -PathType Leaf)) {
-        throw "llvm-objcopy failed while removing .eh_frame from the ${VariantName} variant."
+        throw "llvm-objcopy failed while renaming .eh_frame in the ${VariantName} variant."
       }
       Remove-Item -LiteralPath $StripDestination -Force
     }
@@ -349,8 +349,8 @@ public static class FraiaNativeLoaderDiagnostics {
       Select-String -LiteralPath $VariantStdout -SimpleMatch "Job finished" -Quiet
     )
     $Transformation = "llvm-strip ${StripArgument}"
-    if ($RemoveEhFrame) {
-      $Transformation += "; llvm-objcopy --remove-section=.eh_frame"
+    if ($RenameEhFrame) {
+      $Transformation += "; llvm-objcopy --rename-section=.eh_frame=.ehfrm"
     }
     Write-Lines -Path (Join-Path $VariantRoot "result.txt") -Lines @(
       "Variant: ${VariantName}",
