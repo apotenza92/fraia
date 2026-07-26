@@ -91,7 +91,7 @@ test('Windows CalculiX vendor build is native, source-built, and reproducible', 
   assert.match(script, /ccx-build-two\.exe/);
   assert.match(script, /No runtime candidate was emitted/);
   assert.match(script, /Move-Item -LiteralPath \$ReproducibilityFailure -Destination \$ResolvedEvidence/);
-  assert.match(script, /fraia-calculix-windows-v17/);
+  assert.match(script, /fraia-calculix-windows-v18/);
   assert.doesNotMatch(script, /calculix_2\.23_4win|ccx_static\.exe/);
 });
 
@@ -100,6 +100,9 @@ test('Windows CalculiX vendor build records command output with a typed string c
   assert.match(script, /AppendAllLines\(\$LogPath, \$Lines, \$Utf8NoBom\)/);
   assert.match(script, /Console\]::Error\.WriteLine\(\(\$Tail -join \[Environment\]::NewLine\)\)/);
   assert.doesNotMatch(script, /\$Tail \| Write-Error/);
+  assert.match(script, /\[string\[\]\]\$PeHeader = @\(/);
+  assert.match(script, /\[string\[\]\]\$Output = @\(/);
+  assert.match(script, /Where-Object \{ \$_\.Length -gt 0 \}/);
 });
 
 test('Windows CalculiX vendor build enforces architecture, Windows 10, and dependency closure', () => {

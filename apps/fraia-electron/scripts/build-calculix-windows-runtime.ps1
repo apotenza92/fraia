@@ -131,7 +131,11 @@ function Get-PeImports {
     [string]$Objdump
   )
 
-  $Output = @(& $Objdump -p $Executable 2>&1)
+  [string[]]$Output = @(
+    & $Objdump -p $Executable 2>&1 |
+      ForEach-Object { "$_" } |
+      Where-Object { $_.Length -gt 0 }
+  )
   if ($LASTEXITCODE -ne 0) {
     throw "objdump failed while inspecting ${Executable}."
   }
@@ -665,7 +669,11 @@ try {
     if ($Machine -ne 0x8664) {
       throw "The source-built CalculiX executable is not PE x64."
     }
-    $PeHeader = @(& $Tool["objdump"] -p $Candidate 2>&1)
+    [string[]]$PeHeader = @(
+      & $Tool["objdump"] -p $Candidate 2>&1 |
+        ForEach-Object { "$_" } |
+        Where-Object { $_.Length -gt 0 }
+    )
     if ($LASTEXITCODE -ne 0) {
       throw "objdump failed while inspecting ${Candidate}."
     }
@@ -835,7 +843,7 @@ try {
   $Recipe = @(
     "# Fraia CalculiX ${CalculixVersion} win32-x64 build recipe",
     "",
-    "Build revision: ``fraia-calculix-windows-v17``",
+    "Build revision: ``fraia-calculix-windows-v18``",
     "",
     "- Native host: ``$([Environment]::OSVersion.VersionString)``",
     "- Minimum Windows contract: ``Windows ${MinimumWindowsMajor}.${MinimumWindowsMinor}``",
