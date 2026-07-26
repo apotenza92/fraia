@@ -22,6 +22,7 @@ test('Windows CalculiX vendor build pins every source and toolchain input', () =
     'd71cc644cd5a37c337f2719f3e0c79d89e8d8d5fb9e2952a62d3fa23623dc137',
     '231f7edcc7352d7734a96eef0b8030f77982678c516876fcb81e25b32d68564c',
     '8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903',
+    '63263614cdd29f2f93cba85e992f041b31f9fc7b4033692f31269489a8a1b177',
   ]) {
     assert.match(script, new RegExp(hash));
   }
@@ -90,7 +91,7 @@ test('Windows CalculiX vendor build is native, source-built, and reproducible', 
   assert.match(script, /ccx-build-two\.exe/);
   assert.match(script, /No runtime candidate was emitted/);
   assert.match(script, /Move-Item -LiteralPath \$ReproducibilityFailure -Destination \$ResolvedEvidence/);
-  assert.match(script, /fraia-calculix-windows-v16/);
+  assert.match(script, /fraia-calculix-windows-v17/);
   assert.doesNotMatch(script, /calculix_2\.23_4win|ccx_static\.exe/);
 });
 
@@ -112,7 +113,8 @@ test('Windows CalculiX vendor build enforces architecture, Windows 10, and depen
   assert.match(script, /-static-libgcc/);
   assert.match(script, /-static-libgfortran/);
   assert.match(script, /winpthreads/);
-  assert.match(script, /Absolute build-path scan: pass/);
+  assert.match(script, /Physical machine-path scan: pass/);
+  assert.match(script, /Compiler source paths use the reviewed controlled root/);
 });
 
 test('Windows CalculiX vendor build bundles notices and independent review evidence', () => {
@@ -123,7 +125,7 @@ test('Windows CalculiX vendor build bundles notices and independent review evide
     'ARPACK-BSD-3-Clause.txt',
     'OpenBLAS-BSD-3-Clause.txt',
     'GCC-Runtime-Library-Exception-3.1.txt',
-    'winpthreads-MIT.txt',
+    'winpthreads-MIT-AND-BSD-3-Clause.txt',
     'BUILD_RECIPE.md',
     'RUNTIME_SHA256SUMS',
     'EVIDENCE_SHA256SUMS',
@@ -133,6 +135,7 @@ test('Windows CalculiX vendor build bundles notices and independent review evide
   ]) {
     assert.match(script, new RegExp(expected.replaceAll('.', '\\.')));
   }
+  assert.match(script, /Statically linked winpthreads: MIT AND BSD-3-Clause/);
 });
 
 test('Windows CalculiX vendor build runs the pinned official solver fixture', () => {

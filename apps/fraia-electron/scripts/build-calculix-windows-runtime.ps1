@@ -26,6 +26,7 @@ $OpenBlasUrl = "https://github.com/OpenMathLib/OpenBLAS/releases/download/v0.3.3
 $OpenBlasSha256 = "cd7e129868320cc2d033afa920e31202dfe0b8066a5b66661900ccc0f197dfed"
 $Gpl2Sha256 = "231f7edcc7352d7734a96eef0b8030f77982678c516876fcb81e25b32d68564c"
 $Gpl3Sha256 = "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+$WinpthreadsCopyingSha256 = "63263614cdd29f2f93cba85e992f041b31f9fc7b4033692f31269489a8a1b177"
 
 $WinLibsTag = "16.1.0posix-14.0.0-ucrt-r3"
 $WinLibsCommit = "6e253eff2be383861ae0bf44eccbf6bfef931bf8"
@@ -759,10 +760,13 @@ try {
     "-xzf", (Join-Path $Downloads "mingw-w64-v14.0.0.tar.gz"), "-C", $LicenseExtractRoot,
     "mingw-w64-14.0.0/mingw-w64-libraries/winpthreads/COPYING"
   ) -LogPath (Join-Path $LicenseExtractRoot "extract.log")
+  Assert-Sha256 `
+    -Path (Join-Path $LicenseExtractRoot "mingw-w64-14.0.0\mingw-w64-libraries\winpthreads\COPYING") `
+    -Expected $WinpthreadsCopyingSha256
   Copy-Item -LiteralPath (Join-Path $LicenseExtractRoot "gcc-16.1.0\COPYING.RUNTIME") `
     -Destination (Join-Path $RuntimeStaging "licenses\GCC-Runtime-Library-Exception-3.1.txt")
   Copy-Item -LiteralPath (Join-Path $LicenseExtractRoot "mingw-w64-14.0.0\mingw-w64-libraries\winpthreads\COPYING") `
-    -Destination (Join-Path $RuntimeStaging "licenses\winpthreads-MIT.txt")
+    -Destination (Join-Path $RuntimeStaging "licenses\winpthreads-MIT-AND-BSD-3-Clause.txt")
 
   [IO.File]::WriteAllLines(
     (Join-Path $RuntimeStaging "licenses\CALCULIX-LICENSE-NOTICE.txt"),
@@ -815,7 +819,8 @@ try {
       "OpenBLAS: BSD-3-Clause. See licenses/OpenBLAS-BSD-3-Clause.txt.",
       "Statically linked GCC runtime libraries: GPL-3.0-or-later WITH GCC-exception-3.1.",
       "See licenses/GPL-3.0.txt and licenses/GCC-Runtime-Library-Exception-3.1.txt.",
-      "Statically linked winpthreads: MIT. See licenses/winpthreads-MIT.txt.",
+      "Statically linked winpthreads: MIT AND BSD-3-Clause.",
+      "See licenses/winpthreads-MIT-AND-BSD-3-Clause.txt.",
       "",
       "Corresponding-source publication is recorded separately in runtime-manifest.json."
     ),
@@ -830,7 +835,7 @@ try {
   $Recipe = @(
     "# Fraia CalculiX ${CalculixVersion} win32-x64 build recipe",
     "",
-    "Build revision: ``fraia-calculix-windows-v16``",
+    "Build revision: ``fraia-calculix-windows-v17``",
     "",
     "- Native host: ``$([Environment]::OSVersion.VersionString)``",
     "- Minimum Windows contract: ``Windows ${MinimumWindowsMajor}.${MinimumWindowsMinor}``",
@@ -848,6 +853,7 @@ try {
     "- MinGW-w64 source SHA-256: ``${MingwSourceSha256}``",
     "- GPL-2.0 text from GCC source ``COPYING`` SHA-256: ``${Gpl2Sha256}``",
     "- GPL-3.0 text from GCC source ``COPYING3`` SHA-256: ``${Gpl3Sha256}``",
+    "- winpthreads ``COPYING`` SHA-256: ``${WinpthreadsCopyingSha256}``",
     "- Build script SHA-256: ``${ScriptSha256}``",
     "- SOURCE_DATE_EPOCH: ``${SourceDateEpoch}``",
     "- Controlled compiler source root: ``${ControlledBuildDrive}\`` (temporary ``subst`` mapping)",
@@ -943,7 +949,8 @@ try {
       "Minimum Windows: ${MinimumWindowsMajor}.${MinimumWindowsMinor}",
       "Bundled native libraries: none; compiler, OpenMP, winpthreads, SPOOLES, ARPACK-NG, and OpenBLAS are statically linked.",
       "All observed dynamic imports are in the reviewed Windows system allowlist.",
-      "Absolute build-path scan: pass"
+      "Physical machine-path scan: pass",
+      "Compiler source paths use the reviewed controlled root ${ControlledBuildDrive}\."
     ),
     $Utf8NoBom
   )
@@ -956,6 +963,7 @@ try {
       "WinLibs tag: ${WinLibsTag}",
       "WinLibs source commit: ${WinLibsCommit}",
       "Minimum Windows: ${MinimumWindowsMajor}.${MinimumWindowsMinor}",
+      "Controlled compiler source root: ${ControlledBuildDrive}\ (temporary subst mapping)",
       "SOURCE_DATE_EPOCH: ${SourceDateEpoch}",
       "gcc: ${GccVersionOutput}",
       "gfortran: ${GfortranVersionOutput}"

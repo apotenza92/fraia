@@ -42,8 +42,8 @@ const LICENSE_IDENTIFIERS = Object.freeze({
     'GPL-2.0-only',
     'LicenseRef-SPOOLES-Public-Domain',
     'BSD-3-Clause',
+    'MIT',
     'GPL-3.0-or-later WITH GCC-exception-3.1',
-    'ZPL-2.1',
   ],
 });
 
@@ -306,6 +306,7 @@ if (require.main === module) main();
 
 module.exports = {
   dependencyDeclarations,
+  LICENSE_IDENTIFIERS,
   observedDependencyNames,
   promoteRuntime,
   verifyCandidate,

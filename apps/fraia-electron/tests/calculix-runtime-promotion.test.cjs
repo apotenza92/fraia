@@ -4,9 +4,20 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const {
+  LICENSE_IDENTIFIERS,
   observedDependencyNames,
   verifyChecksumIndex,
 } = require('../scripts/promote-calculix-runtime.cjs');
+
+test('promotion declares the reviewed Windows licence set', () => {
+  assert.deepEqual(LICENSE_IDENTIFIERS.win32, [
+    'GPL-2.0-only',
+    'LicenseRef-SPOOLES-Public-Domain',
+    'BSD-3-Clause',
+    'MIT',
+    'GPL-3.0-or-later WITH GCC-exception-3.1',
+  ]);
+});
 
 test('promotion dependency evidence normalizes macOS, Linux, and Windows closure', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-promotion-deps-'));
