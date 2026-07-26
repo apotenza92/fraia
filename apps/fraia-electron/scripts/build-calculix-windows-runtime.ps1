@@ -103,7 +103,7 @@ function Invoke-LoggedCommand {
   [IO.File]::AppendAllLines($LogPath, $Lines, $Utf8NoBom)
   if ($LASTEXITCODE -ne 0) {
     $Tail = Get-Content -LiteralPath $LogPath -Tail 120
-    $Tail | Write-Error
+    [Console]::Error.WriteLine(($Tail -join [Environment]::NewLine))
     throw "Reviewed command failed with exit code ${LASTEXITCODE}: ${Executable}"
   }
 }
