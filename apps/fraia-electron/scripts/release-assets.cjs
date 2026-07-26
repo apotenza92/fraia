@@ -3,20 +3,21 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 function requireChannel(channel) {
-  if (!['stable', 'beta'].includes(channel)) throw new Error(`Invalid release channel: ${channel}`);
+  if (channel !== 'stable') throw new Error(`Fraia publishes stable releases only; received channel: ${channel}`);
 }
 
 function expectedReleaseAssetNames(channel) {
   requireChannel(channel);
-  const prefix = channel === 'beta' ? 'Fraia-Beta' : 'Fraia';
+  const prefix = 'Fraia';
   const names = ['SHA256SUMS'];
   for (const arch of ['arm64', 'x64']) {
     const mac = `${prefix}-macOS-${arch}`;
     names.push(
       `${mac}.dmg`, `${mac}.dmg.blockmap`, `${mac}.dmg.sha256`,
       `${mac}.zip`, `${mac}.zip.blockmap`, `${mac}.zip.sha256`,
-      `notarization-${channel}-${arch}.json`,
-      `update-${channel}-darwin-${arch}.yml`,
+      `notarization-stable-${arch}.json`,
+      `update-stable-darwin-${arch}.yml`,
+      `update-beta-darwin-${arch}.yml`,
     );
     const linux = `${prefix}-Linux-${arch}`;
     names.push(`${linux}.AppImage`, `${linux}.AppImage.blockmap`, `${linux}.deb`, `${linux}.rpm`);
@@ -75,7 +76,7 @@ function main(argv = process.argv.slice(2)) {
   const outputIndex = argv.indexOf('--output');
   const inputIndices = argv.flatMap((value, index) => value === '--input' ? [index] : []);
   if (channelIndex < 0 || outputIndex < 0 || inputIndices.length === 0) {
-    throw new Error('Usage: release-assets.cjs --channel stable|beta --output DIR --input DIR [--input DIR]');
+    throw new Error('Usage: release-assets.cjs --channel stable --output DIR --input DIR [--input DIR]');
   }
   const names = assembleReleaseAssets(
     argv[channelIndex + 1],

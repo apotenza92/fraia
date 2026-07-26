@@ -20,7 +20,7 @@ function jobSource(jobId) {
   return match[1];
 }
 
-test('release is tag-only, native on five solver-backed targets, and uses protected publication boundaries', () => {
+test('one stable release is tag-only, native on five solver-backed targets, and uses protected publication boundaries', () => {
   assert.match(workflow, /tags:\n\s+- 'v\*'/);
   assert.doesNotMatch(workflow, /workflow_dispatch/);
   for (const runner of ['macos-15', 'macos-15-intel', 'windows-2025', 'ubuntu-24.04', 'ubuntu-24.04-arm']) {
@@ -28,9 +28,10 @@ test('release is tag-only, native on five solver-backed targets, and uses protec
   }
   assert.doesNotMatch(workflow, /windows-11-arm|win32-arm64|Windows-arm64/);
   for (const environment of [
-    'release-signing', 'beta-release', 'stable-release',
+    'release-signing', 'stable-release', 'stable-updater-verification',
   ]) assert.match(workflow, new RegExp(environment));
-  assert.match(workflow, /name: \$\{\{ needs\.prepare\.outputs\.channel \}\}-updater-verification/);
+  assert.doesNotMatch(workflow, /beta-release|beta-updater-verification|Fraia-Beta|-beta\./);
+  assert.match(workflow, /Fraia release tags must be stable vX\.Y\.Z tags/);
   assert.match(workflow, /actions\/attest@[a-f0-9]{40}/);
   assert.match(workflow, /cancel-in-progress: false/);
   assert.match(workflow, /Require maintained release icons/);
@@ -83,7 +84,7 @@ test('private-source and package prerequisites fail before any secret-bearing jo
   assert.match(packageMacos, /secrets\.APPLE_SIGNING_CERTIFICATE_P12_BASE64/);
 });
 
-test('publication and bootstrap contracts are exact and fail closed', () => {
+test('one stable publication atomically advances byte-identical stable and beta feeds', () => {
   assert.match(workflow, /MACOS_UPDATER_BOOTSTRAP_TAG !== process\.env\.GITHUB_REF_NAME/);
   assert.match(workflow, /APPLE_PRIOR_SIGNING_CERTIFICATE_SHA256/);
   assert.match(updaterTest, /priorExpectations/);
@@ -100,13 +101,22 @@ test('publication and bootstrap contracts are exact and fail closed', () => {
   const verifyPublic = workflow.indexOf('- name: Verify public release before sealing updater feed');
   const sealFeed = workflow.indexOf('- name: Prepare sealed updater-feed publication bundle');
   const uploadFeed = workflow.indexOf('- name: Upload sealed updater-feed publication bundle');
+  const publishFeeds = workflow.indexOf('- name: Publish stable bytes to both updater channels atomically');
   assert.ok(
-    publishRelease >= 0 && publishRelease < verifyPublic && verifyPublic < sealFeed && sealFeed < uploadFeed,
-    'the release must be public and byte-verified before its updater feed is sealed for manual publication',
+    publishRelease >= 0
+      && publishRelease < verifyPublic
+      && verifyPublic < sealFeed
+      && sealFeed < uploadFeed
+      && uploadFeed < publishFeeds,
+    'the stable release must be public and byte-verified before both updater feeds are published',
   );
-  assert.match(workflow, /Publication: manual, after the explicit release gate/);
+  assert.match(workflow, /Publication: tag workflow, after explicit stable-release approval/);
+  assert.match(workflow, /for FEED_CHANNEL in stable beta/);
+  assert.match(workflow, /cmp \\\n\s+"publish\/feed\/stable\/darwin\/\$ARCH\/latest-mac\.yml"/);
+  assert.match(workflow, /git add -- \.nojekyll PUBLICATION\.txt stable beta/);
+  assert.match(workflow, /git push origin HEAD:updates/);
+  assert.doesNotMatch(workflow, /git add -A/);
   assert.match(workflow, /fraia-update-feed-publication-\$\{\{ github\.ref_name \}\}/);
-  assert.doesNotMatch(workflow, /git (?:commit|push)/);
 });
 
 test('manual CI keeps deterministic checks default and native package preflight explicitly opt-in', () => {
@@ -140,7 +150,7 @@ test('packaged updater code is shipped and Windows and Linux remain update-disab
   assert.match(builder, /'update-manager\.cjs'/);
   const updater = fs.readFileSync(path.join(__dirname, '..', 'update-manager.cjs'), 'utf8');
   assert.match(updater, /platform !== 'darwin'/);
-  assert.match(updater, /SIX_HOURS_MS/);
+  assert.match(updater, /allowPrerelease = false/);
   assert.match(updater, /loopback-only/);
 });
 

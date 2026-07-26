@@ -4,7 +4,7 @@ const test = require('node:test');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { SIX_HOURS_MS, UPDATE_FREQUENCY_MS, configureAutoUpdates, safeWriteEvent, validateTestFeedUrl } = require('../update-manager.cjs');
+const { UPDATE_FREQUENCY_MS, configureAutoUpdates, safeWriteEvent, validateTestFeedUrl } = require('../update-manager.cjs');
 
 function updaterDouble() {
   const updater = new EventEmitter();
@@ -19,7 +19,7 @@ test('updater tests accept only loopback feed overrides', () => {
   assert.throws(() => validateTestFeedUrl('https://example.com/feed'), /loopback-only/);
 });
 
-test('macOS packaged updater is automatic, channel-aware, and configurable', async () => {
+test('macOS stable updater is automatic and configurable', async () => {
   const updater = updaterDouble();
   const scheduled = [];
   const timeoutCallbacks = [];
@@ -34,8 +34,8 @@ test('macOS packaged updater is automatic, channel-aware, and configurable', asy
     app: { isPackaged: true, getPath: () => userData, getVersion: () => '0.1.0' },
     autoUpdater: updater,
     packageMetadata: {
-      fraiaReleaseChannel: 'beta',
-      fraiaUpdateFeedUrl: 'https://raw.githubusercontent.com/apotenza92/fraia/updates/beta/darwin/arm64',
+      fraiaReleaseChannel: 'stable',
+      fraiaUpdateFeedUrl: 'https://raw.githubusercontent.com/apotenza92/fraia/updates/stable/darwin/arm64',
     },
     env: {},
     platform: 'darwin',
@@ -44,11 +44,11 @@ test('macOS packaged updater is automatic, channel-aware, and configurable', asy
   assert.equal(result.enabled, true);
   assert.equal(updater.autoDownload, true);
   assert.equal(updater.autoInstallOnAppQuit, true);
-  assert.equal(updater.allowPrerelease, true);
-  assert.equal(result.frequency, 'sixHours');
+  assert.equal(updater.allowPrerelease, false);
+  assert.equal(result.frequency, 'daily');
   assert.deepEqual(scheduled, [['timeout', 30_000]]);
   await timeoutCallbacks[0]();
-  assert.deepEqual(scheduled.at(-1), ['interval', SIX_HOURS_MS]);
+  assert.deepEqual(scheduled.at(-1), ['interval', UPDATE_FREQUENCY_MS.daily]);
   result.setFrequency('daily');
   assert.equal(result.frequency, 'daily');
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(userData, 'update-frequency.json'))), { frequency: 'daily' });

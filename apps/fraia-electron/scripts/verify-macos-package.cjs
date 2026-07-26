@@ -142,7 +142,7 @@ function verifyApp(appPath, contract, expectations) {
   const iconName = readPlist('CFBundleIconFile');
   if (!iconName || /electron/i.test(iconName)) throw new Error(`${appPath} uses Electron's default icon.`);
   const version = readPlist('CFBundleShortVersionString');
-  if (!/^\d+\.\d+\.\d+(?:-beta\.\d+)?$/.test(version)) throw new Error(`${appPath} has an invalid version: ${version}`);
+  if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error(`${appPath} has an invalid stable version: ${version}`);
 
   const executable = path.join(appPath, 'Contents', 'MacOS', contract.productName);
   const sidecar = path.join(appPath, 'Contents', 'Resources', 'sidecar', nativePlatformArch('darwin', contract.arch), sidecarExecutableName('darwin'));

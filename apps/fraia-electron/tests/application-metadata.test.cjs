@@ -15,39 +15,19 @@ test('defaults development metadata to the stable identity', () => {
   });
 });
 
-test('resolves the separate beta identity', () => {
-  assert.deepEqual(resolveApplicationMetadata({
-    fraiaReleaseChannel: 'beta',
-    productName: 'Fraia Beta',
-  }), {
-    channel: 'beta',
-    productName: 'Fraia Beta',
-    userDataDirectoryName: 'Fraia Beta',
-  });
-});
-
-test('stable and beta resolve to separate persistent data directories', () => {
+test('stable releases retain the canonical persistent data directory', () => {
   const stable = resolveApplicationMetadata();
-  const beta = resolveApplicationMetadata({
-    fraiaReleaseChannel: 'beta',
-    productName: 'Fraia Beta',
-  });
   const appDataPath = path.resolve('fixture-app-data');
   assert.equal(
     resolveUserDataDirectory({ appDataPath, metadata: stable }),
     path.join(appDataPath, 'Fraia'),
   );
-  assert.equal(
-    resolveUserDataDirectory({ appDataPath, metadata: beta }),
-    path.join(appDataPath, 'Fraia Beta'),
-  );
-  assert.notEqual(stable.userDataDirectoryName, beta.userDataDirectoryName);
   const configuredPath = path.resolve('fixture-isolated-test-data');
   assert.equal(
     resolveUserDataDirectory({
       appDataPath,
       configuredPath,
-      metadata: beta,
+      metadata: stable,
     }),
     configuredPath,
   );
@@ -56,16 +36,16 @@ test('stable and beta resolve to separate persistent data directories', () => {
 test('rejects an unknown release channel', () => {
   assert.throws(
     () => resolveApplicationMetadata({ fraiaReleaseChannel: 'nightly' }),
-    /release channel must be stable or beta/,
+    /release channel must be stable/,
   );
 });
 
-test('rejects product metadata that disagrees with its channel', () => {
+test('rejects a separate beta application identity', () => {
   assert.throws(
     () => resolveApplicationMetadata({
       fraiaReleaseChannel: 'beta',
-      productName: 'Fraia',
+      productName: 'Fraia Beta',
     }),
-    /beta metadata requires productName Fraia Beta/,
+    /release channel must be stable/,
   );
 });
