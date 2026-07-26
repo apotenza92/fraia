@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { CALCULIX_SOURCE_ASSET_NAME } = require('../calculix-source-contract.cjs');
 
 function requireChannel(channel) {
   if (channel !== 'stable') throw new Error(`Fraia publishes stable releases only; received channel: ${channel}`);
@@ -9,7 +10,7 @@ function requireChannel(channel) {
 function expectedReleaseAssetNames(channel) {
   requireChannel(channel);
   const prefix = 'Fraia';
-  const names = ['SHA256SUMS'];
+  const names = ['SHA256SUMS', CALCULIX_SOURCE_ASSET_NAME];
   for (const arch of ['arm64', 'x64']) {
     const mac = `${prefix}-macOS-${arch}`;
     names.push(

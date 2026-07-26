@@ -41,6 +41,9 @@ test('one stable release is tag-only, native on five solver-backed targets, and 
   assert.match(workflow, /Require a public updater and binary origin/);
   assert.match(workflow, /SOURCE_REPOSITORY_PRIVATE/);
   assert.match(workflow, /Require reviewed native CalculiX runtime manifests/);
+  assert.match(workflow, /Assemble deterministic CalculiX corresponding source/);
+  assert.match(workflow, /verify-calculix-corresponding-source\.cjs/);
+  assert.match(workflow, /Fraia-CalculiX-Corresponding-Source\.tar/);
   assert.match(workflow, /FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'/);
   assert.match(builder, /validateRuntimeDirectory/);
   const nativeVerifier = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'verify-native-package.cjs'), 'utf8');

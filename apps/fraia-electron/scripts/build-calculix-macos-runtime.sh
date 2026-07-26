@@ -297,6 +297,7 @@ install_compiler_dependency mpfr "$MPFR_VERSION" "$mpfr_bottle_sha256" libmpfr.6
 install_compiler_dependency libmpc "$LIBMPC_VERSION" "$libmpc_bottle_sha256" libmpc.3.dylib
 install_compiler_dependency zstd "$ZSTD_VERSION" "$zstd_bottle_sha256" libzstd.1.dylib
 
+gfortran_f951_signature_status='verified'
 for owner in "$gfortran_f951" "$compiler_support_directory"/*.dylib; do
   while IFS= read -r dependency; do
     case "$dependency" in
@@ -315,7 +316,17 @@ for owner in "$gfortran_f951" "$compiler_support_directory"/*.dylib; do
       tail -n +2 |
       sed -E 's/^[[:space:]]*([^[:space:]]+).*/\1/'
   )
-  codesign --verify --strict "$owner"
+  if ! signature_output=$(codesign --verify --strict "$owner" 2>&1); then
+    if [[ "$owner" != "$gfortran_f951" ]] ||
+      ! grep -Fq 'code object is not signed at all' <<<"$signature_output"; then
+      printf '%s\n' "$signature_output" >&2
+      exit 1
+    fi
+    # Homebrew's reviewed Intel bottle leaves this exact, SHA-pinned compiler
+    # helper unsigned. It is an ephemeral build input, never a bundled runtime
+    # file; accepting its reviewed unsigned state preserves its source bytes.
+    gfortran_f951_signature_status='unsigned, exact SHA-256 verified'
+  fi
 done
 export DYLD_LIBRARY_PATH="$compiler_support_directory"
 "$gfortran_f951" --version >/dev/null
@@ -734,6 +745,7 @@ done
   printf 'macOS SDK version: %s\n' "$macos_sdk_version"
   printf 'MACOSX_DEPLOYMENT_TARGET: %s\n' "$MACOSX_DEPLOYMENT_TARGET"
   printf 'clang version: %s\n' "$clang_version"
+  printf 'gfortran f951 signature: %s\n' "$gfortran_f951_signature_status"
 } >"$evidence_staging/toolchain/ENVIRONMENT.txt"
 for tool_name in ar clang codesign install_name_tool ld make otool ranlib xcrun; do
   tool_path=$(command -v "$tool_name")

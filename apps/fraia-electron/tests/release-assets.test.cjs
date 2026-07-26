@@ -7,7 +7,8 @@ const { assembleReleaseAssets, expectedReleaseAssetNames } = require('../scripts
 
 test('one stable release carries audit metadata for both update-feed projections', () => {
   const stable = expectedReleaseAssetNames('stable');
-  assert.equal(stable.length, 29);
+  assert.equal(stable.length, 30);
+  assert.ok(stable.includes('Fraia-CalculiX-Corresponding-Source.tar'));
   assert.ok(stable.includes('Fraia-Windows-x64-Setup.exe'));
   assert.ok(!stable.some((name) => name.includes('Windows-arm64')));
   assert.ok(stable.every((name) => !name.includes('Beta')));
@@ -26,7 +27,7 @@ test('release assembly rejects collisions and unexpected or missing assets', () 
   for (const name of expectedReleaseAssetNames('stable').filter((name) => name !== 'SHA256SUMS')) {
     fs.writeFileSync(path.join(input, name), name);
   }
-  assert.equal(assembleReleaseAssets('stable', [input], output).length, 29);
+  assert.equal(assembleReleaseAssets('stable', [input], output).length, 30);
   assert.match(fs.readFileSync(path.join(output, 'SHA256SUMS'), 'utf8'), /Fraia-macOS-arm64\.dmg/);
   assert.throws(() => assembleReleaseAssets('stable', [input, input], output), /collision/);
   fs.writeFileSync(path.join(input, 'unexpected.txt'), 'no');
