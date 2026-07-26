@@ -19,6 +19,7 @@ test('Linux CalculiX vendor build pins every source input', () => {
     '50efb4d94c3397aff3b0d61a5abd748b4dd31d9d3f2ab7be05b171d36a510f79',
     '231f7edcc7352d7734a96eef0b8030f77982678c516876fcb81e25b32d68564c',
     '8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903',
+    '9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74',
   ]) {
     assert.match(script, new RegExp(digest));
   }
@@ -26,6 +27,8 @@ test('Linux CalculiX vendor build pins every source input', () => {
   assert.match(script, /--retry-all-errors/);
   assert.match(script, /shasum -a 256 -c -/);
   assert.match(script, /gcc-\$\{GCC_VERSION\}\/COPYING3/);
+  assert.match(script, /gcc-\$\{GCC_VERSION\}\/COPYING\.RUNTIME/);
+  assert.doesNotMatch(script, /\/usr\/share\/doc|COPYING\.RUNTIME\.gz/);
   assert.doesNotMatch(script, /www\.gnu\.org\/licenses/);
   assert.match(script, /BUILD_RECIPE\.md/);
   assert.match(script, /UBUNTU_CONTAINER_IMAGE='ubuntu:22\.04@sha256:0e0a0fc6/);

@@ -20,6 +20,7 @@ GCC_SOURCE_URL="https://ftpmirror.gnu.org/gnu/gcc/gcc-${GCC_VERSION}/gcc-${GCC_V
 GCC_SOURCE_SHA256='50efb4d94c3397aff3b0d61a5abd748b4dd31d9d3f2ab7be05b171d36a510f79'
 GPL2_SHA256='231f7edcc7352d7734a96eef0b8030f77982678c516876fcb81e25b32d68564c'
 GPL3_SHA256='8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903'
+GCC_RUNTIME_EXCEPTION_SHA256='9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74'
 UBUNTU_CONTAINER_IMAGE='ubuntu:22.04@sha256:0e0a0fc6d18feda9db1590da249ac93e8d5abfea8f4c3c0c849ce512b5ef8982'
 UBUNTU_SNAPSHOT='20260720T000000Z'
 SOURCE_DATE_EPOCH='1762047462'
@@ -156,6 +157,12 @@ printf '%s  %s\n' "$GPL2_SHA256" "$work_root/GPL-2.0.txt" | shasum -a 256 -c -
 tar -xJOf "$work_root/gcc-${GCC_VERSION}.tar.xz" \
   "gcc-${GCC_VERSION}/COPYING3" >"$work_root/GPL-3.0.txt"
 printf '%s  %s\n' "$GPL3_SHA256" "$work_root/GPL-3.0.txt" | shasum -a 256 -c -
+tar -xJOf "$work_root/gcc-${GCC_VERSION}.tar.xz" \
+  "gcc-${GCC_VERSION}/COPYING.RUNTIME" >"$work_root/GCC-Runtime-Library-Exception-3.1.txt"
+printf '%s  %s\n' \
+  "$GCC_RUNTIME_EXCEPTION_SHA256" \
+  "$work_root/GCC-Runtime-Library-Exception-3.1.txt" |
+  shasum -a 256 -c -
 
 export LC_ALL=C.UTF-8
 export TZ=UTC
@@ -365,15 +372,8 @@ cp "$work_root/build-one/arpack/COPYING" \
   "$runtime_staging/licenses/ARPACK-BSD-3-Clause.txt"
 cp "$work_root/build-one/openblas/LICENSE" \
   "$runtime_staging/licenses/OpenBLAS-BSD-3-Clause.txt"
-gcc_runtime_exception=$(
-  find /usr/share/doc -type f -name 'COPYING.RUNTIME.gz' -print -quit
-)
-if [[ -z "$gcc_runtime_exception" ]]; then
-  printf 'The reviewed GCC package did not provide COPYING.RUNTIME.gz.\n' >&2
-  exit 1
-fi
-gzip -cd "$gcc_runtime_exception" \
-  >"$runtime_staging/licenses/GCC-Runtime-Library-Exception-3.1.txt"
+cp "$work_root/GCC-Runtime-Library-Exception-3.1.txt" \
+  "$runtime_staging/licenses/GCC-Runtime-Library-Exception-3.1.txt"
 {
   printf 'CalculiX %s\n' "$CCX_VERSION"
   printf 'Copyright (C) 1998-2025 Guido Dhondt and contributors.\n\n'
