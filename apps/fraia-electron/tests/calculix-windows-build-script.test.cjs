@@ -28,6 +28,9 @@ test('Windows CalculiX vendor build pins every source and toolchain input', () =
   assert.match(script, /16\.1\.0posix-14\.0\.0-ucrt-r3/);
   assert.match(script, /6e253eff2be383861ae0bf44eccbf6bfef931bf8/);
   assert.match(script, /Assert-Sha256/);
+  assert.match(script, /\$MaximumAttempts = 4/);
+  assert.match(script, /Reviewed download failed after/);
+  assert.doesNotMatch(script, /Fallback|MirrorUrl/);
   assert.match(script, /WinLibs source commit/);
   assert.match(script, /gcc-16\.1\.0\/COPYING3/);
   assert.doesNotMatch(script, /www\.gnu\.org\/licenses/);

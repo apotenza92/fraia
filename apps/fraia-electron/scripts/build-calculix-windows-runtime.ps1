@@ -85,7 +85,19 @@ function Invoke-ReviewedDownload {
     [string]$Sha256
   )
 
-  Invoke-WebRequest -Uri $Url -OutFile $Destination
+  $MaximumAttempts = 4
+  for ($Attempt = 1; $Attempt -le $MaximumAttempts; $Attempt += 1) {
+    try {
+      Write-Host "Downloading reviewed input ${Url} (attempt ${Attempt}/${MaximumAttempts})."
+      Invoke-WebRequest -Uri $Url -OutFile $Destination
+      break
+    } catch {
+      if ($Attempt -eq $MaximumAttempts) {
+        throw "Reviewed download failed after ${MaximumAttempts} attempts: ${Url}. $($_.Exception.Message)"
+      }
+      Start-Sleep -Seconds (5 * $Attempt)
+    }
+  }
   Assert-Sha256 -Path $Destination -Expected $Sha256
 }
 
