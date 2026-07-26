@@ -42,6 +42,7 @@ $MingwSourceSha256 = "d71cc644cd5a37c337f2719f3e0c79d89e8d8d5fb9e2952a62d3fa2362
 $SourceDateEpoch = "1762047462"
 $MinimumWindowsMajor = 10
 $MinimumWindowsMinor = 0
+$ControlledBuildDrive = "R:"
 
 $AllowedSystemImports = @(
   "ADVAPI32.dll",
@@ -262,13 +263,22 @@ try {
   function Build-Once {
     param(
       [Parameter(Mandatory = $true)]
-      [string]$BuildRoot
+      [string]$PhysicalBuildRoot
     )
 
-    [IO.Directory]::CreateDirectory($BuildRoot) | Out-Null
-    foreach ($Name in @("calculix", "spooles", "correction", "arpack", "openblas", "payload", "logs")) {
-      [IO.Directory]::CreateDirectory((Join-Path $BuildRoot $Name)) | Out-Null
+    [IO.Directory]::CreateDirectory($PhysicalBuildRoot) | Out-Null
+    $SubstLog = Join-Path $PhysicalBuildRoot "subst.log"
+    if (Test-Path -LiteralPath "${ControlledBuildDrive}\") {
+      throw "The reviewed deterministic build drive ${ControlledBuildDrive} is already in use."
     }
+    Invoke-LoggedCommand -Executable "subst.exe" -Arguments @(
+      $ControlledBuildDrive, $PhysicalBuildRoot
+    ) -LogPath $SubstLog
+    try {
+      $BuildRoot = "${ControlledBuildDrive}\"
+      foreach ($Name in @("calculix", "spooles", "correction", "arpack", "openblas", "payload", "logs")) {
+        [IO.Directory]::CreateDirectory((Join-Path $BuildRoot $Name)) | Out-Null
+      }
     Invoke-LoggedCommand -Executable "tar.exe" -Arguments @(
       "-xjf", (Join-Path $Downloads "ccx_2.23.src.tar.bz2"), "-C", $BuildRoot
     ) -LogPath (Join-Path $BuildRoot "logs\extract.log")
@@ -346,12 +356,16 @@ try {
       Write-Host "Pinned gfortran probe source string: ${ProbeSourceString}"
     }
     if ($PrefixMapProbeStrings |
-      Select-String -SimpleMatch -Pattern @($BuildRoot, $BuildRootUnix) -Quiet) {
-      throw "The pinned gfortran retained the native build path despite canonical prefix mapping."
+      Select-String -SimpleMatch -Pattern @($PhysicalBuildRoot, ($PhysicalBuildRoot -replace "\\", "/")) -Quiet) {
+      throw "The pinned gfortran retained the physical build path despite the controlled source root."
     }
     if (-not ($PrefixMapProbeStrings |
-      Select-String -SimpleMatch "/usr/src/fraia-runtime/prefix-map-probe.f90" -Quiet)) {
-      throw "The pinned gfortran did not emit the reviewed canonical source path."
+      Select-String -SimpleMatch -Pattern @(
+        "/usr/src/fraia-runtime/prefix-map-probe.f90",
+        "${ControlledBuildDrive}\prefix-map-probe.f90",
+        "${ControlledBuildDrive}/prefix-map-probe.f90"
+      ) -Quiet)) {
+      throw "The pinned gfortran did not emit the reviewed controlled source path."
     }
     $SpoolesRootUnix = (Join-Path $BuildRoot "spooles") -replace "\\", "/"
     $SpoolesProject = Join-Path $BuildRoot "spooles-project"
@@ -576,17 +590,26 @@ try {
     Invoke-LoggedCommand -Executable $Tool["cmake"] -Arguments @(
       "--build", $CalculixBuild, "--parallel", "2"
     ) -LogPath (Join-Path $BuildRoot "logs\calculix-build.log")
-    $Candidate = Join-Path $BuildRoot "payload\ccx.exe"
-    if (-not (Test-Path -LiteralPath $Candidate -PathType Leaf)) {
+    $ControlledCandidate = Join-Path $BuildRoot "payload\ccx.exe"
+    if (-not (Test-Path -LiteralPath $ControlledCandidate -PathType Leaf)) {
       throw "The reviewed CalculiX source build did not produce ccx.exe."
     }
-    return $Candidate
+    return (Join-Path $PhysicalBuildRoot "payload\ccx.exe")
+    } finally {
+      [string[]]$SubstOutput = @(
+        & subst.exe $ControlledBuildDrive "/d" 2>&1 | ForEach-Object { "$_" }
+      )
+      [IO.File]::AppendAllLines($SubstLog, $SubstOutput, $Utf8NoBom)
+      if ($LASTEXITCODE -ne 0) {
+        throw "Failed to remove reviewed deterministic build drive ${ControlledBuildDrive}."
+      }
+    }
   }
 
   $BuildOne = Join-Path $WorkRoot "build-one"
   $BuildTwo = Join-Path $WorkRoot "build-two"
-  $CandidateOne = Build-Once -BuildRoot $BuildOne
-  $CandidateTwo = Build-Once -BuildRoot $BuildTwo
+  $CandidateOne = Build-Once -PhysicalBuildRoot $BuildOne
+  $CandidateTwo = Build-Once -PhysicalBuildRoot $BuildTwo
   $CandidateOneSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $CandidateOne).Hash.ToLowerInvariant()
   $CandidateTwoSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $CandidateTwo).Hash.ToLowerInvariant()
   if ($CandidateOneSha -ne $CandidateTwoSha) {
@@ -807,7 +830,7 @@ try {
   $Recipe = @(
     "# Fraia CalculiX ${CalculixVersion} win32-x64 build recipe",
     "",
-    "Build revision: ``fraia-calculix-windows-v15``",
+    "Build revision: ``fraia-calculix-windows-v16``",
     "",
     "- Native host: ``$([Environment]::OSVersion.VersionString)``",
     "- Minimum Windows contract: ``Windows ${MinimumWindowsMajor}.${MinimumWindowsMinor}``",
@@ -827,6 +850,7 @@ try {
     "- GPL-3.0 text from GCC source ``COPYING3`` SHA-256: ``${Gpl3Sha256}``",
     "- Build script SHA-256: ``${ScriptSha256}``",
     "- SOURCE_DATE_EPOCH: ``${SourceDateEpoch}``",
+    "- Controlled compiler source root: ``${ControlledBuildDrive}\`` (temporary ``subst`` mapping)",
     "",
     "Reproduce on a native Windows x64 host:",
     "",

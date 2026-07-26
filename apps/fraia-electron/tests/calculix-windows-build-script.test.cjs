@@ -43,6 +43,10 @@ test('Windows CalculiX vendor build is native, source-built, and reproducible', 
   assert.match(script, /native Windows x64 host/);
   assert.match(script, /OSArchitecture -ne "X64"/);
   assert.match(script, /Build-Once/);
+  assert.match(script, /\$ControlledBuildDrive = "R:"/);
+  assert.match(script, /subst\.exe/);
+  assert.match(script, /deterministic build drive .* already in use/);
+  assert.match(script, /Failed to remove reviewed deterministic build drive/);
   assert.match(script, /\$BuildOne/);
   assert.match(script, /\$BuildTwo/);
   assert.match(script, /byte-identical/);
@@ -61,8 +65,8 @@ test('Windows CalculiX vendor build is native, source-built, and reproducible', 
   assert.match(script, /\[=\[\$\{NativePrefixMap\}\]=\]/);
   assert.match(script, /prefix-map-probe\.f90/);
   assert.match(script, /Pinned gfortran probe source string/);
-  assert.match(script, /retained the native build path despite canonical prefix mapping/);
-  assert.match(script, /did not emit the reviewed canonical source path/);
+  assert.match(script, /retained the physical build path despite the controlled source root/);
+  assert.match(script, /did not emit the reviewed controlled source path/);
   assert.match(script, /@\(\$WorkRoot, \$WorkRootUnix\)/);
   assert.match(script, /IVinit\(nfront, NULL\)/);
   assert.match(script, /IVinit\(nfront, 0\)/);
@@ -86,7 +90,7 @@ test('Windows CalculiX vendor build is native, source-built, and reproducible', 
   assert.match(script, /ccx-build-two\.exe/);
   assert.match(script, /No runtime candidate was emitted/);
   assert.match(script, /Move-Item -LiteralPath \$ReproducibilityFailure -Destination \$ResolvedEvidence/);
-  assert.match(script, /fraia-calculix-windows-v15/);
+  assert.match(script, /fraia-calculix-windows-v16/);
   assert.doesNotMatch(script, /calculix_2\.23_4win|ccx_static\.exe/);
 });
 
