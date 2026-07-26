@@ -69,15 +69,12 @@ jobs:
           const cargoVersion = cargo.match(/\[workspace\.package\][\s\S]*?\nversion\s*=\s*"([^"]+)"/)?.[1];
           const tag = process.env.GITHUB_REF_NAME;
           const stable = /^v\d+\.\d+\.\d+$/.test(tag);
-          const beta = /^v\d+\.\d+\.\d+-beta\.[1-9]\d*$/.test(tag);
-          if (!stable && !beta) throw new Error(`Release tags must be vX.Y.Z or vX.Y.Z-beta.N with N >= 1; received ${tag}.`);
+          if (!stable) throw new Error(`Fraia release tags must be stable vX.Y.Z tags; received ${tag}.`);
           const version = tag.slice(1);
           if (packageJson.version !== version || cargoVersion !== version) {
             throw new Error(`Tag ${tag} must match Electron ${packageJson.version} and Cargo ${cargoVersion}.`);
           }
-          const output = stable
-            ? { channel: 'stable', environment: 'stable-release', prerelease: 'false', version }
-            : { channel: 'beta', environment: 'beta-release', prerelease: 'true', version };
+          const output = { channel: 'stable', environment: 'stable-release', prerelease: 'false', version };
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `${Object.entries(output).map(([key, value]) => `${key}=${value}`).join('\n')}\n`);
           NODE
 
@@ -208,18 +205,22 @@ jobs:
           set -euo pipefail
           OUTPUT="release/${{ needs.prepare.outputs.channel }}/darwin/${{ matrix.arch }}"
           mkdir -p ci-output/assets ci-output/feed
-          node scripts/assemble-update-metadata.mjs \
-            --input "$OUTPUT/latest-mac.yml" \
-            --artifact-dir "$OUTPUT" \
-            --output-root ci-output/feed \
-            --audit-output "ci-output/assets/update-${{ needs.prepare.outputs.channel }}-darwin-${{ matrix.arch }}.yml" \
-            --channel "${{ needs.prepare.outputs.channel }}" \
-            --platform darwin \
-            --arch "${{ matrix.arch }}" \
-            --tag "${{ github.ref_name }}" \
-            --repository "${{ github.repository }}"
+          for FEED_CHANNEL in stable beta; do
+            node scripts/assemble-update-metadata.mjs \
+              --input "$OUTPUT/latest-mac.yml" \
+              --artifact-dir "$OUTPUT" \
+              --output-root ci-output/feed \
+              --audit-output "ci-output/assets/update-$FEED_CHANNEL-darwin-${{ matrix.arch }}.yml" \
+              --channel "$FEED_CHANNEL" \
+              --platform darwin \
+              --arch "${{ matrix.arch }}" \
+              --tag "${{ github.ref_name }}" \
+              --repository "${{ github.repository }}"
+          done
+          cmp \
+            "ci-output/feed/stable/darwin/${{ matrix.arch }}/latest-mac.yml" \
+            "ci-output/feed/beta/darwin/${{ matrix.arch }}/latest-mac.yml"
           STEM="Fraia-macOS-${{ matrix.arch }}"
-          if [ "${{ needs.prepare.outputs.channel }}" = beta ]; then STEM="Fraia-Beta-macOS-${{ matrix.arch }}"; fi
           cp "$OUTPUT/$STEM.dmg" "$OUTPUT/$STEM.dmg.blockmap" "$OUTPUT/$STEM.dmg.sha256" ci-output/assets/
           cp "$OUTPUT/$STEM.zip" "$OUTPUT/$STEM.zip.blockmap" "$OUTPUT/$STEM.zip.sha256" ci-output/assets/
           cp "$OUTPUT/notarization-${{ needs.prepare.outputs.channel }}-${{ matrix.arch }}.json" ci-output/assets/
@@ -283,7 +284,6 @@ jobs:
         run: |
           mkdir -p ci-output/assets
           STEM="Fraia-Windows-x64-Setup.exe"
-          if [ "${{ needs.prepare.outputs.channel }}" = beta ]; then STEM="Fraia-Beta-Windows-x64-Setup.exe"; fi
           OUTPUT="release/${{ needs.prepare.outputs.channel }}/win32/x64"
           cp "$OUTPUT/$STEM" "$OUTPUT/$STEM.blockmap" ci-output/assets/
 
@@ -352,7 +352,6 @@ jobs:
         run: |
           mkdir -p ci-output/assets
           STEM="Fraia-Linux-${{ matrix.arch }}"
-          if [ "${{ needs.prepare.outputs.channel }}" = beta ]; then STEM="Fraia-Beta-Linux-${{ matrix.arch }}"; fi
           OUTPUT="release/${{ needs.prepare.outputs.channel }}/linux/${{ matrix.arch }}"
           cp "$OUTPUT/$STEM.AppImage" "$OUTPUT/$STEM.AppImage.blockmap" "$OUTPUT/$STEM.deb" "$OUTPUT/$STEM.rpm" ci-output/assets/
 
@@ -369,7 +368,7 @@ jobs:
     needs: [prepare, package-macos]
     runs-on: ${{ matrix.arch == 'arm64' && 'macos-15' || 'macos-15-intel' }}
     environment:
-      name: ${{ needs.prepare.outputs.channel }}-updater-verification
+      name: stable-updater-verification
     permissions:
       attestations: read
       contents: read
@@ -406,7 +405,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_ARCH: ${{ matrix.arch }}
-          RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
           MACOS_UPDATER_BOOTSTRAP_TAG: ${{ vars.MACOS_UPDATER_BOOTSTRAP_TAG }}
         shell: bash
         run: |
@@ -415,12 +413,10 @@ jobs:
           node <<'NODE'
           const fs = require('node:fs');
           const releases = JSON.parse(fs.readFileSync('releases.json', 'utf8')).flat();
-          const channel = process.env.RELEASE_CHANNEL;
-          const prefix = channel === 'beta' ? 'Fraia-Beta' : 'Fraia';
-          const asset = `${prefix}-macOS-${process.env.RELEASE_ARCH}.zip`;
+          const asset = `Fraia-macOS-${process.env.RELEASE_ARCH}.zip`;
           const previous = releases
             .filter((release) => !release.draft && release.tag_name !== process.env.GITHUB_REF_NAME)
-            .filter((release) => channel === 'beta' ? release.prerelease : !release.prerelease)
+            .filter((release) => !release.prerelease)
             .filter((release) => release.assets.some((candidate) => candidate.name === asset))
             .sort((left, right) => String(right.published_at).localeCompare(String(left.published_at)))[0];
           if (previous) {
@@ -428,7 +424,7 @@ jobs:
             return;
           }
           if (process.env.MACOS_UPDATER_BOOTSTRAP_TAG !== process.env.GITHUB_REF_NAME) {
-            throw new Error(`No prior ${channel} package exists. Set MACOS_UPDATER_BOOTSTRAP_TAG to this exact first tag only.`);
+            throw new Error('No prior stable package exists. Set MACOS_UPDATER_BOOTSTRAP_TAG to this exact first tag only.');
           }
           fs.appendFileSync(process.env.GITHUB_OUTPUT, 'bootstrap=true\n');
           NODE
@@ -456,7 +452,7 @@ jobs:
             --previous-zip "previous/${{ steps.previous.outputs.asset }}" \
             --previous-checksums previous/SHA256SUMS \
             --candidate-directory candidate/assets \
-            --candidate-metadata "candidate/assets/update-${{ needs.prepare.outputs.channel }}-darwin-${{ matrix.arch }}.yml" \
+            --candidate-metadata "candidate/assets/update-stable-darwin-${{ matrix.arch }}.yml" \
             --repository "${{ github.repository }}"
 
       - name: Record exact bootstrap evidence
@@ -492,7 +488,12 @@ jobs:
             "${ARGS[@]}" > expected-assets.txt
           mkdir -p publish/feed
           while IFS= read -r feed_root; do cp -R "$feed_root/." publish/feed/; done < <(find candidates -type d -name feed | LC_ALL=C sort)
-          test "$(find publish/feed -type f | wc -l | tr -d ' ')" = 2
+          test "$(find publish/feed -type f | wc -l | tr -d ' ')" = 4
+          for ARCH in arm64 x64; do
+            cmp \
+              "publish/feed/stable/darwin/$ARCH/latest-mac.yml" \
+              "publish/feed/beta/darwin/$ARCH/latest-mac.yml"
+          done
 
       - name: Upload verified release bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -559,13 +560,8 @@ jobs:
             --input publish/assets > expected-assets.txt
           rm -rf /tmp/reassembled-assets
           TITLE="Fraia ${{ needs.prepare.outputs.version }}"
-          if [ "${{ needs.prepare.outputs.channel }}" = beta ]; then TITLE="Fraia Beta ${{ needs.prepare.outputs.version }}"; fi
           if ! gh release view "$TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
-            if [ "${{ needs.prepare.outputs.channel }}" = beta ]; then
-              gh release create "$TAG" --repo "$REPOSITORY" --verify-tag --title "$TITLE" --generate-notes --prerelease --draft
-            else
-              gh release create "$TAG" --repo "$REPOSITORY" --verify-tag --title "$TITLE" --generate-notes --draft
-            fi
+            gh release create "$TAG" --repo "$REPOSITORY" --verify-tag --title "$TITLE" --generate-notes --draft
           fi
           IS_DRAFT=$(gh release view "$TAG" --repo "$REPOSITORY" --json isDraft --jq .isDraft)
           gh api "repos/$REPOSITORY/releases/tags/$TAG" --jq '.assets[].name' | LC_ALL=C sort > existing-assets.txt
@@ -596,12 +592,7 @@ jobs:
         shell: bash
         run: |
           TITLE="Fraia ${{ needs.prepare.outputs.version }}"
-          if [ "${{ needs.prepare.outputs.channel }}" = beta ]; then
-            TITLE="Fraia Beta ${{ needs.prepare.outputs.version }}"
-            gh release edit "${{ github.ref_name }}" --repo "${{ github.repository }}" --title "$TITLE" --draft=false --prerelease --latest=false
-          else
-            gh release edit "${{ github.ref_name }}" --repo "${{ github.repository }}" --title "$TITLE" --draft=false --prerelease=false --latest
-          fi
+          gh release edit "${{ github.ref_name }}" --repo "${{ github.repository }}" --title "$TITLE" --draft=false --prerelease=false --latest
 
       - name: Verify public release before sealing updater feed
         shell: bash
@@ -639,18 +630,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          CHANNEL="${{ needs.prepare.outputs.channel }}"
-          DESTINATION="updates branch / $CHANNEL"
+          DESTINATION="updates branch / stable and beta"
           rm -rf feed-publication
-          mkdir -p "feed-publication/feed/$CHANNEL"
-          cp -R "publish/feed/$CHANNEL/." "feed-publication/feed/$CHANNEL/"
+          mkdir -p feed-publication/feed/stable feed-publication/feed/beta
+          cp -R publish/feed/stable/. feed-publication/feed/stable/
+          cp -R publish/feed/beta/. feed-publication/feed/beta/
+          for ARCH in arm64 x64; do
+            cmp \
+              "feed-publication/feed/stable/darwin/$ARCH/latest-mac.yml" \
+              "feed-publication/feed/beta/darwin/$ARCH/latest-mac.yml"
+          done
           touch feed-publication/.nojekyll
           cat > feed-publication/PUBLICATION.txt <<EOF
           Fraia updater-feed publication bundle
           Tag: ${{ github.ref_name }}
           Commit: ${{ github.sha }}
           Destination: $DESTINATION
-          Publication: manual, after the explicit release gate
+          Publication: tag workflow, after explicit stable-release approval
           EOF
           (
             cd feed-publication
@@ -671,6 +667,39 @@ jobs:
           path: feed-publication
           if-no-files-found: error
           retention-days: 14
+
+      - name: Checkout the seeded updater-feed branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          path: update-site
+          ref: updates
+
+      - name: Publish stable bytes to both updater channels atomically
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf update-site/stable/darwin update-site/beta/darwin
+          mkdir -p update-site/stable update-site/beta
+          cp -R feed-publication/feed/stable/. update-site/stable/
+          cp -R feed-publication/feed/beta/. update-site/beta/
+          cp feed-publication/.nojekyll feed-publication/PUBLICATION.txt update-site/
+          test "$(find update-site/stable update-site/beta -type f | wc -l | tr -d ' ')" = 4
+          for ARCH in arm64 x64; do
+            cmp \
+              "update-site/stable/darwin/$ARCH/latest-mac.yml" \
+              "update-site/beta/darwin/$ARCH/latest-mac.yml"
+          done
+          (
+            cd update-site
+            git config user.name github-actions
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add -- .nojekyll PUBLICATION.txt stable beta
+            if ! git diff --cached --quiet; then
+              git commit -m "Publish Fraia ${{ needs.prepare.outputs.version }} update feeds"
+              git push origin HEAD:updates
+            fi
+          )
 
   verify-publication:
     name: Verify public release and feeds
@@ -704,6 +733,28 @@ jobs:
             printf '%s  %s\n' "$checksum" "public/$filename" | sha256sum --check --strict -
           done
           (cd feed-publication && sha256sum --check --strict SHA256SUMS)
+          RAW_BASE="https://raw.githubusercontent.com/${{ github.repository }}/updates"
+          for attempt in {1..12}; do
+            complete=true
+            for CHANNEL in stable beta; do
+              for ARCH in arm64 x64; do
+                path="$CHANNEL/darwin/$ARCH/latest-mac.yml"
+                if ! curl --fail --location --silent --show-error "$RAW_BASE/$path" -o "public-$CHANNEL-$ARCH.yml" \
+                  || ! cmp "expected/feed/$path" "public-$CHANNEL-$ARCH.yml"; then
+                  complete=false
+                fi
+              done
+            done
+            if [ "$complete" = true ]; then break; fi
+            if [ "$attempt" = 12 ]; then
+              echo 'Public updater feeds did not converge to the exact stable and beta projections.' >&2
+              exit 1
+            fi
+            sleep 5
+          done
+          for ARCH in arm64 x64; do
+            cmp "public-stable-$ARCH.yml" "public-beta-$ARCH.yml"
+          done
           while IFS= read -r expected_feed; do
             relative="${expected_feed#expected/feed/}"
             cmp "$expected_feed" "feed-publication/feed/$relative"

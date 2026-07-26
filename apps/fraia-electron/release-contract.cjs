@@ -1,7 +1,7 @@
 const path = require('node:path');
 const { SUPPORTED_TARGETS } = require('./package-boundary.cjs');
 
-const CHANNELS = new Set(['stable', 'beta']);
+const CHANNELS = new Set(['stable']);
 const PLATFORMS = new Set(['darwin', 'win32', 'linux']);
 const ARCHITECTURES = new Set(['arm64', 'x64']);
 
@@ -31,14 +31,13 @@ function releaseContract({
   requireChoice('architecture', arch, ARCHITECTURES);
   requireTarget(platform, arch);
 
-  const beta = channel === 'beta';
-  const productName = beta ? 'Fraia Beta' : 'Fraia';
-  const packageName = beta ? 'fraia-electron-beta' : 'fraia-electron';
-  const artifactPrefix = beta ? 'Fraia-Beta' : 'Fraia';
+  const productName = 'Fraia';
+  const packageName = 'fraia-electron';
+  const artifactPrefix = 'Fraia';
   const normalizedFeedBaseUrl = feedBaseUrl.replace(/\/$/, '');
 
   return {
-    appId: beta ? 'app.fraia.desktop.beta' : 'app.fraia.desktop',
+    appId: 'app.fraia.desktop',
     appName: `${productName}.app`,
     arch,
     artifactPrefix,

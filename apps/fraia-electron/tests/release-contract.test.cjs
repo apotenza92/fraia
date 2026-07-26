@@ -2,16 +2,16 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const { releaseContract, metadataFileName } = require('../release-contract.cjs');
 
-test('stable and beta releases have separate durable identities and feeds', () => {
+test('Fraia has one stable durable application identity', () => {
   const stable = releaseContract({ channel: 'stable', platform: 'darwin', arch: 'arm64' });
-  const beta = releaseContract({ channel: 'beta', platform: 'darwin', arch: 'arm64' });
   assert.equal(stable.appId, 'app.fraia.desktop');
-  assert.equal(beta.appId, 'app.fraia.desktop.beta');
   assert.equal(stable.productName, 'Fraia');
-  assert.equal(beta.productName, 'Fraia Beta');
-  assert.notEqual(stable.feedUrl, beta.feedUrl);
+  assert.equal(stable.packageName, 'fraia-electron');
   assert.match(stable.feedUrl, /\/stable\/darwin\/arm64$/);
-  assert.match(beta.feedUrl, /\/beta\/darwin\/arm64$/);
+  assert.throws(
+    () => releaseContract({ channel: 'beta', platform: 'darwin', arch: 'arm64' }),
+    /channel must be one of stable/,
+  );
 });
 
 test('the exact five solver-backed native targets resolve without cross-compilation aliases', () => {

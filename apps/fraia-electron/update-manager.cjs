@@ -9,7 +9,6 @@ const UPDATE_FREQUENCY_MS = Object.freeze({
   weekly: 7 * 24 * 60 * 60 * 1000,
 });
 const UPDATE_FREQUENCIES = Object.freeze(['never', 'startup', ...Object.keys(UPDATE_FREQUENCY_MS)]);
-const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 
 function safeWriteEvent(eventPath, event) {
   if (!eventPath) return;
@@ -69,13 +68,13 @@ function configureAutoUpdates({
     ? validateTestFeedUrl(env.FRAIA_UPDATE_FEED_URL)
     : packageMetadata.fraiaUpdateFeedUrl;
   const channel = packageMetadata.fraiaReleaseChannel;
-  if (!['stable', 'beta'].includes(channel) || typeof feedUrl !== 'string' || !feedUrl) {
+  if (channel !== 'stable' || typeof feedUrl !== 'string' || !feedUrl) {
     throw new Error('Packaged Fraia updater metadata is invalid.');
   }
 
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.allowPrerelease = channel === 'beta';
+  autoUpdater.allowPrerelease = false;
   autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl, channel: 'latest' });
 
   const eventPath = testMode ? env.FRAIA_UPDATER_EVENT_PATH : null;
@@ -110,7 +109,7 @@ function configureAutoUpdates({
   const userData = app.getPath('userData');
   const frequencyPath = path.join(userData, 'update-frequency.json');
   const lastCheckPath = path.join(userData, 'last-update-check.json');
-  const defaultFrequency = channel === 'beta' ? 'sixHours' : 'daily';
+  const defaultFrequency = 'daily';
   let frequency = testMode ? 'sixHours' : readFrequency(frequencyPath, defaultFrequency);
   let initialTimer = null;
   let intervalTimer = null;
@@ -177,7 +176,6 @@ function configureAutoUpdates({
 }
 
 module.exports = {
-  SIX_HOURS_MS,
   UPDATE_FREQUENCIES,
   UPDATE_FREQUENCY_MS,
   configureAutoUpdates,

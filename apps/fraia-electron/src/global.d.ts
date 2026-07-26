@@ -3,7 +3,7 @@ declare global {
   interface Window {
     fraia: Record<string, (...args: any[]) => Promise<any>> & {
       applicationMetadata?: () => Promise<{
-        channel: 'stable' | 'beta';
+        channel: 'stable';
         productName: string;
         userDataDirectoryName: string;
       }>;

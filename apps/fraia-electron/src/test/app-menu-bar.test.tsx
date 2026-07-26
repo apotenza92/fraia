@@ -5,14 +5,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { AppMenuBar } from '@/components/layout/AppMenuBar';
 
 describe('AppMenuBar application identity', () => {
-  it('uses the packaged beta identity in visible chrome and the document title', async () => {
+  it('uses the canonical stable identity in visible chrome and the document title', async () => {
     const quitApp = vi.fn().mockResolvedValue({ ok: true });
     Object.defineProperty(window, 'fraia', {
       configurable: true,
       value: {
         applicationMetadata: vi.fn().mockResolvedValue({
-          channel: 'beta',
-          productName: 'Fraia Beta',
+          channel: 'stable',
+          productName: 'Fraia',
         }),
         quitApp,
       },
@@ -21,10 +21,10 @@ describe('AppMenuBar application identity', () => {
     const user = userEvent.setup();
     render(<AppMenuBar />);
 
-    const appMenu = await screen.findByRole('menuitem', { name: 'Fraia Beta' });
-    await waitFor(() => expect(document.title).toBe('Fraia Beta'));
+    const appMenu = await screen.findByRole('menuitem', { name: 'Fraia' });
+    await waitFor(() => expect(document.title).toBe('Fraia'));
     await user.click(appMenu);
-    await user.click(await screen.findByRole('menuitem', { name: 'Quit Fraia Beta' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Quit Fraia' }));
 
     expect(quitApp).toHaveBeenCalledOnce();
   });

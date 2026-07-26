@@ -1,14 +1,14 @@
 const path = require('node:path');
 
-const CHANNELS = new Set(['stable', 'beta']);
+const CHANNELS = new Set(['stable']);
 
 function resolveApplicationMetadata(packageMetadata = {}) {
   const channel = packageMetadata.fraiaReleaseChannel || 'stable';
   if (!CHANNELS.has(channel)) {
-    throw new Error(`Fraia release channel must be stable or beta; received ${channel}.`);
+    throw new Error(`Fraia release channel must be stable; received ${channel}.`);
   }
 
-  const productName = channel === 'beta' ? 'Fraia Beta' : 'Fraia';
+  const productName = 'Fraia';
   if (packageMetadata.productName && packageMetadata.productName !== productName) {
     throw new Error(
       `Fraia ${channel} metadata requires productName ${productName}; received ${packageMetadata.productName}.`,
