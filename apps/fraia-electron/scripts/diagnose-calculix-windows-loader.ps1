@@ -268,26 +268,49 @@ public static class FraiaNativeLoaderDiagnostics {
   )
 
   $LlvmStrip = Join-Path $LlvmBin "llvm-strip.exe"
-  if (-not (Test-Path -LiteralPath $LlvmStrip -PathType Leaf)) {
-    throw "The hosted Windows image is missing llvm-strip.exe."
+  $LlvmObjcopy = Join-Path $LlvmBin "llvm-objcopy.exe"
+  foreach ($Tool in @($LlvmStrip, $LlvmObjcopy)) {
+    if (-not (Test-Path -LiteralPath $Tool -PathType Leaf)) {
+      throw "The hosted Windows image is missing the reviewed LLVM transformation tool: ${Tool}"
+    }
   }
   foreach ($Variant in @(
-    @("strip-debug", "--strip-debug"),
-    @("strip-all", "--strip-all")
+    @("strip-debug", "--strip-debug", $false),
+    @("strip-all", "--strip-all", $false),
+    @("strip-all-no-eh-frame", "--strip-all", $true)
   )) {
     $VariantName = $Variant[0]
     $StripArgument = $Variant[1]
+    $RemoveEhFrame = $Variant[2]
     $VariantRoot = Join-Path $Staging $VariantName
     $VariantCase = Join-Path $VariantRoot "case"
     [IO.Directory]::CreateDirectory($VariantCase) | Out-Null
     Copy-Item -LiteralPath (Join-Path $CaseDirectory "spring1.inp") -Destination $VariantCase
     $VariantExecutable = Join-Path $VariantRoot "ccx-${VariantName}.exe"
+    $StripDestination = if ($RemoveEhFrame) {
+      Join-Path $VariantRoot "ccx-before-eh-frame-removal.exe"
+    } else {
+      $VariantExecutable
+    }
     [string[]]$StripOutput = @(
-      & $LlvmStrip $StripArgument -o $VariantExecutable $Candidate 2>&1
+      & $LlvmStrip $StripArgument -o $StripDestination $Candidate 2>&1
     )
     Write-Lines -Path (Join-Path $VariantRoot "llvm-strip.txt") -Lines $StripOutput
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $VariantExecutable -PathType Leaf)) {
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $StripDestination -PathType Leaf)) {
       throw "llvm-strip failed while creating the ${VariantName} diagnostic variant."
+    }
+    if ($RemoveEhFrame) {
+      [string[]]$ObjcopyOutput = @(
+        & $LlvmObjcopy `
+          --remove-section=.eh_frame `
+          $StripDestination `
+          $VariantExecutable 2>&1
+      )
+      Write-Lines -Path (Join-Path $VariantRoot "llvm-objcopy.txt") -Lines $ObjcopyOutput
+      if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $VariantExecutable -PathType Leaf)) {
+        throw "llvm-objcopy failed while removing .eh_frame from the ${VariantName} variant."
+      }
+      Remove-Item -LiteralPath $StripDestination -Force
     }
     [string[]]$VariantHeaders = @(
       & $LlvmReadObj --file-headers --sections $VariantExecutable 2>&1
@@ -325,9 +348,13 @@ public static class FraiaNativeLoaderDiagnostics {
     $ReportedCompletion = (Get-Item -LiteralPath $VariantStdout).Length -gt 0 -and (
       Select-String -LiteralPath $VariantStdout -SimpleMatch "Job finished" -Quiet
     )
+    $Transformation = "llvm-strip ${StripArgument}"
+    if ($RemoveEhFrame) {
+      $Transformation += "; llvm-objcopy --remove-section=.eh_frame"
+    }
     Write-Lines -Path (Join-Path $VariantRoot "result.txt") -Lines @(
       "Variant: ${VariantName}",
-      "Transformation: llvm-strip ${StripArgument}",
+      "Transformation: ${Transformation}",
       "SHA-256: $((Get-FileHash -Algorithm SHA256 -LiteralPath $VariantExecutable).Hash.ToLowerInvariant())",
       "Bytes: $((Get-Item -LiteralPath $VariantExecutable).Length)",
       "Signed exit code: $($VariantProcess.ExitCode)",
