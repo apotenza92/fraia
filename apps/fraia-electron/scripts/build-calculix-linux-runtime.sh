@@ -15,10 +15,11 @@ ARPACK_URL='https://github.com/opencollab/arpack-ng/archive/refs/tags/3.9.1.tar.
 ARPACK_SHA256='f6641deb07fa69165b7815de9008af3ea47eb39b2bb97521fbf74c97aba6e844'
 OPENBLAS_URL='https://github.com/OpenMathLib/OpenBLAS/releases/download/v0.3.34/OpenBLAS-0.3.34.tar.gz'
 OPENBLAS_SHA256='cd7e129868320cc2d033afa920e31202dfe0b8066a5b66661900ccc0f197dfed'
-GPL2_URL='https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt'
-GPL2_SHA256='edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6'
-GPL3_URL='https://www.gnu.org/licenses/gpl-3.0.txt'
-GPL3_SHA256='3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986'
+GCC_VERSION='16.1.0'
+GCC_SOURCE_URL="https://ftpmirror.gnu.org/gnu/gcc/gcc-${GCC_VERSION}/gcc-${GCC_VERSION}.tar.xz"
+GCC_SOURCE_SHA256='50efb4d94c3397aff3b0d61a5abd748b4dd31d9d3f2ab7be05b171d36a510f79'
+GPL2_SHA256='231f7edcc7352d7734a96eef0b8030f77982678c516876fcb81e25b32d68564c'
+GPL3_SHA256='8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903'
 UBUNTU_CONTAINER_IMAGE='ubuntu:22.04@sha256:0e0a0fc6d18feda9db1590da249ac93e8d5abfea8f4c3c0c849ce512b5ef8982'
 UBUNTU_SNAPSHOT='20260720T000000Z'
 SOURCE_DATE_EPOCH='1762047462'
@@ -148,8 +149,13 @@ download \
   "$SPOOLES_CORRECTION_SHA256"
 download "$ARPACK_URL" "$work_root/arpack-ng-3.9.1.tar.gz" "$ARPACK_SHA256"
 download "$OPENBLAS_URL" "$work_root/OpenBLAS-0.3.34.tar.gz" "$OPENBLAS_SHA256"
-download "$GPL2_URL" "$work_root/GPL-2.0.txt" "$GPL2_SHA256"
-download "$GPL3_URL" "$work_root/GPL-3.0.txt" "$GPL3_SHA256"
+download "$GCC_SOURCE_URL" "$work_root/gcc-${GCC_VERSION}.tar.xz" "$GCC_SOURCE_SHA256"
+tar -xJOf "$work_root/gcc-${GCC_VERSION}.tar.xz" \
+  "gcc-${GCC_VERSION}/COPYING" >"$work_root/GPL-2.0.txt"
+printf '%s  %s\n' "$GPL2_SHA256" "$work_root/GPL-2.0.txt" | shasum -a 256 -c -
+tar -xJOf "$work_root/gcc-${GCC_VERSION}.tar.xz" \
+  "gcc-${GCC_VERSION}/COPYING3" >"$work_root/GPL-3.0.txt"
+printf '%s  %s\n' "$GPL3_SHA256" "$work_root/GPL-3.0.txt" | shasum -a 256 -c -
 
 export LC_ALL=C.UTF-8
 export TZ=UTC
@@ -414,7 +420,7 @@ package_versions=$(
 )
 {
   printf '# Fraia CalculiX %s %s build recipe\n\n' "$CCX_VERSION" "$target"
-  printf 'Build revision: `fraia-calculix-linux-v2`\n\n'
+  printf 'Build revision: `fraia-calculix-linux-v3`\n\n'
   printf -- '- Reviewed container: `%s`\n' "$UBUNTU_CONTAINER_IMAGE"
   printf -- '- Ubuntu snapshot: `%s`\n' "$UBUNTU_SNAPSHOT"
   printf -- '- CalculiX source SHA-256: `%s`\n' "$CCX_SOURCE_SHA256"
@@ -423,8 +429,10 @@ package_versions=$(
   printf -- '- SPOOLES correction SHA-256: `%s`\n' "$SPOOLES_CORRECTION_SHA256"
   printf -- '- ARPACK-NG source SHA-256: `%s`\n' "$ARPACK_SHA256"
   printf -- '- OpenBLAS source SHA-256: `%s`\n' "$OPENBLAS_SHA256"
-  printf -- '- GPL-2.0 text SHA-256: `%s`\n' "$GPL2_SHA256"
-  printf -- '- GPL-3.0 text SHA-256: `%s`\n' "$GPL3_SHA256"
+  printf -- '- GCC source: `%s`\n' "$GCC_SOURCE_URL"
+  printf -- '- GCC source SHA-256: `%s`\n' "$GCC_SOURCE_SHA256"
+  printf -- '- GPL-2.0 text from GCC source `COPYING` SHA-256: `%s`\n' "$GPL2_SHA256"
+  printf -- '- GPL-3.0 text from GCC source `COPYING3` SHA-256: `%s`\n' "$GPL3_SHA256"
   printf -- '- gcc SHA-256: `%s`\n' "$gcc_sha256"
   printf -- '- gfortran SHA-256: `%s`\n' "$gfortran_sha256"
   printf -- '- linker SHA-256: `%s`\n' "$linker_sha256"
@@ -462,6 +470,7 @@ cp \
   "$work_root/ccx_2.23.SPOOLEScorrection.tar.bz2" \
   "$work_root/arpack-ng-3.9.1.tar.gz" \
   "$work_root/OpenBLAS-0.3.34.tar.gz" \
+  "$work_root/gcc-${GCC_VERSION}.tar.xz" \
   "$work_root/GPL-2.0.txt" \
   "$work_root/GPL-3.0.txt" \
   "$evidence_staging/source-inputs/"

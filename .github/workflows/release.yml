@@ -54,7 +54,7 @@ jobs:
           SOURCE_REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
         run: |
           if [ "$SOURCE_REPOSITORY_PRIVATE" != false ]; then
-            echo 'Fraia release clients require unauthenticated GitHub Releases, update feeds, and provenance. Choose and review a public source or public-binary repository design before releasing.' >&2
+            echo 'Fraia release clients require this source repository, GitHub Releases, update feeds, and provenance to remain publicly reachable without authentication.' >&2
             exit 1
           fi
 

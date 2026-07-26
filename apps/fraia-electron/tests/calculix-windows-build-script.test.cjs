@@ -20,6 +20,8 @@ test('Windows CalculiX vendor build pins every source and toolchain input', () =
     'df21e66d385972cb4cdb2c7fa55da191d0c3841bbf14a76a54bc3a56c199923d',
     '50efb4d94c3397aff3b0d61a5abd748b4dd31d9d3f2ab7be05b171d36a510f79',
     'd71cc644cd5a37c337f2719f3e0c79d89e8d8d5fb9e2952a62d3fa23623dc137',
+    '231f7edcc7352d7734a96eef0b8030f77982678c516876fcb81e25b32d68564c',
+    '8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903',
   ]) {
     assert.match(script, new RegExp(hash));
   }
@@ -27,6 +29,8 @@ test('Windows CalculiX vendor build pins every source and toolchain input', () =
   assert.match(script, /6e253eff2be383861ae0bf44eccbf6bfef931bf8/);
   assert.match(script, /Assert-Sha256/);
   assert.match(script, /WinLibs source commit/);
+  assert.match(script, /gcc-16\.1\.0\/COPYING3/);
+  assert.doesNotMatch(script, /www\.gnu\.org\/licenses/);
 });
 
 test('Windows CalculiX vendor build is native, source-built, and reproducible', () => {

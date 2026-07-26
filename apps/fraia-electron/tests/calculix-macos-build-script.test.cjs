@@ -14,8 +14,8 @@ test('macOS CalculiX vendor build pins every downloaded input', () => {
     'be2259fd9a7b990d0453b30708e1b05f2cd4b6df4a90fa96f0e4abd1ae7beaa0',
     'a84559a0e987a1e423055ef4fdf3035d55b65bbe4bf915efaa1a35bef7f8c5dd',
     'bd86b9adf3152bda8a21b3b5faf65a877b209be0f33c4629e2073a073ea5d706',
-    'edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6',
-    '3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986',
+    '231f7edcc7352d7734a96eef0b8030f77982678c516876fcb81e25b32d68564c',
+    '8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903',
     '50efb4d94c3397aff3b0d61a5abd748b4dd31d9d3f2ab7be05b171d36a510f79',
     '5f4b4fe9aab99c021d23b2c1da9025e70b502e275076da12a64fc6196db6f3d3',
     '1593153257db78c270282742088ffe961b44d793f7bbaa458895357094d6f7fc',
@@ -43,6 +43,8 @@ test('macOS CalculiX vendor build pins every downloaded input', () => {
   assert.match(script, /curl --proto '=https' --tlsv1\.2 --fail/);
   assert.match(script, /--retry-all-errors/);
   assert.match(script, /shasum -a 256 -c -/);
+  assert.match(script, /gcc-\$\{GCC_VERSION\}\/COPYING3/);
+  assert.doesNotMatch(script, /www\.gnu\.org\/licenses/);
   assert.match(script, /gcc\/\$GCC_VERSION\/bin\/gfortran-16/);
   assert.match(script, /"\$gfortran_driver" -print-prog-name=f951/);
   assert.match(script, /"\$gfortran_driver" -print-prog-name=collect2/);

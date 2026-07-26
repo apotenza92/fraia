@@ -12,10 +12,8 @@ SPOOLES_SHA256='a84559a0e987a1e423055ef4fdf3035d55b65bbe4bf915efaa1a35bef7f8c5dd
 ARPACK_REVISION='40329031ae8deb7c1e26baf8353fa384fc37c251'
 ARPACK_URL="https://github.com/opencollab/arpack-ng/archive/${ARPACK_REVISION}.tar.gz"
 ARPACK_SHA256='bd86b9adf3152bda8a21b3b5faf65a877b209be0f33c4629e2073a073ea5d706'
-GPL2_URL='https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt'
-GPL2_SHA256='edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6'
-GPL3_URL='https://www.gnu.org/licenses/gpl-3.0.txt'
-GPL3_SHA256='3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986'
+GPL2_SHA256='231f7edcc7352d7734a96eef0b8030f77982678c516876fcb81e25b32d68564c'
+GPL3_SHA256='8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903'
 GCC_VERSION='16.1.0'
 GCC_SOURCE_URL="https://ftpmirror.gnu.org/gnu/gcc/gcc-${GCC_VERSION}/gcc-${GCC_VERSION}.tar.xz"
 GCC_SOURCE_SHA256='50efb4d94c3397aff3b0d61a5abd748b4dd31d9d3f2ab7be05b171d36a510f79'
@@ -226,9 +224,13 @@ download "$CCX_SOURCE_URL" "$work_root/ccx_2.23.src.tar.bz2" "$CCX_SOURCE_SHA256
 download "$CCX_TEST_URL" "$work_root/ccx_2.23.test.tar.bz2" "$CCX_TEST_SHA256"
 download "$SPOOLES_URL" "$work_root/spooles.2.2.tgz" "$SPOOLES_SHA256"
 download "$ARPACK_URL" "$work_root/arpack-ng-3.9.1.tar.gz" "$ARPACK_SHA256"
-download "$GPL2_URL" "$work_root/GPL-2.0.txt" "$GPL2_SHA256"
-download "$GPL3_URL" "$work_root/GPL-3.0.txt" "$GPL3_SHA256"
 download "$GCC_SOURCE_URL" "$work_root/gcc-${GCC_VERSION}.tar.xz" "$GCC_SOURCE_SHA256"
+tar -xJOf "$work_root/gcc-${GCC_VERSION}.tar.xz" \
+  "gcc-${GCC_VERSION}/COPYING" >"$work_root/GPL-2.0.txt"
+printf '%s  %s\n' "$GPL2_SHA256" "$work_root/GPL-2.0.txt" | shasum -a 256 -c -
+tar -xJOf "$work_root/gcc-${GCC_VERSION}.tar.xz" \
+  "gcc-${GCC_VERSION}/COPYING3" >"$work_root/GPL-3.0.txt"
+printf '%s  %s\n' "$GPL3_SHA256" "$work_root/GPL-3.0.txt" | shasum -a 256 -c -
 download \
   "$HOMEBREW_GCC_FORMULA_URL" \
   "$work_root/homebrew-gcc.rb" \
@@ -624,14 +626,14 @@ macos_version=$(sw_vers -productVersion)
 macos_build=$(sw_vers -buildVersion)
 {
   printf '# Fraia CalculiX %s %s build recipe\n\n' "$CCX_VERSION" "$target"
-  printf 'Build revision: `fraia-calculix-macos-v3`\n\n'
+  printf 'Build revision: `fraia-calculix-macos-v4`\n\n'
   printf -- '- CalculiX source SHA-256: `%s`\n' "$CCX_SOURCE_SHA256"
   printf -- '- CalculiX tests SHA-256: `%s`\n' "$CCX_TEST_SHA256"
   printf -- '- SPOOLES source SHA-256: `%s`\n' "$SPOOLES_SHA256"
   printf -- '- ARPACK-NG revision: `%s`\n' "$ARPACK_REVISION"
   printf -- '- ARPACK-NG source SHA-256: `%s`\n' "$ARPACK_SHA256"
-  printf -- '- GPL-2.0 text SHA-256: `%s`\n' "$GPL2_SHA256"
-  printf -- '- GPL-3.0 text SHA-256: `%s`\n' "$GPL3_SHA256"
+  printf -- '- GPL-2.0 text from GCC source `COPYING` SHA-256: `%s`\n' "$GPL2_SHA256"
+  printf -- '- GPL-3.0 text from GCC source `COPYING3` SHA-256: `%s`\n' "$GPL3_SHA256"
   printf -- '- GCC source: `%s`\n' "$GCC_SOURCE_URL"
   printf -- '- GCC source SHA-256: `%s`\n' "$GCC_SOURCE_SHA256"
   printf -- '- Homebrew/core revision: `%s`\n' "$HOMEBREW_CORE_REVISION"

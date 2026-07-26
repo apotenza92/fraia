@@ -23,10 +23,8 @@ $ArpackUrl = "https://github.com/opencollab/arpack-ng/archive/refs/tags/3.9.1.ta
 $ArpackSha256 = "f6641deb07fa69165b7815de9008af3ea47eb39b2bb97521fbf74c97aba6e844"
 $OpenBlasUrl = "https://github.com/OpenMathLib/OpenBLAS/releases/download/v0.3.34/OpenBLAS-0.3.34.tar.gz"
 $OpenBlasSha256 = "cd7e129868320cc2d033afa920e31202dfe0b8066a5b66661900ccc0f197dfed"
-$Gpl2Url = "https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt"
-$Gpl2Sha256 = "edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6"
-$Gpl3Url = "https://www.gnu.org/licenses/gpl-3.0.txt"
-$Gpl3Sha256 = "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+$Gpl2Sha256 = "231f7edcc7352d7734a96eef0b8030f77982678c516876fcb81e25b32d68564c"
+$Gpl3Sha256 = "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
 
 $WinLibsTag = "16.1.0posix-14.0.0-ucrt-r3"
 $WinLibsCommit = "6e253eff2be383861ae0bf44eccbf6bfef931bf8"
@@ -193,8 +191,6 @@ try {
     "ccx_2.23.SPOOLEScorrection.tar.bz2" = @($SpoolesCorrectionUrl, $SpoolesCorrectionSha256)
     "arpack-ng-3.9.1.tar.gz" = @($ArpackUrl, $ArpackSha256)
     "OpenBLAS-0.3.34.tar.gz" = @($OpenBlasUrl, $OpenBlasSha256)
-    "GPL-2.0.txt" = @($Gpl2Url, $Gpl2Sha256)
-    "GPL-3.0.txt" = @($Gpl3Url, $Gpl3Sha256)
     "winlibs.zip" = @($WinLibsArchiveUrl, $WinLibsArchiveSha256)
     "winlibs-source.tar.gz" = @($WinLibsSourceUrl, $WinLibsSourceSha256)
     "gcc-16.1.0.tar.xz" = @($GccSourceUrl, $GccSourceSha256)
@@ -543,10 +539,6 @@ try {
   $EvidenceStaging = Join-Path $WorkRoot "evidence"
   [IO.Directory]::CreateDirectory((Join-Path $RuntimeStaging "licenses")) | Out-Null
   Copy-Item -LiteralPath $CandidateOne -Destination (Join-Path $RuntimeStaging "ccx.exe")
-  Copy-Item -LiteralPath (Join-Path $Downloads "GPL-2.0.txt") `
-    -Destination (Join-Path $RuntimeStaging "licenses\GPL-2.0.txt")
-  Copy-Item -LiteralPath (Join-Path $Downloads "GPL-3.0.txt") `
-    -Destination (Join-Path $RuntimeStaging "licenses\GPL-3.0.txt")
   Copy-Item -LiteralPath (Join-Path $BuildOne "arpack\COPYING") `
     -Destination (Join-Path $RuntimeStaging "licenses\ARPACK-BSD-3-Clause.txt")
   Copy-Item -LiteralPath (Join-Path $BuildOne "openblas\LICENSE") `
@@ -556,8 +548,18 @@ try {
   [IO.Directory]::CreateDirectory($LicenseExtractRoot) | Out-Null
   Invoke-LoggedCommand -Executable "tar.exe" -Arguments @(
     "-xJf", (Join-Path $Downloads "gcc-16.1.0.tar.xz"), "-C", $LicenseExtractRoot,
+    "gcc-16.1.0/COPYING",
+    "gcc-16.1.0/COPYING3",
     "gcc-16.1.0/COPYING.RUNTIME"
   ) -LogPath (Join-Path $LicenseExtractRoot "extract.log")
+  Assert-Sha256 -Path (Join-Path $LicenseExtractRoot "gcc-16.1.0\COPYING") `
+    -Expected $Gpl2Sha256
+  Assert-Sha256 -Path (Join-Path $LicenseExtractRoot "gcc-16.1.0\COPYING3") `
+    -Expected $Gpl3Sha256
+  Copy-Item -LiteralPath (Join-Path $LicenseExtractRoot "gcc-16.1.0\COPYING") `
+    -Destination (Join-Path $RuntimeStaging "licenses\GPL-2.0.txt")
+  Copy-Item -LiteralPath (Join-Path $LicenseExtractRoot "gcc-16.1.0\COPYING3") `
+    -Destination (Join-Path $RuntimeStaging "licenses\GPL-3.0.txt")
   Invoke-LoggedCommand -Executable "tar.exe" -Arguments @(
     "-xzf", (Join-Path $Downloads "mingw-w64-v14.0.0.tar.gz"), "-C", $LicenseExtractRoot,
     "mingw-w64-14.0.0/mingw-w64-libraries/winpthreads/COPYING"
@@ -633,7 +635,7 @@ try {
   $Recipe = @(
     "# Fraia CalculiX ${CalculixVersion} win32-x64 build recipe",
     "",
-    "Build revision: ``fraia-calculix-windows-v2``",
+    "Build revision: ``fraia-calculix-windows-v3``",
     "",
     "- Native host: ``$([Environment]::OSVersion.VersionString)``",
     "- Minimum Windows contract: ``Windows ${MinimumWindowsMajor}.${MinimumWindowsMinor}``",
@@ -649,8 +651,8 @@ try {
     "- OpenBLAS source SHA-256: ``${OpenBlasSha256}``",
     "- GCC source SHA-256: ``${GccSourceSha256}``",
     "- MinGW-w64 source SHA-256: ``${MingwSourceSha256}``",
-    "- GPL-2.0 text SHA-256: ``${Gpl2Sha256}``",
-    "- GPL-3.0 text SHA-256: ``${Gpl3Sha256}``",
+    "- GPL-2.0 text from GCC source ``COPYING`` SHA-256: ``${Gpl2Sha256}``",
+    "- GPL-3.0 text from GCC source ``COPYING3`` SHA-256: ``${Gpl3Sha256}``",
     "- Build script SHA-256: ``${ScriptSha256}``",
     "- SOURCE_DATE_EPOCH: ``${SourceDateEpoch}``",
     "",

@@ -24,7 +24,7 @@ There is no Homebrew or store publication yet. Add one only after a first accept
 
 Release packaging uses the maintained Fraia artwork at `build/icon.icns`, `build/icon.ico`, and `build/icons/512x512.png`; it fails closed rather than publishing Electron's default icon.
 
-The source repository is currently private, while installed updaters and public binaries require unauthenticated access. The tag workflow therefore fails before building until the owner either makes the source public or approves a separate public-binary repository design with its own public provenance boundary. It does not silently add a cross-repository token or publish an unusable private feed.
+Fraia releases from its public source repository because installed updaters and public binaries require unauthenticated access to GitHub Releases, update feeds, and provenance. The tag workflow fails before building if repository visibility is not public. It does not silently add a cross-repository token or publish an unusable private feed.
 
 ## Performance Smoke And Benchmarking
 
