@@ -83,12 +83,15 @@ test('private-source and package prerequisites fail before any secret-bearing jo
   assert.doesNotMatch(prepare, /secrets\.|^    environment:/m);
   assert.match(validate, /needs: prepare/);
   assert.match(validate, /run: test -f LICENSE/);
-  assert.match(validate, /test -f apps\/fraia-electron\/build\/icon\.icns/);
+  assert.match(validate, /cd apps\/fraia-electron/);
+  assert.match(validate, /test -f build\/icon\.icns/);
   assert.match(validate, /verify-calculix-runtimes\.cjs --all --skip-dependency-inspection/);
   assert.doesNotMatch(validate, /secrets\.|^    environment:/m);
   assert.match(packageMacos, /needs: \[prepare, validate\]/);
   assert.match(packageMacos, /environment: release-signing/);
   assert.match(packageMacos, /secrets\.APPLE_SIGNING_CERTIFICATE_P12_BASE64/);
+  assert.match(validate, /npm run check:icons/);
+  assert.match(validate, /build\/macos\/Fraia\.icon\/Assets\/01-artwork-dark\.svg/);
 });
 
 test('one stable publication atomically advances byte-identical stable and beta feeds', () => {

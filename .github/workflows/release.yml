@@ -104,9 +104,16 @@ jobs:
 
       - name: Require maintained release icons
         run: |
-          test -f apps/fraia-electron/build/icon.icns
-          test -f apps/fraia-electron/build/icon.ico
-          test -f apps/fraia-electron/build/icons/512x512.png
+          cd apps/fraia-electron
+          npm run check:icons
+          test -f build/macos/Fraia.icon/icon.json
+          test -f build/macos/Fraia.icon/Assets/01-artwork.svg
+          test -f build/macos/Fraia.icon/Assets/01-artwork-dark.svg
+          test -f build/icon.png
+          test -f build/generated-icon-manifest.json
+          test -f build/icon.icns
+          test -f build/icon.ico
+          test -f build/icons/512x512.png
 
       - name: Require reviewed native CalculiX runtime manifests
         run: node apps/fraia-electron/scripts/verify-calculix-runtimes.cjs --all --skip-dependency-inspection

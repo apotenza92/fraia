@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const {
   calculixExecutableName,
   nativePlatformArch,
@@ -16,12 +17,23 @@ const calculixExecutable = path.join(calculixSourceDirectory, calculixExecutable
 const contract = releaseContract();
 const hasSigningKeychain = Boolean(process.env.CSC_KEYCHAIN);
 const iconPaths = {
-  darwin: path.join(__dirname, 'build', 'icon.icns'),
+  darwin: path.join(__dirname, 'build', 'macos', 'Fraia.icon'),
+  darwinFallback: path.join(__dirname, 'build', 'icon.icns'),
   win32: path.join(__dirname, 'build', 'icon.ico'),
   linux: path.join(__dirname, 'build', 'icons'),
 };
+const adaptiveMacosIconAvailable = contract.platform === 'darwin'
+  ? selectAdaptiveMacosIconToolchain()
+  : false;
 if (process.env.FRAIA_REQUIRE_RELEASE_ICON === '1' && !fs.existsSync(iconPaths[contract.platform])) {
   throw new Error(`A maintained Fraia ${contract.platform} release icon is required at ${iconPaths[contract.platform]}.`);
+}
+if (
+  process.env.FRAIA_REQUIRE_RELEASE_ICON === '1'
+  && contract.platform === 'darwin'
+  && !adaptiveMacosIconAvailable
+) {
+  throw new Error('Xcode 26 or newer with actool is required to package Fraia adaptive macOS icons.');
 }
 if (process.env.FRAIA_REQUIRE_PACKAGED_CALCULIX === '1') {
   validateRuntimeDirectory(calculixSourceDirectory, platformArch);
@@ -71,7 +83,9 @@ module.exports = {
     entitlements: 'build/entitlements.mac.plist',
     entitlementsInherit: 'build/entitlements.mac.plist',
     identity: hasSigningKeychain ? undefined : null,
-    icon: fs.existsSync(iconPaths.darwin) ? iconPaths.darwin : undefined,
+    icon: adaptiveMacosIconAvailable && fs.existsSync(iconPaths.darwin)
+      ? iconPaths.darwin
+      : (fs.existsSync(iconPaths.darwinFallback) ? iconPaths.darwinFallback : undefined),
     target: [
       { target: 'dmg', arch: [contract.arch] },
       { target: 'zip', arch: [contract.arch] },
@@ -114,3 +128,55 @@ module.exports = {
     channel: 'latest',
   }],
 };
+
+function selectAdaptiveMacosIconToolchain() {
+  if (!fs.existsSync(iconPaths.darwin)) return false;
+
+  const candidates = new Set();
+  if (process.env.DEVELOPER_DIR) candidates.add(process.env.DEVELOPER_DIR);
+  try {
+    for (const entry of fs.readdirSync('/Applications')) {
+      if (/^Xcode.*\.app$/.test(entry)) {
+        candidates.add(path.join('/Applications', entry, 'Contents', 'Developer'));
+      }
+    }
+  } catch {
+    // A nonstandard macOS host can still supply DEVELOPER_DIR explicitly.
+  }
+
+  let selected = null;
+  for (const developerDirectory of candidates) {
+    try {
+      const output = execFileSync('/usr/bin/xcrun', ['actool', '--version'], {
+        encoding: 'utf8',
+        env: { ...process.env, DEVELOPER_DIR: developerDirectory },
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const version = output.match(
+        /<key>short-bundle-version<\/key>\s*<string>(\d+(?:\.\d+)*)<\/string>/,
+      )?.[1];
+      if (version && Number.parseInt(version, 10) >= 26) {
+        if (!selected || compareVersions(version, selected.version) > 0) {
+          selected = { developerDirectory, version };
+        }
+      }
+    } catch {
+      // Continue until an installed Xcode with actool 26+ is found.
+    }
+  }
+
+  if (!selected) return false;
+  process.env.DEVELOPER_DIR = selected.developerDirectory;
+  return true;
+}
+
+function compareVersions(left, right) {
+  const leftParts = left.split('.').map(Number);
+  const rightParts = right.split('.').map(Number);
+  const length = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
