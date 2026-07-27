@@ -10,6 +10,7 @@ const {
   NonPersistentCredentialStore,
   SecureCredentialStore,
   reasoningLevels,
+  typeBoxSchema,
 } = require('../ai-runtime.cjs');
 
 function temporaryFile() {
@@ -82,6 +83,17 @@ test('catalogue reasoning levels reflect model capability', () => {
     { effort: 'off', description: 'Reasoning is not exposed for this model.' },
   ]);
   assert.deepEqual(reasoningLevels({ reasoning: true, thinkingLevelMap: { low: 1, high: 2 } }).map((item) => item.effort), ['low', 'high']);
+});
+
+test('structured schema conversion supports nullable enums', async () => {
+  const { Type } = await import('typebox');
+  const schema = typeBoxSchema(Type, {
+    type: ['string', 'null'],
+    enum: ['active', 'superseded', null],
+  });
+
+  assert.deepEqual(schema.anyOf.map((item) => item.type), ['string', 'string', 'null']);
+  assert.deepEqual(schema.anyOf.map((item) => item.const), ['active', 'superseded', undefined]);
 });
 
 test('runtime initializes Pi with app-scoped persistent catalogues and bounded network refresh', async (t) => {

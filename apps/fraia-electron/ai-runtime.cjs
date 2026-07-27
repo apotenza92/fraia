@@ -114,7 +114,9 @@ function reasoningLevels(model) {
 
 function typeBoxSchema(Type, schema) {
   if (!schema || typeof schema !== 'object') return Type.Unknown();
-  if (Array.isArray(schema.enum)) return Type.Union(schema.enum.map((value) => Type.Literal(value)));
+  if (Array.isArray(schema.enum)) {
+    return Type.Union(schema.enum.map((value) => (value === null ? Type.Null() : Type.Literal(value))));
+  }
   if (Array.isArray(schema.type)) {
     return Type.Union(schema.type.map((type) => typeBoxSchema(Type, { ...schema, type })));
   }
