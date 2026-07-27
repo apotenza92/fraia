@@ -18,6 +18,19 @@ test('production uses the reviewed low-level Pi runtime without coding-agent shr
   assert.equal(packageJson.dependencies['@earendil-works/pi-ai'], '0.82.1');
   assert.equal(packageJson.dependencies['@earendil-works/pi-agent-core'], '0.82.1');
   assert.equal(packageJson.dependencies['@earendil-works/pi-coding-agent'], undefined);
+  assert.deepEqual(Object.keys(packageJson.dependencies).sort(), [
+    '@earendil-works/pi-agent-core',
+    '@earendil-works/pi-ai',
+    'electron-updater',
+    'typebox',
+  ]);
+  for (const dependency of Object.keys(packageJson.dependencies)) {
+    assert.equal(
+      packageLock.packages[`node_modules/${dependency}`]?.license,
+      'MIT',
+      `${dependency} must retain reviewed licence metadata`,
+    );
+  }
   assert.equal(
     Object.keys(packageLock.packages).some((packagePath) => packagePath.endsWith('/@earendil-works/pi-coding-agent')),
     false,

@@ -1,4 +1,5 @@
 const { spawnSync } = require('node:child_process');
+const asar = require('@electron/asar');
 const fs = require('node:fs');
 const path = require('node:path');
 const { assertBinaryArchitecture } = require('../binary-architecture.cjs');
@@ -72,6 +73,55 @@ function prepareUnsignedMacosRuntime(resources) {
   console.log('[package] Ad-hoc signed the unsigned local CalculiX runtime for macOS execution testing.');
 }
 
+function verifyProductionDependencyBoundary(resources) {
+  const archive = path.join(resources, 'app.asar');
+  if (!fs.existsSync(archive)) throw new Error(`Packaged Fraia ASAR is missing: ${archive}.`);
+  const entries = new Set(asar.listPackage(archive));
+  const packageLock = JSON.parse(fs.readFileSync(path.join(appRoot, 'package-lock.json'), 'utf8'));
+  const productionDependencies = [
+    '@earendil-works/pi-agent-core',
+    '@earendil-works/pi-ai',
+    'electron-updater',
+    'typebox',
+  ];
+  for (const dependency of productionDependencies) {
+    const packagePath = `node_modules/${dependency}/package.json`;
+    if (!entries.has(`/${packagePath}`)) {
+      throw new Error(`Packaged Fraia is missing production dependency ${dependency}.`);
+    }
+    const packaged = JSON.parse(asar.extractFile(archive, packagePath).toString('utf8'));
+    const locked = packageLock.packages[`node_modules/${dependency}`];
+    if (packaged.version !== locked?.version || packaged.license !== 'MIT') {
+      throw new Error(`Packaged Fraia has unreviewed ${dependency} version or licence metadata.`);
+    }
+  }
+
+  const excludedPackages = [
+    '@base-ui/react',
+    '@earendil-works/pi-coding-agent',
+    '@playwright/test',
+    '@tailwindcss/vite',
+    '@vitejs/plugin-react',
+    'electron',
+    'electron-builder',
+    'jsdom',
+    'lucide-react',
+    'react',
+    'react-dom',
+    'shadcn',
+    'tailwindcss',
+    'three',
+    'typescript',
+    'vite',
+    'vitest',
+  ];
+  for (const dependency of excludedPackages) {
+    if (entries.has(`/node_modules/${dependency}/package.json`)) {
+      throw new Error(`Packaged Fraia unexpectedly contains development dependency ${dependency}.`);
+    }
+  }
+}
+
 const layout = packagedLayout();
 if (!fs.existsSync(layout.executable)) {
   throw new Error(`Exact packaged Fraia executable is missing: ${layout.executable}.`);
@@ -80,6 +130,7 @@ const sidecar = path.join(layout.resources, 'sidecar', nativePlatformArch(), sid
 if (!fs.existsSync(sidecar)) throw new Error(`Exact packaged Fraia sidecar is missing: ${sidecar}.`);
 assertBinaryArchitecture(layout.executable, process.arch);
 assertBinaryArchitecture(sidecar, process.arch);
+verifyProductionDependencyBoundary(layout.resources);
 prepareUnsignedMacosRuntime(layout.resources);
 
 const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
