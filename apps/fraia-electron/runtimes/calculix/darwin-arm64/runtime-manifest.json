@@ -13,7 +13,7 @@
     "revision": "fraia-calculix-macos-v5"
   },
   "redistribution": {
-    "sourceUrl": "https://github.com/apotenza92/fraia/releases/download/v0.0.1/Fraia-CalculiX-Corresponding-Source.tar",
+    "sourceUrl": "https://github.com/apotenza92/fraia/releases/download/v0.0.2/Fraia-CalculiX-Corresponding-Source.tar",
     "sourceSha256": "f38d7cc7db21fda073f4dcfd38b51e46bf9799aa1e46d2177b52f15641966c45",
     "sourceAsset": "Fraia-CalculiX-Corresponding-Source.tar",
     "licenseIdentifiers": [

@@ -34,6 +34,44 @@ function packagedLayout() {
   return { executable: path.join(appRoot, 'fraia-electron'), resources: path.join(appRoot, 'resources') };
 }
 
+function isMachO(filePath) {
+  if (!fs.statSync(filePath).isFile()) return false;
+  const descriptor = fs.openSync(filePath, 'r');
+  try {
+    const header = Buffer.alloc(4);
+    if (fs.readSync(descriptor, header, 0, header.length, 0) !== header.length) return false;
+    return new Set([
+      'feedface', 'feedfacf', 'cefaedfe', 'cffaedfe',
+      'cafebabe', 'bebafeca', 'cafebabf', 'bfbafeca',
+    ]).has(header.toString('hex'));
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
+function prepareUnsignedMacosRuntime(resources) {
+  if (process.platform !== 'darwin') return;
+  const runtimeDirectory = path.join(resources, 'runtimes', 'calculix', nativePlatformArch());
+  if (!fs.existsSync(runtimeDirectory)) return;
+  const calculix = path.join(runtimeDirectory, 'ccx');
+  const signature = spawnSync('codesign', ['--verify', '--strict', calculix], {
+    encoding: 'utf8',
+    stdio: 'pipe',
+  });
+  if (signature.status === 0) return;
+
+  const nativeFiles = fs.readdirSync(runtimeDirectory)
+    .map((name) => path.join(runtimeDirectory, name))
+    .filter((candidate) => isMachO(candidate))
+    .sort((left, right) => (left === calculix ? 1 : 0) - (right === calculix ? 1 : 0));
+  for (const target of nativeFiles) {
+    const result = spawnSync('codesign', ['--force', '--sign', '-', target], { stdio: 'inherit' });
+    if (result.error) throw result.error;
+    if (result.status !== 0) throw new Error(`Failed to ad-hoc sign local packaged runtime: ${target}`);
+  }
+  console.log('[package] Ad-hoc signed the unsigned local CalculiX runtime for macOS execution testing.');
+}
+
 const layout = packagedLayout();
 if (!fs.existsSync(layout.executable)) {
   throw new Error(`Exact packaged Fraia executable is missing: ${layout.executable}.`);
@@ -42,6 +80,7 @@ const sidecar = path.join(layout.resources, 'sidecar', nativePlatformArch(), sid
 if (!fs.existsSync(sidecar)) throw new Error(`Exact packaged Fraia sidecar is missing: ${sidecar}.`);
 assertBinaryArchitecture(layout.executable, process.arch);
 assertBinaryArchitecture(sidecar, process.arch);
+prepareUnsignedMacosRuntime(layout.resources);
 
 const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 const result = spawnSync(npx, [

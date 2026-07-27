@@ -1168,7 +1168,8 @@ async fn agent_settings_handler(
         || requested_reasoning != required.reasoning_effort
     {
         return Err(anyhow!(
-            "Fraia 0.0.1 supports only `{}/{}` with `{}` reasoning",
+            "Fraia {} supports only `{}/{}` with `{}` reasoning",
+            env!("CARGO_PKG_VERSION"),
             required.provider_id,
             required.model,
             required.reasoning_effort,

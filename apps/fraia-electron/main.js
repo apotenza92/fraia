@@ -863,7 +863,7 @@ ipcMain.handle('fraia:aiRefreshCatalog', async () =>
 );
 ipcMain.handle('fraia:aiStartOAuth', async (_event, payload) => {
   if (payload?.providerId !== FRAIA_AI_PROVIDER_ID) {
-    throw new Error('Fraia 0.0.1 supports only Sign in with ChatGPT.');
+    throw new Error(`Fraia ${packageMetadata.version} supports only Sign in with ChatGPT.`);
   }
   return (await ensureAiRuntime()).startOAuth(FRAIA_AI_PROVIDER_ID);
 });
@@ -875,7 +875,7 @@ ipcMain.handle('fraia:aiCancelAuth', async (_event, payload) =>
 );
 ipcMain.handle('fraia:aiDisconnect', async (_event, payload) => {
   if (payload?.providerId !== FRAIA_AI_PROVIDER_ID) {
-    throw new Error('Fraia 0.0.1 supports only the ChatGPT connection.');
+    throw new Error(`Fraia ${packageMetadata.version} supports only the ChatGPT connection.`);
   }
   return publicFraiaCatalogue(await (await ensureAiRuntime()).disconnect(FRAIA_AI_PROVIDER_ID));
 });

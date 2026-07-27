@@ -14,6 +14,7 @@ const {
 const { writeDeterministicTar } = require('../scripts/assemble-calculix-corresponding-source.cjs');
 const { verifyCorrespondingSource } = require('../scripts/verify-calculix-corresponding-source.cjs');
 const { SUPPORTED_TARGETS } = require('../package-boundary.cjs');
+const packageMetadata = require('../package.json');
 
 const electronRoot = path.resolve(__dirname, '..');
 
@@ -39,6 +40,22 @@ test('corresponding-source contract covers every runtime platform with pinned pu
       assert.match(script, new RegExp(source.sha256), `${source.fileName} must remain pinned in ${recipe.path}`);
     }
   }
+});
+
+test('reviewed runtime manifests target the current stable release source asset', () => {
+  const releaseTag = `v${packageMetadata.version}`;
+  const expectedSourceUrl = correspondingSourceUrl('apotenza92/fraia', releaseTag);
+  const sourceDigests = new Set();
+  for (const target of SUPPORTED_TARGETS) {
+    const manifest = JSON.parse(fs.readFileSync(
+      path.join(electronRoot, 'runtimes', 'calculix', target, 'runtime-manifest.json'),
+      'utf8',
+    ));
+    assert.equal(manifest.redistribution.sourceUrl, expectedSourceUrl);
+    assert.match(manifest.redistribution.sourceSha256, /^[a-f0-9]{64}$/);
+    sourceDigests.add(manifest.redistribution.sourceSha256);
+  }
+  assert.equal(sourceDigests.size, 1);
 });
 
 test('tar writer produces byte-identical archives with fixed metadata', () => {

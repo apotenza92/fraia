@@ -211,7 +211,7 @@ export function AiProvidersDialog({ open, onOpenChange }: { open: boolean; onOpe
                 <Alert variant="destructive">
                   <AlertTitle>{FRAIA_AI_MODEL_NAME} is unavailable</AlertTitle>
                   <AlertDescription>
-                    Fraia 0.0.1 does not silently switch models. Refresh the catalogue or reconnect ChatGPT before starting another AI turn.
+                    Fraia does not silently switch models. Refresh the catalogue or reconnect ChatGPT before starting another AI turn.
                   </AlertDescription>
                 </Alert>
               )}

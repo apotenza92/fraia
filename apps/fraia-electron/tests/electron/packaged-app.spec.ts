@@ -78,7 +78,10 @@ test("packaged app persists an edited project and exposes a deterministic solver
       const runDirectories = fs.readdirSync(path.join(solverProjectDir, "runs")).filter((name) => name.startsWith("frame-calculix-run-"))
       expect(runDirectories).toHaveLength(1)
       const execution = JSON.parse(fs.readFileSync(path.join(solverProjectDir, "runs", runDirectories[0], "calculix-execution.json"), "utf8"))
-      expect(execution).toMatchObject({ outcome: "Completed", runtime: { ccx_available: true } })
+      expect(execution, JSON.stringify(execution, null, 2)).toMatchObject({
+        outcome: "Completed",
+        runtime: { ccx_available: true },
+      })
       expect(execution.produced_files).toEqual(expect.arrayContaining([expect.stringMatching(/\.dat$/)]))
     } else {
       expect(calculixResult.error).toContain("CalculiX runtime unavailable")
