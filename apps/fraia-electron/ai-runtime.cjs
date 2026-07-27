@@ -1,12 +1,10 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const http = require('node:http');
-const os = require('node:os');
 const path = require('node:path');
 
 const DEFAULT_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 const DEFAULT_FOCUS_DEBOUNCE_MS = 5 * 60 * 1000;
-const DEFAULT_STARTUP_TIMEOUT_MS = 8_000;
 const DEFAULT_TURN_TIMEOUT_MS = 120_000;
 const MAX_REQUEST_BYTES = 8 * 1024 * 1024;
 const FRAIA_AI_PROVIDER_ID = 'openai-codex';
@@ -162,17 +160,37 @@ function normalizeError(error) {
   return error?.message ?? String(error);
 }
 
+function refreshErrorMessage(result) {
+  const errors = [...(result?.errors?.entries?.() ?? [])];
+  if (!errors.length) return null;
+  return errors
+    .map(([providerId, error]) => `${providerId}: ${normalizeError(error)}`)
+    .join('; ');
+}
+
+async function importReviewedPiRuntime() {
+  const [piAi, piAgent, openAiCodex] = await Promise.all([
+    import('@earendil-works/pi-ai'),
+    import('@earendil-works/pi-agent-core'),
+    import('@earendil-works/pi-ai/providers/openai-codex'),
+  ]);
+  return {
+    Agent: piAgent.Agent,
+    createModels: piAi.createModels,
+    openaiCodexProvider: openAiCodex.openaiCodexProvider,
+  };
+}
+
 class FraiaAiRuntime {
   constructor({
     safeStorage,
     shell,
     userDataDir,
-    importPi = () => import('@earendil-works/pi-coding-agent'),
+    importPi = importReviewedPiRuntime,
     importTypeBox = () => import('typebox'),
     emitStatus = () => {},
     refreshIntervalMs = DEFAULT_REFRESH_INTERVAL_MS,
     focusDebounceMs = DEFAULT_FOCUS_DEBOUNCE_MS,
-    startupTimeoutMs = DEFAULT_STARTUP_TIMEOUT_MS,
     turnTimeoutMs = DEFAULT_TURN_TIMEOUT_MS,
   }) {
     this.safeStorage = safeStorage;
@@ -183,7 +201,6 @@ class FraiaAiRuntime {
     this.emitStatus = emitStatus;
     this.refreshIntervalMs = refreshIntervalMs;
     this.focusDebounceMs = focusDebounceMs;
-    this.startupTimeoutMs = startupTimeoutMs;
     this.turnTimeoutMs = turnTimeoutMs;
     this.modelRuntime = null;
     this.pi = null;
@@ -207,15 +224,13 @@ class FraiaAiRuntime {
     this.credentials = this.safeStorage?.isEncryptionAvailable?.()
       ? new SecureCredentialStore({ safeStorage: this.safeStorage, filePath: credentialFile })
       : new NonPersistentCredentialStore();
-    this.modelRuntime = await pi.ModelRuntime.create({
+    this.modelRuntime = pi.createModels({
       credentials: this.credentials,
-      modelsPath: path.join(this.userDataDir, 'ai', 'provider-config.json'),
-      modelsStorePath: path.join(this.userDataDir, 'ai', 'models-cache.json'),
-      allowModelNetwork: true,
-      modelRefreshTimeoutMs: this.startupTimeoutMs,
     });
+    this.modelRuntime.setProvider(pi.openaiCodexProvider());
+    const refreshResult = await this.modelRuntime.refresh({ allowNetwork: false });
     this.catalogRefreshedAt = new Date().toISOString();
-    this.catalogRefreshError = this.modelRuntime.getError?.() ?? null;
+    this.catalogRefreshError = refreshErrorMessage(refreshResult);
     this.refreshTimer = setInterval(() => {
       void this.refreshCatalog('periodic');
     }, this.refreshIntervalMs);
@@ -231,47 +246,41 @@ class FraiaAiRuntime {
     if (!this.modelRuntime) throw new Error('Fraia AI runtime is not initialized.');
     const available = await this.modelRuntime.getAvailable();
     const availableIds = new Set(available.map((model) => `${model.provider}/${model.id}`));
-    const providers = await Promise.all(this.modelRuntime.getProviders().map(async (provider) => {
-      const status = this.modelRuntime.getProviderAuthStatus(provider.id);
+    const providers = await Promise.all(this.modelRuntime.getProviders()
+      .filter((provider) => provider.id === FRAIA_AI_PROVIDER_ID)
+      .map(async (provider) => {
       const check = await this.modelRuntime.checkAuth(provider.id).catch(() => undefined);
-      const authentication = [];
-      if (provider.auth?.oauth) {
-        authentication.push({
+      const stored = await this.credentials.read(provider.id).catch(() => undefined);
+      const authentication = provider.auth?.oauth
+        ? [{
           type: 'oauth',
           label: provider.auth.oauth.loginLabel ?? provider.auth.oauth.name,
           interactive: true,
           persistentAllowed: this.persistenceAvailable(),
-        });
-      }
-      if (provider.auth?.apiKey) {
-        authentication.push({
-          type: provider.auth.apiKey.login ? 'api_key' : 'external',
-          label: provider.auth.apiKey.name,
-          interactive: Boolean(provider.auth.apiKey.login),
-          persistentAllowed: provider.auth.apiKey.login ? this.persistenceAvailable() : false,
-          requirements: status.label ? [status.label] : [],
-        });
-      }
+        }]
+        : [];
       return {
         id: provider.id,
         name: provider.name,
         authentication,
-        authState: check ? 'connected' : (status.configured ? 'configured' : 'disconnected'),
-        authType: check?.type ?? null,
-        authSource: check?.source ?? status.label ?? status.source ?? null,
+        authState: check ? 'connected' : (stored ? 'configured' : 'disconnected'),
+        authType: check?.type ?? stored?.type ?? null,
+        authSource: check?.source ?? (stored?.type === 'oauth' ? 'Stored OAuth' : null),
       };
-    }));
-    const models = this.modelRuntime.getModels().map((model) => ({
-      providerId: model.provider,
-      modelId: model.id,
-      displayName: model.name || model.id,
-      available: availableIds.has(`${model.provider}/${model.id}`),
-      reasoning: Boolean(model.reasoning),
-      defaultReasoningLevel: model.reasoning ? 'low' : 'off',
-      supportedReasoningLevels: reasoningLevels(model),
-      contextWindow: model.contextWindow ?? null,
-      maxTokens: model.maxTokens ?? null,
-    }));
+      }));
+    const models = this.modelRuntime.getModels()
+      .filter((model) => model.provider === FRAIA_AI_PROVIDER_ID && model.id === FRAIA_AI_MODEL_ID)
+      .map((model) => ({
+        providerId: model.provider,
+        modelId: model.id,
+        displayName: model.name || model.id,
+        available: availableIds.has(`${model.provider}/${model.id}`),
+        reasoning: Boolean(model.reasoning),
+        defaultReasoningLevel: model.reasoning ? 'low' : 'off',
+        supportedReasoningLevels: reasoningLevels(model),
+        contextWindow: model.contextWindow ?? null,
+        maxTokens: model.maxTokens ?? null,
+      }));
     return {
       providers,
       models,
@@ -287,10 +296,14 @@ class FraiaAiRuntime {
 
   async refreshCatalog(reason = 'manual') {
     try {
-      await this.modelRuntime.refresh({ reason });
-      this.catalogRefreshedAt = new Date().toISOString();
-      this.catalogRefreshError = null;
-      this.emitStatus({ kind: 'catalogue', state: 'refreshed', reason, at: this.catalogRefreshedAt });
+      const result = await this.modelRuntime.refresh({ allowNetwork: false });
+      this.catalogRefreshError = refreshErrorMessage(result);
+      if (this.catalogRefreshError) {
+        this.emitStatus({ kind: 'catalogue', state: 'stale', reason, message: this.catalogRefreshError });
+      } else {
+        this.catalogRefreshedAt = new Date().toISOString();
+        this.emitStatus({ kind: 'catalogue', state: 'refreshed', reason, at: this.catalogRefreshedAt });
+      }
     } catch (error) {
       this.catalogRefreshError = normalizeError(error);
       this.emitStatus({ kind: 'catalogue', state: 'stale', reason, message: this.catalogRefreshError });
@@ -305,24 +318,10 @@ class FraiaAiRuntime {
     return this.refreshCatalog('focus');
   }
 
-  async submitApiKey(providerId, apiKey) {
-    if (!this.persistenceAvailable()) {
-      throw new Error('Secure operating-system credential encryption is unavailable; Fraia will not persist an API key.');
-    }
-    const secret = String(apiKey ?? '');
-    if (!secret.trim()) throw new Error('Enter an API key.');
-    await this.modelRuntime.login(providerId, 'api_key', {
-      prompt: async (prompt) => {
-        if (prompt.type !== 'secret') throw new Error(`Provider requested unsupported ${prompt.type} input during API-key setup.`);
-        return secret;
-      },
-      notify: () => {},
-    });
-    await this.refreshCatalog('authentication');
-    return this.catalog();
-  }
-
   async startOAuth(providerId) {
+    if (providerId !== FRAIA_AI_PROVIDER_ID) {
+      throw new Error(`Fraia supports only the ${FRAIA_AI_PROVIDER_ID} OAuth connection.`);
+    }
     if (!this.persistenceAvailable()) {
       throw new Error('Secure operating-system credential encryption is unavailable; Fraia cannot persist an OAuth connection.');
     }
@@ -373,6 +372,9 @@ class FraiaAiRuntime {
   }
 
   async disconnect(providerId) {
+    if (providerId !== FRAIA_AI_PROVIDER_ID) {
+      throw new Error(`Fraia supports only the ${FRAIA_AI_PROVIDER_ID} OAuth connection.`);
+    }
     await this.modelRuntime.logout(providerId);
     await this.refreshCatalog('authentication');
     return this.catalog();
@@ -384,6 +386,13 @@ class FraiaAiRuntime {
       throw new Error('AI turn request is missing required fields.');
     }
     if (this.activeTurns.has(requestId)) throw new Error(`AI request ${requestId} is already active.`);
+    if (
+      providerId !== FRAIA_AI_PROVIDER_ID
+      || modelId !== FRAIA_AI_MODEL_ID
+      || reasoningEffort !== 'low'
+    ) {
+      throw new Error(`Fraia supports only ${FRAIA_AI_PROVIDER_ID}/${FRAIA_AI_MODEL_ID} with low reasoning.`);
+    }
     const model = this.modelRuntime.getModel(providerId, modelId);
     if (!model) throw new Error(`Pi does not know model ${providerId}/${modelId}.`);
     const available = await this.modelRuntime.getAvailable(providerId);
@@ -393,15 +402,10 @@ class FraiaAiRuntime {
 
     let structuredResult = null;
     const schema = typeBoxSchema(this.Type, responseSchema);
-    const tool = this.pi.defineTool({
+    const tool = {
       name: 'submit_fraia_response',
       label: 'Submit Fraia response',
       description: 'Submit the final structured response to Fraia. This must be the final action.',
-      promptSnippet: 'Submit a validated Fraia response',
-      promptGuidelines: [
-        'Always finish by calling submit_fraia_response exactly once.',
-        'Do not provide the final result as unstructured assistant text.',
-      ],
       parameters: schema,
       async execute(_toolCallId, params) {
         structuredResult = params;
@@ -411,47 +415,40 @@ class FraiaAiRuntime {
           terminate: true,
         };
       },
+    };
+    const agent = new this.pi.Agent({
+      initialState: {
+        systemPrompt: 'You are Fraia\'s constrained AI reasoning adapter. Use only the supplied prompt. Do not infer access to files, tools, repositories, or project context. Always finish by calling submit_fraia_response exactly once with arguments matching its schema. Do not provide the final result as unstructured assistant text.',
+        model,
+        thinkingLevel: reasoningEffort,
+        tools: [tool],
+      },
+      streamFn: (selectedModel, context, options) => this.modelRuntime.streamSimple(selectedModel, context, options),
+      toolExecution: 'sequential',
     });
-    const settingsManager = this.pi.SettingsManager.inMemory({
-      compaction: { enabled: false },
-      retry: { enabled: false },
-      enableAnalytics: false,
-      enableSkillCommands: false,
-    });
-    const cwd = path.join(os.tmpdir(), 'fraia-pi-runtime');
-    fs.mkdirSync(cwd, { recursive: true });
-    const resourceLoader = new this.pi.DefaultResourceLoader({
-      cwd,
-      agentDir: cwd,
-      settingsManager,
-      noExtensions: true,
-      noSkills: true,
-      noPromptTemplates: true,
-      noThemes: true,
-      noContextFiles: true,
-      systemPrompt: 'You are Fraia\'s constrained AI reasoning adapter. Use only the supplied prompt. Do not infer access to files, tools, repositories, or project context. Finish by calling submit_fraia_response with arguments matching its schema.',
-    });
-    await resourceLoader.reload();
-    const { session } = await this.pi.createAgentSession({
-      cwd,
-      modelRuntime: this.modelRuntime,
-      model,
-      thinkingLevel: reasoningEffort === 'off' ? 'minimal' : reasoningEffort,
-      noTools: 'all',
-      tools: ['submit_fraia_response'],
-      customTools: [tool],
-      resourceLoader,
-      sessionManager: this.pi.SessionManager.inMemory(cwd),
-      settingsManager,
-    });
-    const timeout = setTimeout(() => void session.abort(), this.turnTimeoutMs);
-    this.activeTurns.set(requestId, session);
+    const activeTurn = { agent, cancellationMessage: null };
+    const timeout = setTimeout(() => {
+      activeTurn.cancellationMessage = 'The AI turn timed out and was cancelled.';
+      agent.abort();
+    }, this.turnTimeoutMs);
+    this.activeTurns.set(requestId, activeTurn);
     this.emitStatus({ kind: 'turn', requestId, state: 'generating', providerId, modelId });
+    const promptAgent = async (message) => {
+      if (activeTurn.cancellationMessage) throw new Error(activeTurn.cancellationMessage);
+      try {
+        await agent.prompt(message);
+      } catch (error) {
+        if (activeTurn.cancellationMessage) throw new Error(activeTurn.cancellationMessage);
+        throw error;
+      }
+      if (activeTurn.cancellationMessage) throw new Error(activeTurn.cancellationMessage);
+      if (agent.state.errorMessage) throw new Error(agent.state.errorMessage);
+    };
     try {
-      await session.prompt(prompt, { expandPromptTemplates: false });
+      await promptAgent(prompt);
       if (!structuredResult) {
         this.emitStatus({ kind: 'turn', requestId, state: 'correcting' });
-        await session.prompt('Your previous response did not call submit_fraia_response with valid arguments. Call it now with a complete response matching the tool schema.', { expandPromptTemplates: false });
+        await promptAgent('Your previous response did not call submit_fraia_response with valid arguments. Call it now with a complete response matching the tool schema.');
       }
       if (!structuredResult) {
         throw new Error('The model did not submit a valid structured Fraia response after one corrective attempt.');
@@ -467,14 +464,16 @@ class FraiaAiRuntime {
     } finally {
       clearTimeout(timeout);
       this.activeTurns.delete(requestId);
-      session.dispose();
+      agent.reset();
     }
   }
 
   async cancelTurn(requestId) {
-    const session = this.activeTurns.get(requestId);
-    if (!session) return false;
-    await session.abort();
+    const activeTurn = this.activeTurns.get(requestId);
+    if (!activeTurn) return false;
+    activeTurn.cancellationMessage = 'The AI turn was cancelled.';
+    activeTurn.agent.abort();
+    await activeTurn.agent.waitForIdle();
     this.emitStatus({ kind: 'turn', requestId, state: 'cancelled' });
     return true;
   }
@@ -668,6 +667,14 @@ class FakeFraiaAiRuntime extends FraiaAiRuntime {
     } finally {
       this.activeTurns.delete(request.requestId);
     }
+  }
+
+  async cancelTurn(requestId) {
+    const turn = this.activeTurns.get(requestId);
+    if (!turn) return false;
+    await turn.abort();
+    this.emitStatus({ kind: 'turn', requestId, state: 'cancelled' });
+    return true;
   }
 }
 

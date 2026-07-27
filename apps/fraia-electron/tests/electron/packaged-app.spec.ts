@@ -31,7 +31,6 @@ test("packaged app persists an edited project and exposes a deterministic solver
       FRAIA_DEFAULT_PROJECT_DIR: defaultProjectDir,
       ...(requireCalculix ? {} : { FRAIA_DISABLE_CALCULIX_RUNTIME: "1" }),
       FRAIA_DISABLE_MANAGED_CCX_BOOTSTRAP: "1",
-      FRAIA_FAKE_AI_RUNTIME: "1",
       FRAIA_USER_DATA_DIR: userDataDir,
     },
   })
@@ -49,6 +48,13 @@ test("packaged app persists an edited project and exposes a deterministic solver
     })
     expect(await electronApp.evaluate(({ app }) => app.isPackaged)).toBe(true)
     expect(await electronApp.evaluate(({ app }) => app.getPath("userData"))).toBe(userDataDir)
+    const aiCatalogue = await page.evaluate(() => window.fraia.aiProviders())
+    expect(aiCatalogue.providers.map((provider) => provider.id)).toEqual(["openai-codex"])
+    expect(aiCatalogue.models.map((model) => [model.providerId, model.modelId])).toEqual([
+      ["openai-codex", "gpt-5.6-luna"],
+    ])
+    expect(aiCatalogue.providers[0].authState).toBe("disconnected")
+    expect(aiCatalogue.models[0].available).toBe(false)
 
     const state = await page.evaluate(async ({ projectDir }) => {
       await window.fraia.createProject({ projectDir, name: "Packaged Persistence" })

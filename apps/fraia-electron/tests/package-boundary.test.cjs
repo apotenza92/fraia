@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const {
@@ -9,6 +10,23 @@ const {
   resolveCalculixRuntime,
   resolveSidecarLaunch,
 } = require('../package-boundary.cjs');
+
+test('production uses the reviewed low-level Pi runtime without coding-agent shrinkwrap', () => {
+  const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+  const packageLock = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8'));
+
+  assert.equal(packageJson.dependencies['@earendil-works/pi-ai'], '0.82.1');
+  assert.equal(packageJson.dependencies['@earendil-works/pi-agent-core'], '0.82.1');
+  assert.equal(packageJson.dependencies['@earendil-works/pi-coding-agent'], undefined);
+  assert.equal(
+    Object.keys(packageLock.packages).some((packagePath) => packagePath.endsWith('/@earendil-works/pi-coding-agent')),
+    false,
+  );
+  for (const [packagePath, metadata] of Object.entries(packageLock.packages)) {
+    if (!packagePath.endsWith('/brace-expansion')) continue;
+    assert.notEqual(metadata.version, '5.0.7', `${packagePath} must not resolve vulnerable brace-expansion 5.0.7`);
+  }
+});
 
 test('packaged apps launch only the bundled native sidecar', () => {
   const resourcesPath = path.resolve('/packaged-resources');

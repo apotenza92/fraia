@@ -130,56 +130,87 @@ test('structured schema conversion supports nullable enums', async () => {
   assert.deepEqual(schema.anyOf.map((item) => item.const), ['active', 'superseded', undefined]);
 });
 
-test('runtime initializes Pi with app-scoped persistent catalogues and bounded network refresh', async (t) => {
+test('runtime initializes only the reviewed Pi provider with encrypted credentials and offline catalogue refresh', async (t) => {
   const { directory } = temporaryFile();
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   let createOptions;
-  const modelRuntime = { getError: () => undefined };
+  let registeredProvider;
+  let refreshOptions;
+  const modelRuntime = {
+    setProvider: (provider) => { registeredProvider = provider; },
+    refresh: async (options) => {
+      refreshOptions = options;
+      return { aborted: false, errors: new Map() };
+    },
+  };
   const runtime = new FraiaAiRuntime({
     safeStorage: fakeSafeStorage(),
     userDataDir: directory,
-    startupTimeoutMs: 1234,
     importPi: async () => ({
-      ModelRuntime: {
-        create: async (options) => {
-          createOptions = options;
-          return modelRuntime;
-        },
+      createModels: (options) => {
+        createOptions = options;
+        return modelRuntime;
       },
+      openaiCodexProvider: () => ({ id: 'openai-codex', name: 'OpenAI Codex' }),
     }),
     importTypeBox: async () => ({ Type: {} }),
   });
   await runtime.initialize();
   t.after(() => runtime.stop());
 
-  assert.equal(createOptions.modelsPath, path.join(directory, 'ai', 'provider-config.json'));
-  assert.equal(createOptions.modelsStorePath, path.join(directory, 'ai', 'models-cache.json'));
-  assert.equal(createOptions.allowModelNetwork, true);
-  assert.equal(createOptions.modelRefreshTimeoutMs, 1234);
+  assert.equal(createOptions.credentials instanceof SecureCredentialStore, true);
+  assert.equal(registeredProvider.id, 'openai-codex');
+  assert.deepEqual(refreshOptions, { allowNetwork: false });
 });
 
-test('catalogue describes OAuth, API-key, and external provider authentication without an allowlist', async () => {
+test('pinned production Pi packages expose the reviewed ChatGPT Luna catalogue', async (t) => {
+  const { directory } = temporaryFile();
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const runtime = await new FraiaAiRuntime({
+    safeStorage: fakeSafeStorage(),
+    userDataDir: directory,
+  }).initialize();
+  t.after(() => runtime.stop());
+
+  const result = await runtime.catalog();
+  assert.deepEqual(result.providers.map((provider) => provider.id), ['openai-codex']);
+  assert.deepEqual(
+    result.models.map((model) => [model.providerId, model.modelId]),
+    [['openai-codex', 'gpt-5.6-luna']],
+  );
+  assert.equal(result.providers[0].authentication[0].type, 'oauth');
+  assert.equal(result.providers[0].authState, 'disconnected');
+  assert.equal(result.models[0].available, false);
+  assert.equal(result.catalogue.stale, false);
+});
+
+test('catalogue describes the reviewed ChatGPT OAuth provider and Luna model', async () => {
   const runtime = new FraiaAiRuntime({ safeStorage: fakeSafeStorage(), userDataDir: '/tmp/fraia-unused' });
   runtime.credentials = new SecureCredentialStore({ safeStorage: fakeSafeStorage(), filePath: '/tmp/fraia-unused-credentials' });
   runtime.catalogRefreshedAt = '2026-07-22T00:00:00Z';
   runtime.modelRuntime = {
-    getAvailable: async () => [{ provider: 'oauth-provider', id: 'oauth-model' }],
+    getAvailable: async () => [{ provider: 'openai-codex', id: 'gpt-5.6-luna' }],
     getProviders: () => [
-      { id: 'oauth-provider', name: 'OAuth', auth: { oauth: { name: 'Browser sign-in', loginLabel: 'Sign in' } } },
-      { id: 'key-provider', name: 'API key', auth: { apiKey: { name: 'Provider key', login: async () => {} } } },
-      { id: 'cloud-provider', name: 'Cloud', auth: { apiKey: { name: 'Cloud profile' } } },
+      { id: 'openai-codex', name: 'OpenAI Codex', auth: { oauth: { name: 'OpenAI (ChatGPT Plus/Pro)', loginLabel: 'Sign in with ChatGPT' } } },
     ],
-    getProviderAuthStatus: (providerId) => ({ configured: providerId === 'cloud-provider', label: providerId === 'cloud-provider' ? 'CLOUD_PROFILE' : undefined }),
-    checkAuth: async (providerId) => providerId === 'oauth-provider' ? { type: 'oauth', source: 'stored OAuth' } : undefined,
-    getModels: () => [{ provider: 'oauth-provider', id: 'oauth-model', name: 'OAuth model', reasoning: false }],
+    checkAuth: async () => ({ type: 'oauth', source: 'OAuth' }),
+    getModels: () => [{
+      provider: 'openai-codex',
+      id: 'gpt-5.6-luna',
+      name: 'GPT-5.6 Luna',
+      reasoning: true,
+      contextWindow: 272000,
+      maxTokens: 128000,
+    }],
   };
 
   const result = await runtime.catalog();
-  assert.deepEqual(result.providers.map((provider) => provider.id), ['oauth-provider', 'key-provider', 'cloud-provider']);
+  assert.deepEqual(result.providers.map((provider) => provider.id), ['openai-codex']);
   assert.equal(result.providers[0].authentication[0].type, 'oauth');
-  assert.equal(result.providers[1].authentication[0].type, 'api_key');
-  assert.equal(result.providers[2].authentication[0].type, 'external');
-  assert.deepEqual(result.providers[2].authentication[0].requirements, ['CLOUD_PROFILE']);
+  assert.equal(result.providers[0].authState, 'connected');
+  assert.equal(result.models[0].modelId, 'gpt-5.6-luna');
+  assert.equal(result.models[0].available, true);
+  assert.equal(result.models[0].defaultReasoningLevel, 'low');
 });
 
 test('OAuth flow opens Pi URLs, forwards prompts, and reports completion', async (t) => {
@@ -202,13 +233,13 @@ test('OAuth flow opens Pi URLs, forwards prompts, and reports completion', async
       interaction.notify({ type: 'device_code', verificationUri: 'https://provider.example/device', userCode: 'ABCD' });
       promptResult = await interaction.prompt({ type: 'select', message: 'Choose account', options: [{ id: 'work', label: 'Work' }] });
     },
-    refresh: async () => {},
+    refresh: async () => ({ aborted: false, errors: new Map() }),
     getAvailable: async () => [],
     getProviders: () => [],
     getModels: () => [],
   };
 
-  const { flowId } = await runtime.startOAuth('oauth-provider');
+  const { flowId } = await runtime.startOAuth('openai-codex');
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(opened, ['https://provider.example/sign-in', 'https://provider.example/device']);
   assert.equal(events.some((event) => event.type === 'prompt'), true);
@@ -223,10 +254,10 @@ test('catalogue refresh retains stale state and diagnostics after an offline fai
   runtime.credentials = new SecureCredentialStore({ safeStorage: fakeSafeStorage(), filePath: '/tmp/fraia-unused-credentials' });
   runtime.catalogRefreshedAt = '2026-07-21T00:00:00Z';
   runtime.modelRuntime = {
-    refresh: async () => { throw new Error('offline'); },
+    refresh: async () => ({ aborted: false, errors: new Map([['openai-codex', new Error('offline')]]) }),
     getAvailable: async () => [],
     getProviders: () => [],
-    getModels: () => [{ provider: 'cached', id: 'cached-model', name: 'Cached model', reasoning: false }],
+    getModels: () => [{ provider: 'openai-codex', id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna', reasoning: true }],
   };
   const result = await runtime.refreshCatalog('manual');
   assert.equal(result.catalogue.stale, true);
@@ -240,28 +271,36 @@ async function structuredRuntime({ behavior = 'valid', turnTimeoutMs = 500 } = {
   let promptCalls = 0;
   let rejectPending;
   const pi = {
-    defineTool: (definition) => definition,
-    SettingsManager: { inMemory: () => ({}) },
-    SessionManager: { inMemory: () => ({}) },
-    DefaultResourceLoader: class {
-      async reload() {}
-    },
-    createAgentSession: async ({ customTools }) => ({
-      session: {
-        prompt: async () => {
+    Agent: class {
+      constructor({ initialState }) {
+        this.state = { errorMessage: undefined };
+        this.tools = initialState.tools;
+      }
+
+      async prompt() {
           promptCalls += 1;
-          if (behavior === 'provider-error') throw new Error('provider unavailable');
+          if (behavior === 'provider-error') {
+            this.state.errorMessage = 'provider unavailable';
+            return;
+          }
           if (behavior === 'timeout') {
             return new Promise((_resolve, reject) => { rejectPending = reject; });
           }
           if (behavior === 'valid' || (behavior === 'corrective' && promptCalls === 2)) {
-            await customTools[0].execute('tool-call', { message: 'Structured result' });
+            await this.tools[0].execute('tool-call', { message: 'Structured result' });
           }
-        },
-        abort: async () => rejectPending?.(new Error('The AI turn was cancelled.')),
-        dispose: () => {},
-      },
-    }),
+      }
+
+      abort() {
+        rejectPending?.(new Error('aborted'));
+      }
+
+      waitForIdle() {
+        return Promise.resolve();
+      }
+
+      reset() {}
+    },
   };
   const runtime = new FraiaAiRuntime({ safeStorage: fakeSafeStorage(), userDataDir: '/tmp/fraia-structured-runtime', turnTimeoutMs });
   runtime.pi = pi;
@@ -269,38 +308,47 @@ async function structuredRuntime({ behavior = 'valid', turnTimeoutMs = 500 } = {
   runtime.catalogRefreshedAt = '2026-07-22T00:00:00Z';
   runtime.modelRuntime = {
     getModel: (providerId, modelId) => ({ provider: providerId, id: modelId }),
-    getAvailable: async (providerId) => [{ provider: providerId, id: 'test-model' }],
+    getAvailable: async () => [{ provider: 'openai-codex', id: 'gpt-5.6-luna' }],
+    streamSimple: () => {
+      throw new Error('The fake Agent must not call the production stream.');
+    },
   };
   return { runtime, promptCalls: () => promptCalls };
 }
 
-test('structured turns work through representative Pi provider adapters', async () => {
-  for (const providerId of ['openai', 'anthropic', 'google', 'openai-compatible']) {
-    const { runtime } = await structuredRuntime();
-    const result = await runtime.runTurn({
-      requestId: `turn-${providerId}`,
-      providerId,
-      modelId: 'test-model',
-      reasoningEffort: 'low',
-      prompt: 'Return structured data',
-      responseSchema: {
-        type: 'object',
-        properties: { message: { type: 'string' } },
-        required: ['message'],
-        additionalProperties: false,
-      },
-    });
-    assert.deepEqual(result.output, { message: 'Structured result' });
-    assert.equal(result.providerId, providerId);
-  }
+test('structured turns use only the reviewed ChatGPT Luna contract', async () => {
+  const { runtime } = await structuredRuntime();
+  const result = await runtime.runTurn({
+    requestId: 'turn-luna',
+    providerId: 'openai-codex',
+    modelId: 'gpt-5.6-luna',
+    reasoningEffort: 'low',
+    prompt: 'Return structured data',
+    responseSchema: {
+      type: 'object',
+      properties: { message: { type: 'string' } },
+      required: ['message'],
+      additionalProperties: false,
+    },
+  });
+  assert.deepEqual(result.output, { message: 'Structured result' });
+  assert.equal(result.providerId, 'openai-codex');
+  await assert.rejects(() => runtime.runTurn({
+    requestId: 'turn-unreviewed',
+    providerId: 'anthropic',
+    modelId: 'claude-opus',
+    reasoningEffort: 'low',
+    prompt: 'Return structured data',
+    responseSchema: { type: 'object', properties: {}, required: [] },
+  }), /supports only openai-codex\/gpt-5.6-luna with low reasoning/);
 });
 
 test('structured turns make one corrective attempt and reject missing tool results', async () => {
   const corrective = await structuredRuntime({ behavior: 'corrective' });
   const result = await corrective.runtime.runTurn({
     requestId: 'turn-corrective',
-    providerId: 'openai',
-    modelId: 'test-model',
+    providerId: 'openai-codex',
+    modelId: 'gpt-5.6-luna',
     reasoningEffort: 'low',
     prompt: 'Return structured data',
     responseSchema: { type: 'object', properties: { message: { type: 'string' } }, required: ['message'] },
@@ -311,8 +359,8 @@ test('structured turns make one corrective attempt and reject missing tool resul
   const invalid = await structuredRuntime({ behavior: 'missing-tool' });
   await assert.rejects(() => invalid.runtime.runTurn({
     requestId: 'turn-invalid',
-    providerId: 'openai',
-    modelId: 'test-model',
+    providerId: 'openai-codex',
+    modelId: 'gpt-5.6-luna',
     reasoningEffort: 'low',
     prompt: 'Return structured data',
     responseSchema: { type: 'object', properties: {}, required: [] },
@@ -324,8 +372,8 @@ test('structured turns surface provider failures and enforce the configured time
   const providerFailure = await structuredRuntime({ behavior: 'provider-error' });
   await assert.rejects(() => providerFailure.runtime.runTurn({
     requestId: 'turn-provider-error',
-    providerId: 'anthropic',
-    modelId: 'test-model',
+    providerId: 'openai-codex',
+    modelId: 'gpt-5.6-luna',
     reasoningEffort: 'low',
     prompt: 'Return structured data',
     responseSchema: { type: 'object', properties: {}, required: [] },
@@ -334,8 +382,8 @@ test('structured turns surface provider failures and enforce the configured time
   const timeout = await structuredRuntime({ behavior: 'timeout', turnTimeoutMs: 5 });
   await assert.rejects(() => timeout.runtime.runTurn({
     requestId: 'turn-timeout',
-    providerId: 'google',
-    modelId: 'test-model',
+    providerId: 'openai-codex',
+    modelId: 'gpt-5.6-luna',
     reasoningEffort: 'low',
     prompt: 'Return structured data',
     responseSchema: { type: 'object', properties: {}, required: [] },
