@@ -11,13 +11,14 @@ const script = fs.readFileSync(
   path.resolve(__dirname, '../scripts/build-calculix-windows-runtime.ps1'),
   'utf8',
 );
-const loaderDiagnostic = fs.readFileSync(
-  path.resolve(__dirname, '../scripts/diagnose-calculix-windows-loader.ps1'),
-  'utf8',
-);
 
 test('Windows CalculiX recipes preserve repository bytes on Windows checkouts', () => {
   assert.match(gitAttributes, /^\*\.ps1 text eol=lf$/m);
+  assert.match(gitAttributes, /^apps\/fraia-electron\/runtimes\/calculix\/\*\* -text$/m);
+  assert.match(
+    gitAttributes,
+    /^apps\/fraia-electron\/runtimes\/calculix\/win32-x64\/\*\* whitespace=cr-at-eol$/m,
+  );
 });
 
 test('Windows CalculiX vendor build pins every source and toolchain input', () => {
@@ -196,45 +197,4 @@ test('Windows CalculiX vendor build preserves actionable failure evidence', () =
   assert.match(script, /strings-error\.txt/);
   assert.match(script, /No runtime candidate was emitted/);
   assert.match(script, /Move-Item -LiteralPath \$FailureStaging -Destination \$ResolvedEvidence/);
-});
-
-test('Windows loader diagnostics reuse and authenticate one exact retained candidate', () => {
-  assert.match(loaderDiagnostic, /native Windows x64 host/);
-  assert.match(loaderDiagnostic, /ccx-build-one\.sha256/);
-  assert.match(loaderDiagnostic, /Get-FileHash -Algorithm SHA256/);
-  assert.match(loaderDiagnostic, /\[AllowEmptyString\(\)\]/);
-  assert.match(loaderDiagnostic, /LoadLibraryExW/);
-  assert.match(loaderDiagnostic, /GetProcAddress/);
-  assert.match(loaderDiagnostic, /GetModuleFileNameW/);
-  assert.match(loaderDiagnostic, /Get-PeMachine/);
-  assert.match(loaderDiagnostic, /import-resolution\.json/);
-  assert.match(loaderDiagnostic, /llvm-readobj\.exe/);
-  assert.match(loaderDiagnostic, /llvm-strip\.exe/);
-  assert.match(loaderDiagnostic, /--strip-debug/);
-  assert.match(loaderDiagnostic, /--strip-all/);
-  assert.match(loaderDiagnostic, /Set-PeSectionShortName/);
-  assert.match(loaderDiagnostic, /clear unused COFF string-table pointer/);
-  assert.match(loaderDiagnostic, /New-PeHeaderDiagnosticVariant/);
-  assert.match(loaderDiagnostic, /header-no-aslr/);
-  assert.match(loaderDiagnostic, /header-no-tls/);
-  assert.match(loaderDiagnostic, /header-no-exception/);
-  assert.match(loaderDiagnostic, /header-direct-ucrt/);
-  assert.match(loaderDiagnostic, /header-no-resource/);
-  assert.match(loaderDiagnostic, /header-no-relocations/);
-  assert.match(loaderDiagnostic, /header-no-imports/);
-  assert.match(loaderDiagnostic, /header-required-os-6/);
-  assert.match(loaderDiagnostic, /header-subsystem-6/);
-  assert.match(loaderDiagnostic, /header-required-os-and-subsystem-6/);
-  assert.match(loaderDiagnostic, /header-minimal-loader-contract/);
-  assert.match(loaderDiagnostic, /cdb-initialize-process-trace\.log/);
-  assert.match(loaderDiagnostic, /ntdll!LdrpInitializeProcess/);
-  assert.match(loaderDiagnostic, /wt -l 8 -m ntdll -or/);
-  assert.match(loaderDiagnostic, /Reported completion/);
-  assert.match(loaderDiagnostic, /Start-Process/);
-  assert.match(loaderDiagnostic, /Unsigned exit code/);
-  assert.match(loaderDiagnostic, /cdb-loader\.log/);
-  assert.match(loaderDiagnostic, /gflags\.exe/);
-  assert.match(loaderDiagnostic, /windows-events\.txt/);
-  assert.match(loaderDiagnostic, /DIAGNOSTIC_FAILURE\.txt/);
-  assert.doesNotMatch(loaderDiagnostic, /Invoke-WebRequest|curl|wget/);
 });

@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "target": "win32-x64",
+  "calculixVersion": "2.23",
+  "upstream": {
+    "sourceUrl": "https://www.dhondt.de/ccx_2.23.src.tar.bz2",
+    "sourceSha256": "9c88385c10fb04f5dc6c4e98027a51bebdd8aee3920e05190d6c1dd08357d6e7",
+    "revision": "calculix-2.23"
+  },
+  "build": {
+    "recipe": "BUILD_RECIPE.md",
+    "recipeSha256": "5be18102fb10836e5bb8c18564c4c8b5188c68f96237e85ef4085ac17ac68f05",
+    "revision": "fraia-calculix-windows-v20"
+  },
+  "redistribution": {
+    "sourceUrl": "https://github.com/apotenza92/fraia/releases/download/v0.0.1/Fraia-CalculiX-Corresponding-Source.tar",
+    "sourceSha256": "f38d7cc7db21fda073f4dcfd38b51e46bf9799aa1e46d2177b52f15641966c45",
+    "sourceAsset": "Fraia-CalculiX-Corresponding-Source.tar",
+    "licenseIdentifiers": [
+      "GPL-2.0-only",
+      "LicenseRef-SPOOLES-Public-Domain",
+      "BSD-3-Clause",
+      "MIT",
+      "GPL-3.0-or-later WITH GCC-exception-3.1"
+    ]
+  },
+  "files": {
+    "executable": {
+      "path": "ccx.exe",
+      "sha256": "96d6831957dc82f3fd37a845ecbc621b5501c85db66eb80083c4641c8caaf380"
+    },
+    "notices": {
+      "path": "THIRD_PARTY_NOTICES.txt",
+      "sha256": "9d027e2207d405640abedc4b7451f56ab6159c040f217a124e7e504d4e1352b6"
+    },
+    "dependencies": [
+      {
+        "name": "api-ms-win-crt-conio-l1-1-0.dll",
+        "kind": "system"
+      },
+      {
+        "name": "api-ms-win-crt-convert-l1-1-0.dll",
+        "kind": "system"
+      },
+      {
+        "name": "api-ms-win-crt-environment-l1-1-0.dll",
+        "kind": "system"
+      },
+      {
+        "name": "api-ms-win-crt-filesystem-l1-1-0.dll",
+        "kind": "system"
+      },
+      {
+        "name": "api-ms-win-crt-heap-l1-1-0.dll",
+        "kind": "system"
+      },
+      {
+        "name": "api-ms-win-crt-locale-l1-1-0.dll",
+        "kind": "system"
+      },
+      {
+        "name": "api-ms-win-crt-math-l1-1-0.dll",
+        "kind": "system"
+      },
+      {
+        "name": "api-ms-win-crt-private-l1-1-0.dll",
+        "kind": "system"
+      },
+      {
+        "name": "api-ms-win-crt-runtime-l1-1-0.dll",
+        "kind": "system"
+      },
+      {
+        "name": "api-ms-win-crt-stdio-l1-1-0.dll",
+        "kind": "system"
+      },
+      {
+        "name": "api-ms-win-crt-string-l1-1-0.dll",
+        "kind": "system"
+      },
+      {
+        "name": "api-ms-win-crt-time-l1-1-0.dll",
+        "kind": "system"
+      },
+      {
+        "name": "api-ms-win-crt-utility-l1-1-0.dll",
+        "kind": "system"
+      },
+      {
+        "name": "KERNEL32.dll",
+        "kind": "system"
+      }
+    ]
+  }
+}

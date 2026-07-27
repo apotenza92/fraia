@@ -15,7 +15,7 @@ on:
           - linux-x64
           - win32-x64
       reviewed_source_run_id:
-        description: Successful Linux x64 source run, or diagnostic:FAILED_RUN_ID for exact Windows loader evidence
+        description: Successful Linux x64 source run for a Windows candidate
         required: false
         type: string
 
@@ -69,7 +69,7 @@ jobs:
 
   windows:
     name: Windows candidate (win32-x64)
-    if: ${{ inputs.target == 'win32-x64' && !startsWith(inputs.reviewed_source_run_id, 'diagnostic:') }}
+    if: ${{ inputs.target == 'win32-x64' }}
     runs-on: windows-2025
     timeout-minutes: 180
     steps:
@@ -129,55 +129,6 @@ jobs:
           name: calculix-win32-x64
           path: ${{ runner.temp }}/win32-x64
           if-no-files-found: error
-          retention-days: 14
-
-  windows-loader-diagnostic:
-    name: Windows loader diagnostic (win32-x64)
-    if: ${{ inputs.target == 'win32-x64' && startsWith(inputs.reviewed_source_run_id, 'diagnostic:') }}
-    runs-on: windows-2025
-    timeout-minutes: 20
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Resolve exact failed audit run
-        id: failed-run
-        shell: pwsh
-        env:
-          REVIEWED_SOURCE_RUN_ID: ${{ inputs.reviewed_source_run_id }}
-        run: |
-          $value = $env:REVIEWED_SOURCE_RUN_ID
-          if ($value -notmatch '^diagnostic:([0-9]+)$') {
-            throw 'The diagnostic source must be diagnostic:FAILED_RUN_ID.'
-          }
-          "run_id=$($Matches[1])" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-
-      - name: Download exact retained failure evidence
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: calculix-win32-x64-reproducibility-failure
-          path: ${{ runner.temp }}/failed-candidate
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ steps.failed-run.outputs.run_id }}
-
-      - name: Diagnose native loader failure
-        working-directory: apps/fraia-electron
-        shell: pwsh
-        run: |
-          ./scripts/diagnose-calculix-windows-loader.ps1 `
-            -FailureEvidenceDirectory '${{ runner.temp }}\failed-candidate' `
-            -OutputDirectory '${{ runner.temp }}\loader-diagnostic'
-
-      - name: Upload native loader evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: calculix-win32-x64-loader-diagnostic-${{ steps.failed-run.outputs.run_id }}
-          path: ${{ runner.temp }}/loader-diagnostic
-          if-no-files-found: warn
           retention-days: 14
 
   linux:
