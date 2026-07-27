@@ -141,7 +141,7 @@ test("fake Pi runtime connects, selects, completes, cancels, and reconnects", as
     },
   })
   const openProviders = async (page: Page) => {
-    await page.getByRole("menuitem", { name: "Settings" }).click()
+    await page.getByRole("menuitem", { name: "Fraia" }).click()
     await page.getByRole("menuitem", { name: "AI providers…" }).click()
     await expect(page.getByRole("dialog", { name: "AI providers" })).toBeVisible()
   }

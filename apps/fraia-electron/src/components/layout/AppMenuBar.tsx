@@ -4,10 +4,12 @@ import {
   MenubarGroup,
   MenubarItem,
   MenubarMenu,
+  MenubarSeparator,
+  MenubarShortcut,
   MenubarTrigger,
 } from '@/components/ui/menubar';
 import { AiProvidersDialog } from '@/components/ai/AiProvidersDialog';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { CHROME } from './chromeMetrics';
 
 type MenuItem = {
@@ -58,27 +60,27 @@ export function AppMenuBar() {
     window.close();
   };
 
-  const menus: Array<{ key: string; label: string; items: MenuItem[] }> = [
-    {
-      key: 'settings',
-      label: 'Settings',
-      items: [
-        { label: 'AI providers…', onSelect: () => setProvidersOpen(true) },
-      ],
-    },
+  const menus: Array<{ key: string; label: string; groups: MenuItem[][] }> = [
     {
       key: 'fraia',
       label: productName,
-      items: [
-        { label: `Quit ${productName}`, onSelect: quitApp },
+      groups: [
+        [
+          { label: 'AI providers…', onSelect: () => setProvidersOpen(true) },
+        ],
+        [
+          { label: `Quit ${productName}`, onSelect: quitApp },
+        ],
       ],
     },
     {
       key: 'developer',
       label: 'Developer',
-      items: [
-        { label: 'Reload Window', onSelect: reloadWindow, detail: 'Cmd+R' },
-        { label: 'Force Reload Window', onSelect: forceReloadWindow, detail: 'Shift+Cmd+R' },
+      groups: [
+        [
+          { label: 'Reload Window', onSelect: reloadWindow, detail: 'Cmd+R' },
+          { label: 'Force Reload Window', onSelect: forceReloadWindow, detail: 'Shift+Cmd+R' },
+        ],
       ],
     },
   ];
@@ -90,14 +92,19 @@ export function AppMenuBar() {
         <MenubarMenu key={menu.key}>
           <MenubarTrigger>{menu.label}</MenubarTrigger>
           <MenubarContent>
-            <MenubarGroup>
-            {menu.items.map((item) => (
-              <MenubarItem key={item.label} disabled={item.disabled} onClick={item.onSelect}>
-                <span>{item.label}</span>
-                {item.detail ? <span className="ml-auto text-xs text-muted-foreground">{item.detail}</span> : null}
-              </MenubarItem>
+            {menu.groups.map((group, groupIndex) => (
+              <Fragment key={`${menu.key}-${groupIndex}`}>
+                {groupIndex > 0 ? <MenubarSeparator /> : null}
+                <MenubarGroup>
+                  {group.map((item) => (
+                    <MenubarItem key={item.label} disabled={item.disabled} onClick={item.onSelect}>
+                      {item.label}
+                      {item.detail ? <MenubarShortcut>{item.detail}</MenubarShortcut> : null}
+                    </MenubarItem>
+                  ))}
+                </MenubarGroup>
+              </Fragment>
             ))}
-            </MenubarGroup>
           </MenubarContent>
         </MenubarMenu>
       ))}
