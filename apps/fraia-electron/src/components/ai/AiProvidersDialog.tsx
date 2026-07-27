@@ -1,17 +1,37 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ExternalLink, KeyRound, LoaderCircle, RefreshCw, Unplug, Waypoints } from 'lucide-react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ExternalLink, LoaderCircle, RefreshCw, ShieldCheck, Sparkles, Unplug } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Field, FieldContent, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { Item, ItemActions, ItemContent, ItemDescription, ItemFooter, ItemGroup, ItemHeader, ItemTitle } from '@/components/ui/item';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+} from '@/components/ui/item';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  FRAIA_AI_MODEL_ID,
+  FRAIA_AI_MODEL_NAME,
+  FRAIA_AI_PROVIDER_ID,
+  FRAIA_AI_REASONING_EFFORT,
+} from '@/lib/agentOptions';
 import { cn } from '@/lib/utils';
-import type { AgentProviderDescriptor, AiProviderCatalogue } from '@/lib/types';
+import type { AiProviderCatalogue } from '@/lib/types';
 
 type RuntimeEvent = {
   kind?: string;
@@ -19,30 +39,29 @@ type RuntimeEvent = {
   providerId?: string;
   type?: string;
   message?: string;
+  url?: string;
   userCode?: string;
   verificationUri?: string;
   prompt?: { type?: string; message?: string; options?: Array<{ id: string; label: string }> };
 };
 
-function providerState(provider: AgentProviderDescriptor) {
+function providerState(provider: NonNullable<AiProviderCatalogue['providers']>[number]) {
   return provider.authState ?? provider.auth_state ?? 'disconnected';
 }
 
 export function AiProvidersDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const [catalogue, setCatalogue] = useState<AiProviderCatalogue | null>(null);
-  const [busyProvider, setBusyProvider] = useState<string | null>(null);
-  const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+  const [busyAction, setBusyAction] = useState<'refresh' | 'sign-in' | 'disconnect' | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [runtimeEvents, setRuntimeEvents] = useState<Record<string, RuntimeEvent>>({});
-  const [promptAnswers, setPromptAnswers] = useState<Record<string, string>>({});
-  const [providerQuery, setProviderQuery] = useState('');
+  const [runtimeEvent, setRuntimeEvent] = useState<RuntimeEvent | null>(null);
+  const [promptAnswer, setPromptAnswer] = useState('');
 
   const load = useCallback(async () => {
     setError(null);
     try {
       setCatalogue(await window.fraia.aiProviders());
     } catch (cause: any) {
-      setError(cause?.message || 'Could not load AI providers.');
+      setError(cause?.message || 'Could not load Fraia AI setup.');
     }
   }, []);
 
@@ -52,8 +71,8 @@ export function AiProvidersDialog({ open, onOpenChange }: { open: boolean; onOpe
 
   useEffect(() => {
     const unsubscribe: unknown = window.fraia.onAiRuntimeStatus?.((event: RuntimeEvent) => {
-      if (event.kind !== 'authentication' || !event.providerId) return;
-      setRuntimeEvents((current) => ({ ...current, [event.providerId!]: event }));
+      if (event.kind !== 'authentication' || event.providerId !== FRAIA_AI_PROVIDER_ID) return;
+      setRuntimeEvent(event);
       if (event.type === 'complete') void load();
     });
     return () => {
@@ -61,83 +80,65 @@ export function AiProvidersDialog({ open, onOpenChange }: { open: boolean; onOpe
     };
   }, [load]);
 
-  const providerModels = useMemo(() => {
-    const counts = new Map<string, { total: number; available: number }>();
-    for (const model of catalogue?.models ?? []) {
-      const providerId = model.providerId ?? model.provider_id ?? '';
-      const count = counts.get(providerId) ?? { total: 0, available: 0 };
-      count.total += 1;
-      if (model.available !== false) count.available += 1;
-      counts.set(providerId, count);
-    }
-    return counts;
-  }, [catalogue]);
+  const chatGptProvider = useMemo(
+    () => catalogue?.providers.find((provider) => provider.id === FRAIA_AI_PROVIDER_ID),
+    [catalogue],
+  );
+  const lunaModel = useMemo(
+    () => catalogue?.models.find((model) => (
+      (model.providerId ?? model.provider_id) === FRAIA_AI_PROVIDER_ID
+      && (model.modelId ?? model.model_id ?? model.slug) === FRAIA_AI_MODEL_ID
+    )),
+    [catalogue],
+  );
+  const state = chatGptProvider ? providerState(chatGptProvider) : 'disconnected';
+  const connected = state === 'connected' || state === 'configured';
+  const lunaReady = connected && lunaModel?.available !== false && Boolean(lunaModel);
+  const oauth = chatGptProvider?.authentication.find((method) => method.type === 'oauth');
+  const authInProgress = Boolean(runtimeEvent && !['complete', 'error'].includes(runtimeEvent.type ?? ''));
 
-  const visibleProviders = useMemo(() => {
-    const query = providerQuery.trim().toLocaleLowerCase();
-    if (!query) return catalogue?.providers ?? [];
-    return (catalogue?.providers ?? []).filter((provider) => (
-      provider.name.toLocaleLowerCase().includes(query)
-      || provider.id.toLocaleLowerCase().includes(query)
-      || provider.authentication.some((method) => method.label.toLocaleLowerCase().includes(query))
-    ));
-  }, [catalogue, providerQuery]);
-
-  async function submitApiKey(providerId: string) {
-    const apiKey = apiKeys[providerId] ?? '';
-    setBusyProvider(providerId);
+  async function startOAuth() {
+    setBusyAction('sign-in');
     setError(null);
+    setRuntimeEvent(null);
     try {
-      setCatalogue(await window.fraia.aiSubmitApiKey({ providerId, apiKey }));
-      setApiKeys((current) => ({ ...current, [providerId]: '' }));
+      await window.fraia.aiStartOAuth({ providerId: FRAIA_AI_PROVIDER_ID });
     } catch (cause: any) {
-      setError(cause?.message || 'Could not save the API key.');
+      setError(cause?.message || 'Could not start ChatGPT sign-in.');
     } finally {
-      setApiKeys((current) => ({ ...current, [providerId]: '' }));
-      setBusyProvider(null);
+      setBusyAction(null);
     }
   }
 
-  async function startOAuth(providerId: string) {
-    setBusyProvider(providerId);
+  async function disconnect() {
+    setBusyAction('disconnect');
     setError(null);
+    setRuntimeEvent(null);
     try {
-      await window.fraia.aiStartOAuth({ providerId });
+      setCatalogue(await window.fraia.aiDisconnect({ providerId: FRAIA_AI_PROVIDER_ID }));
     } catch (cause: any) {
-      setError(cause?.message || 'Could not start provider sign-in.');
+      setError(cause?.message || 'Could not disconnect ChatGPT.');
     } finally {
-      setBusyProvider(null);
-    }
-  }
-
-  async function disconnect(providerId: string) {
-    setBusyProvider(providerId);
-    setError(null);
-    try {
-      setCatalogue(await window.fraia.aiDisconnect({ providerId }));
-    } catch (cause: any) {
-      setError(cause?.message || 'Could not disconnect the provider.');
-    } finally {
-      setBusyProvider(null);
+      setBusyAction(null);
     }
   }
 
   async function refresh() {
-    setBusyProvider('catalogue');
+    setBusyAction('refresh');
     setError(null);
     try {
       setCatalogue(await window.fraia.aiRefreshCatalog());
     } catch (cause: any) {
-      setError(cause?.message || 'Could not refresh the model catalogue.');
+      setError(cause?.message || 'Could not refresh Fraia AI.');
     } finally {
-      setBusyProvider(null);
+      setBusyAction(null);
     }
   }
 
-  async function answerPrompt(providerId: string, event: RuntimeEvent) {
+  async function answerPrompt(event: RuntimeEvent) {
     if (!event.flowId) return;
-    await window.fraia.aiAnswerAuthPrompt({ flowId: event.flowId, value: promptAnswers[providerId] ?? '' });
-    setPromptAnswers((current) => ({ ...current, [providerId]: '' }));
+    await window.fraia.aiAnswerAuthPrompt({ flowId: event.flowId, value: promptAnswer });
+    setPromptAnswer('');
   }
 
   const secureStorage = catalogue?.secureCredentialStorageAvailable ?? catalogue?.secure_credential_storage_available;
@@ -145,144 +146,179 @@ export function AiProvidersDialog({ open, onOpenChange }: { open: boolean; onOpe
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[min(46rem,calc(100vh-2rem))] sm:max-w-2xl">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>AI providers</DialogTitle>
-          <DialogDescription>Connect providers here. Fraia stores credentials with operating-system encryption and keeps them out of projects.</DialogDescription>
+          <DialogTitle>Fraia AI</DialogTitle>
+          <DialogDescription>
+            Sign in with ChatGPT to use Fraia&apos;s guided engineering workflows. Fraia keeps the authorization encrypted by your operating system and out of project files.
+          </DialogDescription>
         </DialogHeader>
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-muted-foreground">{freshness ? `Catalogue refreshed ${new Date(freshness).toLocaleString()}` : 'Catalogue freshness unavailable'}</p>
-          <Button type="button" size="sm" variant="outline" onClick={refresh} disabled={busyProvider === 'catalogue'}>
-            <RefreshCw data-icon="inline-start" className={cn(busyProvider === 'catalogue' && 'animate-spin')} />
+
+        <div className="flex flex-col gap-4">
+          {secureStorage === false && (
+            <Alert variant="destructive">
+              <ShieldCheck />
+              <AlertTitle>Secure sign-in unavailable</AlertTitle>
+              <AlertDescription>
+                Operating-system credential encryption is unavailable, so Fraia will not store a ChatGPT authorization.
+              </AlertDescription>
+            </Alert>
+          )}
+          {error && (
+            <Alert variant="destructive">
+              <AlertTitle>Fraia AI could not finish that action</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {catalogue && !chatGptProvider && (
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon"><Sparkles /></EmptyMedia>
+                <EmptyTitle>ChatGPT sign-in is unavailable</EmptyTitle>
+                <EmptyDescription>
+                  The installed Pi runtime did not provide Fraia&apos;s reviewed ChatGPT connection.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          )}
+
+          {chatGptProvider && (
+            <>
+              <ItemGroup>
+                <Item variant="muted">
+                  <ItemMedia variant="icon"><Sparkles /></ItemMedia>
+                  <ItemContent>
+                    <ItemTitle>ChatGPT</ItemTitle>
+                    <ItemDescription>
+                      {FRAIA_AI_MODEL_NAME} · {FRAIA_AI_REASONING_EFFORT[0].toUpperCase() + FRAIA_AI_REASONING_EFFORT.slice(1)} reasoning
+                    </ItemDescription>
+                  </ItemContent>
+                  <ItemActions>
+                    <Badge variant={lunaReady ? 'secondary' : 'outline'}>
+                      {lunaReady ? 'Ready' : connected ? 'Model unavailable' : 'Sign in required'}
+                    </Badge>
+                  </ItemActions>
+                </Item>
+              </ItemGroup>
+
+              {connected && (
+                <p className="text-sm text-muted-foreground">
+                  {chatGptProvider.authSource ?? chatGptProvider.auth_source ?? 'ChatGPT authorization is connected.'}
+                </p>
+              )}
+              {connected && !lunaReady && (
+                <Alert variant="destructive">
+                  <AlertTitle>{FRAIA_AI_MODEL_NAME} is unavailable</AlertTitle>
+                  <AlertDescription>
+                    Fraia 0.0.1 does not silently switch models. Refresh the catalogue or reconnect ChatGPT before starting another AI turn.
+                  </AlertDescription>
+                </Alert>
+              )}
+              {runtimeEvent?.type === 'device_code' && (
+                <Alert>
+                  <ExternalLink />
+                  <AlertTitle>Finish signing in with ChatGPT</AlertTitle>
+                  <AlertDescription>
+                    Open {runtimeEvent.verificationUri} and enter code <strong>{runtimeEvent.userCode}</strong>.
+                  </AlertDescription>
+                </Alert>
+              )}
+              {runtimeEvent?.type === 'auth_url' && (
+                <Alert>
+                  <ExternalLink />
+                  <AlertTitle>Continue in your browser</AlertTitle>
+                  <AlertDescription>
+                    Fraia opened ChatGPT sign-in in your default browser and will update when authorization finishes.
+                  </AlertDescription>
+                </Alert>
+              )}
+              {runtimeEvent?.type === 'progress' && (
+                <p className="text-sm text-muted-foreground" role="status">{runtimeEvent.message}</p>
+              )}
+              {runtimeEvent?.type === 'error' && (
+                <Alert variant="destructive">
+                  <AlertTitle>ChatGPT sign-in failed</AlertTitle>
+                  <AlertDescription>{runtimeEvent.message}</AlertDescription>
+                </Alert>
+              )}
+              {runtimeEvent?.type === 'prompt' && runtimeEvent.flowId && (
+                <form onSubmit={(submitEvent) => { submitEvent.preventDefault(); void answerPrompt(runtimeEvent); }}>
+                  <FieldGroup>
+                    <Field>
+                      <FieldContent>
+                        <FieldLabel htmlFor="chatgpt-auth-prompt">
+                          {runtimeEvent.prompt?.message ?? 'Authentication response'}
+                        </FieldLabel>
+                        {runtimeEvent.prompt?.type === 'select' ? (
+                          <Select
+                            value={promptAnswer}
+                            items={(runtimeEvent.prompt.options ?? []).map((option) => ({ value: option.id, label: option.label }))}
+                            onValueChange={(value) => {
+                              if (typeof value === 'string') setPromptAnswer(value);
+                            }}
+                          >
+                            <SelectTrigger id="chatgpt-auth-prompt" className="w-full">
+                              <SelectValue placeholder="Choose an option" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectGroup>
+                                {(runtimeEvent.prompt.options ?? []).map((option) => (
+                                  <SelectItem key={option.id} value={option.id}>{option.label}</SelectItem>
+                                ))}
+                              </SelectGroup>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Input
+                            id="chatgpt-auth-prompt"
+                            type={runtimeEvent.prompt?.type === 'secret' ? 'password' : 'text'}
+                            autoComplete="off"
+                            value={promptAnswer}
+                            onChange={(event) => setPromptAnswer(event.target.value)}
+                          />
+                        )}
+                      </FieldContent>
+                      <Button type="submit" disabled={!promptAnswer.trim()}>Continue</Button>
+                    </Field>
+                  </FieldGroup>
+                </form>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+          <span>{freshness ? `Checked ${new Date(freshness).toLocaleString()}` : 'Waiting for the AI catalogue'}</span>
+          <span>Eligible ChatGPT plan required</span>
+        </div>
+
+        <DialogFooter className="sm:justify-between">
+          <Button type="button" size="sm" variant="ghost" onClick={refresh} disabled={busyAction === 'refresh'}>
+            <RefreshCw data-icon="inline-start" className={cn(busyAction === 'refresh' && 'animate-spin')} />
             Refresh
           </Button>
-        </div>
-        <Field>
-          <FieldLabel className="sr-only" htmlFor="provider-search">Search providers</FieldLabel>
-          <Input
-            id="provider-search"
-            type="search"
-            autoComplete="off"
-            placeholder="Search providers"
-            value={providerQuery}
-            onChange={(event) => setProviderQuery(event.target.value)}
-          />
-        </Field>
-        {!secureStorage && (
-          <Alert variant="destructive">
-            <AlertDescription>Secure operating-system encryption is unavailable. Fraia will not accept persistent API keys or OAuth credentials; environment-managed providers may still work.</AlertDescription>
-          </Alert>
-        )}
-        {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
-        <ScrollArea className="min-h-0 max-h-[56vh] pr-3">
-          <ItemGroup>
-            {visibleProviders.map((provider) => {
-              const state = providerState(provider);
-              const counts = providerModels.get(provider.id) ?? { total: 0, available: 0 };
-              const event = runtimeEvents[provider.id];
-              const apiKey = provider.authentication.find((method) => method.type === 'api_key');
-              const oauth = provider.authentication.find((method) => method.type === 'oauth');
-              const external = provider.authentication.filter((method) => method.type === 'external');
-              return (
-                <Item key={provider.id} role="listitem" size="sm">
-                  <ItemHeader>
-                    <ItemContent>
-                      <ItemTitle>{provider.name}</ItemTitle>
-                      <ItemDescription>{counts.available} available of {counts.total} known models</ItemDescription>
-                    </ItemContent>
-                    <ItemActions>
-                      <Badge variant={state === 'connected' || state === 'configured' ? 'secondary' : 'outline'}>{state}</Badge>
-                    </ItemActions>
-                  </ItemHeader>
-                  <ItemContent className="basis-full gap-3">
-                    {(state === 'connected' || state === 'configured') && (
-                      <ItemFooter>
-                        <ItemDescription>{provider.authSource ?? provider.auth_source ?? 'Provider authentication is available.'}</ItemDescription>
-                        <Button type="button" size="sm" variant="outline" onClick={() => disconnect(provider.id)} disabled={busyProvider === provider.id}>
-                          <Unplug data-icon="inline-start" />
-                          Disconnect
-                        </Button>
-                      </ItemFooter>
-                    )}
-                    {oauth && state === 'disconnected' && (
-                      <Button type="button" size="sm" variant="outline" onClick={() => startOAuth(provider.id)} disabled={!secureStorage || busyProvider === provider.id}>
-                        {busyProvider === provider.id
-                          ? <LoaderCircle data-icon="inline-start" className="animate-spin" />
-                          : <ExternalLink data-icon="inline-start" />}
-                        {oauth.label}
-                      </Button>
-                    )}
-                    {apiKey && state === 'disconnected' && (
-                      <form onSubmit={(event) => { event.preventDefault(); void submitApiKey(provider.id); }}>
-                        <FieldGroup className="gap-3">
-                          <Field orientation="responsive" data-disabled={!secureStorage || undefined}>
-                            <FieldContent>
-                              <FieldLabel htmlFor={`provider-key-${provider.id}`}>{apiKey.label}</FieldLabel>
-                              <Input id={`provider-key-${provider.id}`} type="password" autoComplete="off" value={apiKeys[provider.id] ?? ''} disabled={!secureStorage} onChange={(event) => setApiKeys((current) => ({ ...current, [provider.id]: event.target.value }))} />
-                            </FieldContent>
-                            <Button type="submit" disabled={!secureStorage || !apiKeys[provider.id]?.trim() || busyProvider === provider.id}>
-                              <KeyRound data-icon="inline-start" />
-                              Connect
-                            </Button>
-                          </Field>
-                        </FieldGroup>
-                      </form>
-                    )}
-                    {external.map((method) => (
-                      <ItemDescription key={method.label}>
-                        {method.label}{method.requirements?.length ? `: ${method.requirements.join(', ')}` : ' is configured outside Fraia.'}
-                      </ItemDescription>
-                    ))}
-                    {event?.type === 'device_code' && (
-                      <Alert><AlertDescription>Open {event.verificationUri} and enter code <strong>{event.userCode}</strong>.</AlertDescription></Alert>
-                    )}
-                    {event?.type === 'progress' && <ItemDescription role="status">{event.message}</ItemDescription>}
-                    {event?.type === 'error' && <Alert variant="destructive"><AlertDescription>{event.message}</AlertDescription></Alert>}
-                    {event?.type === 'prompt' && event.flowId && (
-                      <form onSubmit={(submitEvent) => { submitEvent.preventDefault(); void answerPrompt(provider.id, event); }}>
-                        <FieldGroup className="gap-3">
-                          <Field orientation="responsive">
-                            <FieldContent>
-                              <FieldLabel htmlFor={`provider-prompt-${provider.id}`}>{event.prompt?.message ?? 'Authentication response'}</FieldLabel>
-                              {event.prompt?.type === 'select' ? (
-                                <Select
-                                  value={promptAnswers[provider.id] ?? ''}
-                                  items={(event.prompt.options ?? []).map((option) => ({ value: option.id, label: option.label }))}
-                                  onValueChange={(value) => {
-                                    if (typeof value === 'string') setPromptAnswers((current) => ({ ...current, [provider.id]: value }));
-                                  }}
-                                >
-                                  <SelectTrigger id={`provider-prompt-${provider.id}`} className="w-full"><SelectValue placeholder="Choose an option" /></SelectTrigger>
-                                  <SelectContent><SelectGroup>{(event.prompt.options ?? []).map((option) => <SelectItem key={option.id} value={option.id}>{option.label}</SelectItem>)}</SelectGroup></SelectContent>
-                                </Select>
-                              ) : (
-                                <Input id={`provider-prompt-${provider.id}`} type={event.prompt?.type === 'secret' ? 'password' : 'text'} autoComplete="off" value={promptAnswers[provider.id] ?? ''} onChange={(changeEvent) => setPromptAnswers((current) => ({ ...current, [provider.id]: changeEvent.target.value }))} />
-                              )}
-                            </FieldContent>
-                            <Button type="submit" disabled={!promptAnswers[provider.id]?.trim()}>Continue</Button>
-                          </Field>
-                        </FieldGroup>
-                      </form>
-                    )}
-                  </ItemContent>
-                </Item>
-              );
-            })}
-            {catalogue && !visibleProviders.length && (
-              <Empty>
-                <EmptyHeader>
-                  <EmptyMedia variant="icon"><Waypoints /></EmptyMedia>
-                  <EmptyTitle>{providerQuery.trim() ? 'No matching providers' : 'No providers available'}</EmptyTitle>
-                  <EmptyDescription>
-                    {providerQuery.trim()
-                      ? `No providers match “${providerQuery.trim()}”.`
-                      : 'Fraia could not find any Pi providers in the current catalogue.'}
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            )}
-          </ItemGroup>
-        </ScrollArea>
+          {connected ? (
+            <Button type="button" size="sm" variant="outline" onClick={disconnect} disabled={busyAction === 'disconnect'}>
+              {busyAction === 'disconnect'
+                ? <LoaderCircle data-icon="inline-start" className="animate-spin" />
+                : <Unplug data-icon="inline-start" />}
+              Disconnect
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              onClick={startOAuth}
+              disabled={!secureStorage || !oauth || busyAction === 'sign-in' || authInProgress}
+            >
+              {busyAction === 'sign-in' || authInProgress
+                ? <LoaderCircle data-icon="inline-start" className="animate-spin" />
+                : <ExternalLink data-icon="inline-start" />}
+              {authInProgress ? 'Waiting for ChatGPT' : 'Sign in with ChatGPT'}
+            </Button>
+          )}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

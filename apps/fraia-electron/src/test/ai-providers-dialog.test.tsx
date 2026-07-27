@@ -4,95 +4,101 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { AiProvidersDialog } from '@/components/ai/AiProvidersDialog';
 
-function catalogue(authState: 'connected' | 'disconnected') {
+function catalogue(authState: 'connected' | 'disconnected', modelAvailable = authState === 'connected') {
   return {
     providers: [
       {
-        id: 'fraia-test',
-        name: 'Fraia Test Provider',
-        authentication: [{ type: 'api_key', label: 'Test API key', interactive: true, persistentAllowed: true }],
-        authState,
-        authSource: authState === 'connected' ? 'encrypted test credential' : null,
-      },
-      {
-        id: 'cloud-test',
-        name: 'Cloud Test Provider',
-        authentication: [{ type: 'external', label: 'Cloud profile', requirements: ['CLOUD_PROFILE'] }],
+        id: 'anthropic',
+        name: 'Anthropic',
+        authentication: [{ type: 'api_key', label: 'Anthropic API key', interactive: true, persistentAllowed: true }],
         authState: 'disconnected',
       },
       {
-        id: 'openai-codex-test',
+        id: 'openai-codex',
         name: 'OpenAI Codex',
-        authentication: [{ type: 'oauth', label: 'OpenAI (ChatGPT Plus/Pro)', interactive: true, persistentAllowed: true }],
-        authState: 'disconnected',
+        authentication: [{ type: 'oauth', label: 'Sign in with ChatGPT', interactive: true, persistentAllowed: true }],
+        authState,
+        authSource: authState === 'connected' ? 'Encrypted ChatGPT authorization' : null,
       },
     ],
     models: [
-      { providerId: 'fraia-test', modelId: 'model-a', available: authState === 'connected' },
-      { providerId: 'openai-codex-test', modelId: 'gpt-test', available: false },
+      {
+        providerId: 'openai-codex',
+        modelId: 'gpt-5.6-luna',
+        displayName: 'GPT-5.6 Luna',
+        available: modelAvailable,
+      },
+      { providerId: 'anthropic', modelId: 'claude-sonnet', displayName: 'Claude Sonnet', available: false },
     ],
-    catalogue: { refreshedAt: '2026-07-22T00:00:00Z', stale: false, source: 'test' },
+    catalogue: { refreshedAt: '2026-07-27T00:00:00Z', stale: false, source: 'test' },
     secureCredentialStorageAvailable: true,
   };
 }
 
-describe('AI providers settings', () => {
-  it('masks and clears API keys while exposing external configuration requirements', async () => {
-    const user = userEvent.setup();
-    const submitApiKey = vi.fn(async (payload: { providerId: string; apiKey: string }) => {
-      expect(payload).toEqual({ providerId: 'fraia-test', apiKey: 'one-use-secret' });
-      return catalogue('connected');
-    });
-    Object.defineProperty(window, 'fraia', {
-      configurable: true,
-      value: {
-        aiProviders: vi.fn(async () => catalogue('disconnected')),
-        aiSubmitApiKey: submitApiKey,
-        aiRefreshCatalog: vi.fn(async () => catalogue('disconnected')),
-        aiDisconnect: vi.fn(async () => catalogue('disconnected')),
-        aiStartOAuth: vi.fn(),
-        aiAnswerAuthPrompt: vi.fn(),
-        onAiRuntimeStatus: vi.fn(() => () => {}),
-      },
-    });
-
-    render(<AiProvidersDialog open onOpenChange={vi.fn()} />);
-    const input = await screen.findByLabelText('Test API key');
-    expect(input).toHaveAttribute('type', 'password');
-    expect(screen.getByText('Cloud profile: CLOUD_PROFILE')).toBeVisible();
-    expect(document.querySelector('[data-slot="card"]')).not.toBeInTheDocument();
-    expect(screen.getAllByRole('listitem')).toHaveLength(3);
-
-    await user.type(input, 'one-use-secret');
-    await user.click(screen.getByRole('button', { name: 'Connect' }));
-
-    await waitFor(() => expect(submitApiKey).toHaveBeenCalledOnce());
-    expect(screen.queryByDisplayValue('one-use-secret')).not.toBeInTheDocument();
-    expect(await screen.findByText('encrypted test credential')).toBeVisible();
+function installFraia(overrides: Record<string, unknown> = {}) {
+  Object.defineProperty(window, 'fraia', {
+    configurable: true,
+    value: {
+      aiProviders: vi.fn(async () => catalogue('disconnected')),
+      aiRefreshCatalog: vi.fn(async () => catalogue('disconnected')),
+      aiDisconnect: vi.fn(async () => catalogue('disconnected')),
+      aiStartOAuth: vi.fn(async () => ({ flowId: 'flow-test' })),
+      aiAnswerAuthPrompt: vi.fn(),
+      onAiRuntimeStatus: vi.fn(() => () => {}),
+      ...overrides,
+    },
   });
+}
 
-  it('starts ChatGPT subscription authentication from the provider list', async () => {
+describe('Fraia AI setup', () => {
+  it('exposes only the reviewed ChatGPT and Luna contract', async () => {
     const user = userEvent.setup();
     const startOAuth = vi.fn(async () => ({ flowId: 'flow-test' }));
-    Object.defineProperty(window, 'fraia', {
-      configurable: true,
-      value: {
-        aiProviders: vi.fn(async () => catalogue('disconnected')),
-        aiSubmitApiKey: vi.fn(),
-        aiRefreshCatalog: vi.fn(async () => catalogue('disconnected')),
-        aiDisconnect: vi.fn(async () => catalogue('disconnected')),
-        aiStartOAuth: startOAuth,
-        aiAnswerAuthPrompt: vi.fn(),
-        onAiRuntimeStatus: vi.fn(() => () => {}),
-      },
+    installFraia({ aiStartOAuth: startOAuth });
+
+    render(<AiProvidersDialog open onOpenChange={vi.fn()} />);
+
+    expect(await screen.findByRole('dialog', { name: 'Fraia AI' })).toBeVisible();
+    expect(screen.getByText('ChatGPT')).toBeVisible();
+    expect(screen.getByText('GPT-5.6 Luna · Low reasoning')).toBeVisible();
+    expect(screen.getByText('Sign in required')).toBeVisible();
+    expect(screen.queryByText('Anthropic')).not.toBeInTheDocument();
+    expect(screen.queryByText('Claude Sonnet')).not.toBeInTheDocument();
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/API key/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Sign in with ChatGPT' }));
+    await waitFor(() => expect(startOAuth).toHaveBeenCalledWith({ providerId: 'openai-codex' }));
+  });
+
+  it('shows encrypted connected status and disconnects ChatGPT', async () => {
+    const user = userEvent.setup();
+    const disconnect = vi.fn(async () => catalogue('disconnected'));
+    installFraia({
+      aiProviders: vi.fn(async () => catalogue('connected')),
+      aiDisconnect: disconnect,
     });
 
     render(<AiProvidersDialog open onOpenChange={vi.fn()} />);
-    await user.type(await screen.findByLabelText('Search providers'), 'ChatGPT');
-    expect(screen.queryByText('Fraia Test Provider')).not.toBeInTheDocument();
-    expect(screen.getByText('OpenAI Codex')).toBeVisible();
-    await user.click(await screen.findByRole('button', { name: 'OpenAI (ChatGPT Plus/Pro)' }));
 
-    await waitFor(() => expect(startOAuth).toHaveBeenCalledWith({ providerId: 'openai-codex-test' }));
+    expect(await screen.findByText('Ready')).toBeVisible();
+    expect(screen.getByText('Encrypted ChatGPT authorization')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Sign in with ChatGPT' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Disconnect' }));
+    await waitFor(() => expect(disconnect).toHaveBeenCalledWith({ providerId: 'openai-codex' }));
+    expect(await screen.findByText('Sign in required')).toBeVisible();
+  });
+
+  it('fails closed when Luna is unavailable instead of offering a fallback', async () => {
+    installFraia({ aiProviders: vi.fn(async () => catalogue('connected', false)) });
+
+    render(<AiProvidersDialog open onOpenChange={vi.fn()} />);
+
+    expect(await screen.findByText('Model unavailable')).toBeVisible();
+    expect(screen.getByText('GPT-5.6 Luna is unavailable')).toBeVisible();
+    expect(screen.getByText(/does not silently switch models/i)).toBeVisible();
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
   });
 });

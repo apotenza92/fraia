@@ -9,6 +9,7 @@ const {
   FraiaAiRuntime,
   NonPersistentCredentialStore,
   SecureCredentialStore,
+  publicFraiaCatalogue,
   reasoningLevels,
   typeBoxSchema,
 } = require('../ai-runtime.cjs');
@@ -82,7 +83,40 @@ test('catalogue reasoning levels reflect model capability', () => {
   assert.deepEqual(reasoningLevels({ reasoning: false }), [
     { effort: 'off', description: 'Reasoning is not exposed for this model.' },
   ]);
-  assert.deepEqual(reasoningLevels({ reasoning: true, thinkingLevelMap: { low: 1, high: 2 } }).map((item) => item.effort), ['low', 'high']);
+  assert.deepEqual(
+    reasoningLevels({ reasoning: true, thinkingLevelMap: { minimal: 'low', xhigh: 'xhigh' } })
+      .map((item) => item.effort),
+    ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+  );
+});
+
+test('public catalogue exposes only the reviewed ChatGPT Luna contract', () => {
+  const result = publicFraiaCatalogue({
+    providers: [
+      { id: 'anthropic', name: 'Anthropic' },
+      { id: 'openai-codex', name: 'OpenAI Codex' },
+    ],
+    models: [
+      { providerId: 'anthropic', modelId: 'claude-sonnet' },
+      { providerId: 'openai-codex', modelId: 'gpt-5.5' },
+      { providerId: 'openai-codex', modelId: 'gpt-5.6-luna' },
+    ],
+    catalogue: { source: 'test' },
+    secureCredentialStorageAvailable: true,
+  });
+
+  assert.deepEqual(result.providers.map((provider) => provider.id), ['openai-codex']);
+  assert.deepEqual(result.models.map((model) => model.modelId), ['gpt-5.6-luna']);
+  assert.deepEqual(result.catalogue, { source: 'test' });
+  assert.equal(result.secureCredentialStorageAvailable, true);
+});
+
+test('renderer bridge exposes no API-key or model-setting mutation', () => {
+  const preload = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+
+  assert.doesNotMatch(preload, /aiSubmitApiKey|agentUpdateSettings/);
+  assert.doesNotMatch(main, /ipcMain\.handle\(['"]fraia:(?:aiSubmitApiKey|agentUpdateSettings)/);
 });
 
 test('structured schema conversion supports nullable enums', async () => {
@@ -311,15 +345,21 @@ test('structured turns surface provider failures and enforce the configured time
 test('fake Pi runtime covers encrypted reconnect, structured turns, cancellation, and restart', async (t) => {
   const { directory } = temporaryFile();
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  const options = { safeStorage: fakeSafeStorage(), userDataDir: directory };
+  const events = [];
+  const options = {
+    safeStorage: fakeSafeStorage(),
+    userDataDir: directory,
+    emitStatus: (event) => events.push(event),
+  };
   const runtime = await new FakeFraiaAiRuntime(options).initialize();
   assert.equal((await runtime.catalog()).providers[0].authState, 'disconnected');
-  await runtime.submitApiKey('fraia-test', 'encrypted-restart-secret');
+  await runtime.startOAuth('openai-codex');
   assert.equal((await runtime.catalog()).providers[0].authState, 'connected');
+  assert.equal(events.some((event) => event.kind === 'authentication' && event.type === 'complete'), true);
   const result = await runtime.runTurn({
     requestId: 'turn-complete',
-    providerId: 'fraia-test',
-    modelId: 'structured-test-model',
+    providerId: 'openai-codex',
+    modelId: 'gpt-5.6-luna',
     reasoningEffort: 'low',
     prompt: 'Return a result',
     responseSchema: {
@@ -334,8 +374,8 @@ test('fake Pi runtime covers encrypted reconnect, structured turns, cancellation
   process.env.FRAIA_FAKE_AI_TURN_DELAY_MS = '5000';
   const pending = runtime.runTurn({
     requestId: 'turn-cancel',
-    providerId: 'fraia-test',
-    modelId: 'structured-test-model',
+    providerId: 'openai-codex',
+    modelId: 'gpt-5.6-luna',
     reasoningEffort: 'low',
     prompt: 'Wait',
     responseSchema: { type: 'object', properties: {}, required: [] },
@@ -347,5 +387,7 @@ test('fake Pi runtime covers encrypted reconnect, structured turns, cancellation
 
   const restarted = await new FakeFraiaAiRuntime(options).initialize();
   assert.equal((await restarted.catalog()).providers[0].authState, 'connected');
-  assert.equal(fs.readFileSync(path.join(directory, 'ai', 'credentials.bin')).includes(Buffer.from('encrypted-restart-secret')), false);
+  const encryptedCredential = fs.readFileSync(path.join(directory, 'ai', 'credentials.bin'));
+  assert.equal(encryptedCredential.includes(Buffer.from('fake-chatgpt-access-token')), false);
+  assert.equal(encryptedCredential.includes(Buffer.from('fake-chatgpt-refresh-token')), false);
 });

@@ -363,7 +363,11 @@ pub struct BuilderGraph {
     pub nodes: Vec<BuilderNode>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+pub const FRAIA_AI_PROVIDER_ID: &str = "openai-codex";
+pub const FRAIA_AI_MODEL_ID: &str = "gpt-5.6-luna";
+pub const FRAIA_AI_REASONING_EFFORT: &str = "low";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentModelSettings {
     #[serde(default = "default_agent_provider_id")]
@@ -374,15 +378,15 @@ pub struct AgentModelSettings {
 }
 
 fn default_agent_provider_id() -> String {
-    "openai-codex".into()
+    FRAIA_AI_PROVIDER_ID.into()
 }
 
 impl Default for AgentModelSettings {
     fn default() -> Self {
         Self {
             provider_id: default_agent_provider_id(),
-            model: "gpt-5.5".into(),
-            reasoning_effort: "low".into(),
+            model: FRAIA_AI_MODEL_ID.into(),
+            reasoning_effort: FRAIA_AI_REASONING_EFFORT.into(),
         }
     }
 }

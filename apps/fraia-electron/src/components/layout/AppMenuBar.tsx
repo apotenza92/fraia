@@ -20,7 +20,7 @@ type MenuItem = {
 };
 
 export function AppMenuBar() {
-  const [providersOpen, setProvidersOpen] = useState(false);
+  const [fraiaAiOpen, setFraiaAiOpen] = useState(false);
   const [productName, setProductName] = useState('Fraia');
 
   useEffect(() => {
@@ -66,7 +66,7 @@ export function AppMenuBar() {
       label: productName,
       groups: [
         [
-          { label: 'AI providers…', onSelect: () => setProvidersOpen(true) },
+          { label: 'Fraia AI…', onSelect: () => setFraiaAiOpen(true) },
         ],
         [
           { label: `Quit ${productName}`, onSelect: quitApp },
@@ -109,7 +109,7 @@ export function AppMenuBar() {
         </MenubarMenu>
       ))}
     </Menubar>
-    <AiProvidersDialog open={providersOpen} onOpenChange={setProvidersOpen} />
+    <AiProvidersDialog open={fraiaAiOpen} onOpenChange={setFraiaAiOpen} />
     </>
   );
 }
