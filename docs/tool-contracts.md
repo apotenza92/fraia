@@ -213,15 +213,15 @@ This keeps Fraia independent of a particular model provider or orchestration run
 
 ### 8.1 Current AI runtime boundary
 
-The Electron main process embeds Pi through `@earendil-works/pi-coding-agent`. Pi owns provider discovery, provider authentication, model availability, catalogue refresh, reasoning capability, and inference transport. Fraia owns prompts, project/chat state, response schemas, action filtering, Rust validation, and committed provenance.
+The Electron main process embeds Pi through `@earendil-works/pi-coding-agent`. Pi owns provider discovery, provider authentication, model availability, catalogue refresh, reasoning capability, and inference transport. Fraia owns prompts, project/chat state, response schemas, action filtering, Rust validation, and committed provenance. The broader Pi provider boundary remains internal so that a later Fraia-managed service can be evaluated without coupling engineering state to one inference transport.
 
 Electron starts an authenticated loopback service before `fraia-appd` and passes a random launch-scoped URL and bearer token through the sidecar environment. Rust is the only caller of the turn endpoints. The renderer can manage provider connections through app-scoped IPC but cannot access Pi or credentials directly.
 
 Every turn uses a new in-memory Pi session with extensions, skills, prompt templates, context discovery, project settings, filesystem tools, shell tools, and editing tools disabled. Its only enabled tool is Fraia's terminating `submit_fraia_response`, parameterised by the exact response schema for that workflow. Rust deserialises the returned arguments into its own types and applies the existing action filters before project state can change.
 
-Provider credentials are stored one per provider as Electron `safeStorage` encrypted blobs beneath Electron user data. If operating-system encryption is unavailable, Fraia refuses persistent API-key and OAuth entry rather than falling back to plaintext. Projects, chat records, logs, and diagnostics never contain provider credentials. Pi sessions and duplicate Pi transcripts are not persisted.
+Fraia 0.0.1 exposes one public connection: **Sign in with ChatGPT** through Pi's `openai-codex` OAuth flow. It does not expose provider search, API-key entry, model selection, or reasoning selection. The ChatGPT authorization is stored as an Electron `safeStorage` encrypted blob beneath Electron user data. If operating-system encryption is unavailable, Fraia refuses to persist the connection rather than falling back to plaintext. Projects, chat records, logs, and diagnostics never contain provider credentials. Pi sessions and duplicate Pi transcripts are not persisted.
 
-Fraia persists `{ providerId, modelId, reasoningEffort }` per workflow. Existing model-only settings deserialize as `openai-codex/<model>`. Catalogue refresh never silently changes a selection: retired models remain referenced but unavailable, and the next turn is blocked until the user explicitly selects an available authenticated model. Committed assistant messages and AI-derived design-option batches retain provider, exact model, reasoning effort, and catalogue timestamp provenance.
+Every 0.0.1 workflow is locked to `{ providerId: "openai-codex", modelId: "gpt-5.6-luna", reasoningEffort: "low" }`. Existing model-only and per-surface settings still deserialize for compatibility, then project migration replaces them with that reviewed tuple. If Luna is absent or unavailable, the next turn is blocked; Fraia never silently switches model, provider, or reasoning effort. Committed assistant messages and AI-derived design-option batches retain the exact provider, model, reasoning effort, and catalogue timestamp provenance.
 
 ---
 

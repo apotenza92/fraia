@@ -1,6 +1,10 @@
 import type { AgentModelOption, AgentProviderStatus, AgentReasoningOption } from './types';
 
 export const AGENT_MODEL_CATALOG_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
+export const FRAIA_AI_PROVIDER_ID = 'openai-codex';
+export const FRAIA_AI_MODEL_ID = 'gpt-5.6-luna';
+export const FRAIA_AI_MODEL_NAME = 'GPT-5.6 Luna';
+export const FRAIA_AI_REASONING_EFFORT = 'low';
 
 const OFF_REASONING_OPTION: AgentReasoningOption = {
   effort: 'off',

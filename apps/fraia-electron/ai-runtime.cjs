@@ -9,6 +9,19 @@ const DEFAULT_FOCUS_DEBOUNCE_MS = 5 * 60 * 1000;
 const DEFAULT_STARTUP_TIMEOUT_MS = 8_000;
 const DEFAULT_TURN_TIMEOUT_MS = 120_000;
 const MAX_REQUEST_BYTES = 8 * 1024 * 1024;
+const FRAIA_AI_PROVIDER_ID = 'openai-codex';
+const FRAIA_AI_MODEL_ID = 'gpt-5.6-luna';
+
+function publicFraiaCatalogue(catalogue) {
+  return {
+    ...catalogue,
+    providers: (catalogue?.providers ?? []).filter((provider) => provider.id === FRAIA_AI_PROVIDER_ID),
+    models: (catalogue?.models ?? []).filter((model) => (
+      (model.providerId ?? model.provider_id) === FRAIA_AI_PROVIDER_ID
+      && (model.modelId ?? model.model_id ?? model.slug) === FRAIA_AI_MODEL_ID
+    )),
+  };
+}
 
 function atomicWrite(filePath, data) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -105,10 +118,10 @@ class NonPersistentCredentialStore {
 
 function reasoningLevels(model) {
   if (!model?.reasoning) return [{ effort: 'off', description: 'Reasoning is not exposed for this model.' }];
-  const map = model.thinkingLevelMap && typeof model.thinkingLevelMap === 'object'
-    ? Object.keys(model.thinkingLevelMap)
-    : [];
-  const levels = map.length ? map : ['minimal', 'low', 'medium', 'high'];
+  // Pi's thinkingLevelMap translates public levels for a provider; its keys are
+  // not an availability list. Pi accepts this complete set and clamps each
+  // level to the selected model's actual transport capability.
+  const levels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
   return levels.map((effort) => ({ effort, description: `${effort[0].toUpperCase()}${effort.slice(1)} reasoning` }));
 }
 
@@ -564,24 +577,24 @@ class FakeFraiaAiRuntime extends FraiaAiRuntime {
   }
 
   async isConnected() {
-    return Boolean(await this.credentials.read('fraia-test'));
+    return Boolean(await this.credentials.read('openai-codex'));
   }
 
   async catalog() {
     const connected = await this.isConnected();
     return {
       providers: [{
-        id: 'fraia-test',
-        name: 'Fraia Test Provider',
-        authentication: [{ type: 'api_key', label: 'Test API key', interactive: true, persistentAllowed: this.persistenceAvailable() }],
+        id: 'openai-codex',
+        name: 'OpenAI Codex',
+        authentication: [{ type: 'oauth', label: 'Sign in with ChatGPT', interactive: true, persistentAllowed: this.persistenceAvailable() }],
         authState: connected ? 'connected' : 'disconnected',
-        authType: connected ? 'api_key' : null,
-        authSource: connected ? 'encrypted test credential' : null,
+        authType: connected ? 'oauth' : null,
+        authSource: connected ? 'Encrypted ChatGPT test authorization' : null,
       }],
       models: [{
-        providerId: 'fraia-test',
-        modelId: 'structured-test-model',
-        displayName: 'Structured Test Model',
+        providerId: 'openai-codex',
+        modelId: 'gpt-5.6-luna',
+        displayName: 'GPT-5.6 Luna',
         available: connected,
         reasoning: true,
         defaultReasoningLevel: 'low',
@@ -600,15 +613,27 @@ class FakeFraiaAiRuntime extends FraiaAiRuntime {
     return this.catalog();
   }
 
-  async submitApiKey(providerId, apiKey) {
-    if (providerId !== 'fraia-test') throw new Error('Unknown fake provider.');
+  async startOAuth(providerId) {
+    if (providerId !== 'openai-codex') throw new Error('Unknown fake provider.');
     if (!this.persistenceAvailable()) throw new Error('Secure operating-system credential encryption is unavailable.');
-    if (!String(apiKey ?? '').trim()) throw new Error('Enter an API key.');
-    await this.credentials.modify(providerId, async () => ({ type: 'api_key', key: String(apiKey) }));
-    return this.refreshCatalog('authentication');
+    const flowId = crypto.randomUUID();
+    this.emitStatus({
+      kind: 'authentication',
+      flowId,
+      providerId,
+      type: 'progress',
+      message: 'Completing fake ChatGPT sign-in.',
+    });
+    await this.credentials.modify(providerId, async () => ({
+      type: 'oauth',
+      access: 'fake-chatgpt-access-token',
+      refresh: 'fake-chatgpt-refresh-token',
+      expires: Date.now() + 60 * 60 * 1000,
+    }));
+    await this.refreshCatalog('authentication');
+    this.emitStatus({ kind: 'authentication', flowId, providerId, type: 'complete' });
+    return { flowId };
   }
-
-  async startOAuth() { throw new Error('The fake provider does not expose OAuth.'); }
 
   async disconnect(providerId) {
     await this.credentials.delete(providerId);
@@ -617,7 +642,7 @@ class FakeFraiaAiRuntime extends FraiaAiRuntime {
 
   async runTurn(request) {
     if (!(await this.isConnected())) throw new Error('The fake provider is disconnected.');
-    if (request.providerId !== 'fraia-test' || request.modelId !== 'structured-test-model') {
+    if (request.providerId !== 'openai-codex' || request.modelId !== 'gpt-5.6-luna') {
       throw new Error('The selected fake model is unavailable.');
     }
     const delayMs = Number.parseInt(process.env.FRAIA_FAKE_AI_TURN_DELAY_MS || '0', 10);
@@ -651,6 +676,7 @@ module.exports = {
   FraiaAiRuntime,
   NonPersistentCredentialStore,
   SecureCredentialStore,
+  publicFraiaCatalogue,
   reasoningLevels,
   typeBoxSchema,
   fakeValueForSchema,

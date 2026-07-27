@@ -119,7 +119,7 @@ test("desktop shell preserves keyboard and accessibility contracts", async () =>
   }
 })
 
-test("fake Pi runtime connects, selects, completes, cancels, and reconnects", async () => {
+test("fake Pi runtime signs in with ChatGPT, uses Luna, completes, cancels, and reconnects", async () => {
   const appRoot = process.cwd()
   const temporaryRoot = fs.mkdtempSync(
     path.join(os.tmpdir(), "fraia-pi-electron-e2e-"),
@@ -142,8 +142,8 @@ test("fake Pi runtime connects, selects, completes, cancels, and reconnects", as
   })
   const openProviders = async (page: Page) => {
     await page.getByRole("menuitem", { name: "Fraia" }).click()
-    await page.getByRole("menuitem", { name: "AI providers…" }).click()
-    await expect(page.getByRole("dialog", { name: "AI providers" })).toBeVisible()
+    await page.getByRole("menuitem", { name: "Fraia AI…" }).click()
+    await expect(page.getByRole("dialog", { name: "Fraia AI" })).toBeVisible()
   }
 
   let electronApp = await launch()
@@ -152,25 +152,20 @@ test("fake Pi runtime connects, selects, completes, cancels, and reconnects", as
     await page.waitForLoadState("domcontentloaded")
     await openProviders(page)
 
-    const secret = "fraia-e2e-secret-never-plaintext"
-    const keyField = page.getByLabel("Test API key")
-    await expect(keyField).toHaveAttribute("type", "password")
-    await keyField.fill(secret)
-    await page.getByRole("button", { name: "Connect" }).click()
-    await expect(page.getByText("connected", { exact: true })).toBeVisible()
-    await expect(keyField).toHaveCount(0)
+    await expect(page.getByText("GPT-5.6 Luna · Low reasoning", { exact: true })).toBeVisible()
+    await expect(page.getByLabel(/API key/i)).toHaveCount(0)
+    await expect(page.getByRole("combobox")).toHaveCount(0)
+    await page.getByRole("button", { name: "Sign in with ChatGPT" }).click()
+    await expect(page.getByRole("dialog", { name: "Fraia AI" }).getByText("Ready", { exact: true })).toBeVisible()
     await page.getByRole("button", { name: "Close" }).click()
 
-    const modelSelector = page.locator('button[role="combobox"]').first()
-    await expect(modelSelector).toBeEnabled()
-    await modelSelector.click()
-    await page.getByRole("option", { name: "Structured Test Model" }).click()
-    await expect(modelSelector).toContainText("Structured Test Model")
+    await expect(page.getByText("GPT-5.6 Luna", { exact: true }).first()).toBeVisible()
+    await expect(page.getByRole("combobox")).toHaveCount(0)
     const projectPath = await page.evaluate(() => window.fraia.defaultProjectDir())
     await expect.poll(async () => page.evaluate(async ({ projectDir }) => {
       const state = await window.fraia.agentProviderStatus({ projectDir, surface: "pre_solve" })
       return `${state.selectedProviderId}/${state.selectedModelId ?? state.selectedModel}`
-    }, { projectDir: projectPath })).toBe("fraia-test/structured-test-model")
+    }, { projectDir: projectPath })).toBe("openai-codex/gpt-5.6-luna")
 
     await page.getByRole("button", { name: "Start the Base Model Guide" }).click()
     await expect(page.getByText("Fake Pi response", { exact: true }).first()).toBeVisible()
@@ -178,14 +173,16 @@ test("fake Pi runtime connects, selects, completes, cancels, and reconnects", as
 
     const credentialFile = path.join(userDataDir, "ai", "credentials.bin")
     expect(fs.existsSync(credentialFile)).toBe(true)
-    expect(fs.readFileSync(credentialFile).includes(Buffer.from(secret))).toBe(false)
+    const encryptedCredential = fs.readFileSync(credentialFile)
+    expect(encryptedCredential.includes(Buffer.from("fake-chatgpt-access-token"))).toBe(false)
+    expect(encryptedCredential.includes(Buffer.from("fake-chatgpt-refresh-token"))).toBe(false)
 
     electronApp = await launch(5_000)
     page = await electronApp.firstWindow()
     await page.waitForLoadState("domcontentloaded")
     await openProviders(page)
-    await expect(page.getByText("connected", { exact: true })).toBeVisible()
-    await expect(page.getByText("encrypted test credential", { exact: true })).toBeVisible()
+    await expect(page.getByRole("dialog", { name: "Fraia AI" }).getByText("Ready", { exact: true })).toBeVisible()
+    await expect(page.getByText("Encrypted ChatGPT test authorization", { exact: true })).toBeVisible()
     await page.getByRole("button", { name: "Close" }).click()
 
     const reply = page.getByPlaceholder("Reply to the Base Model Guide...")

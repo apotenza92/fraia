@@ -7,8 +7,6 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-#[cfg(test)]
-use fraia_app_api::AgentReasoningOption;
 use fraia_app_api::{
     AgentApplyReviewRequest, AgentCatalogueFreshness, AgentCoordinatorProposal,
     AgentCoordinatorRequest, AgentCoordinatorResponse, AgentCoordinatorTarget, AgentModelOption,
@@ -27,16 +25,18 @@ use fraia_app_api::{
     SceneSizeCoordination, SceneSupport, SummaryArtifactRef, WorkbenchDiagnostic,
     WorkbenchOperationResponse, WorkbenchProjectOverview, WorkbenchProjectState, WorkbenchScene,
 };
+#[cfg(test)]
+use fraia_core::FRAIA_AI_PROVIDER_ID;
 use fraia_core::{
     AgentMessage, AgentModelSettings, AgentProposedActionState, AgentSession, AgentState,
     AgentSuggestedReplyGroup, AiProvenance, AssignmentTargetRef, BaseModelBrief,
     BaseModelBriefLoadDirection, BaseModelBriefLoadTarget, BaseModelBriefReadiness,
     BaseModelBriefVisualIntent, CalculixCompiledInput, CalculixExecutionArtifacts,
     CalculixExecutionOutcome, DesignOptionBatch, DesignOptionComparisonEvidenceReference,
-    DesignOptionComparisonRun, DesignOptionRevision, DevelopmentPath, Force,
-    FrameElementStressSummary, FrameModel2D, FrameNodeDisplacementPoint, FrameSupportReactionPoint,
-    LineLoad, LoadAssignment, LoadCase2D, LoadKind, LoadVector,
-    PlanningAnalysisBrief as CorePlanningAnalysisBrief,
+    DesignOptionComparisonRun, DesignOptionRevision, DevelopmentPath, FRAIA_AI_MODEL_ID,
+    FRAIA_AI_REASONING_EFFORT, Force, FrameElementStressSummary, FrameModel2D,
+    FrameNodeDisplacementPoint, FrameSupportReactionPoint, LineLoad, LoadAssignment, LoadCase2D,
+    LoadKind, LoadVector, PlanningAnalysisBrief as CorePlanningAnalysisBrief,
     PlanningDesignConstraints as CorePlanningDesignConstraints, PlanningDraft as CorePlanningDraft,
     PlanningGeometryAndLoads as CorePlanningGeometryAndLoads,
     PlanningProjectIntent as CorePlanningProjectIntent,
@@ -1159,8 +1159,22 @@ async fn agent_settings_handler(
         )
         .into());
     }
+    let required = AgentModelSettings::default();
     let requested_provider = request.provider_id.trim();
     let requested_model = request.model.trim();
+    let requested_reasoning = request.reasoning_effort.trim().to_ascii_lowercase();
+    if requested_provider != required.provider_id
+        || requested_model != required.model
+        || requested_reasoning != required.reasoning_effort
+    {
+        return Err(anyhow!(
+            "Fraia 0.0.1 supports only `{}/{}` with `{}` reasoning",
+            required.provider_id,
+            required.model,
+            required.reasoning_effort,
+        )
+        .into());
+    }
     let Some(model_option) = models.iter().find(|candidate| {
         candidate.provider_id == requested_provider && candidate.slug == requested_model
     }) else {
@@ -1173,13 +1187,12 @@ async fn agent_settings_handler(
     };
     if !model_option.available {
         return Err(anyhow!(
-            "requested Pi model `{}/{}` is unavailable; authenticate its provider or choose another model",
+            "required Pi model `{}/{}` is unavailable; authenticate ChatGPT or refresh the catalogue",
             request.provider_id,
             request.model,
         )
         .into());
     }
-    let requested_reasoning = request.reasoning_effort.trim().to_ascii_lowercase();
     if !model_option
         .supported_reasoning_levels
         .iter()
@@ -1193,11 +1206,7 @@ async fn agent_settings_handler(
         )
         .into());
     }
-    let settings = AgentModelSettings {
-        provider_id: model_option.provider_id.clone(),
-        model: model_option.slug.clone(),
-        reasoning_effort: requested_reasoning,
-    };
+    let settings = required;
     ensure_agent_settings(&mut project);
     project
         .agent_state
@@ -3255,16 +3264,22 @@ fn selected_reply_text(
 fn ensure_agent_settings(project: &mut ProjectFile) -> bool {
     let mut changed = false;
     for surface in ["default", "pre_solve", "comment_review"] {
-        let settings = project
+        if !project
             .agent_state
             .settings_by_surface
-            .entry(surface.into())
-            .or_insert_with(|| {
-                changed = true;
-                AgentModelSettings::default()
-            });
-        if settings.model == "gpt-5.5" && settings.reasoning_effort == "medium" {
-            settings.reasoning_effort = "low".into();
+            .contains_key(surface)
+        {
+            project
+                .agent_state
+                .settings_by_surface
+                .insert(surface.into(), AgentModelSettings::default());
+            changed = true;
+        }
+    }
+    let required = AgentModelSettings::default();
+    for settings in project.agent_state.settings_by_surface.values_mut() {
+        if settings != &required {
+            *settings = required.clone();
             changed = true;
         }
     }
@@ -3282,23 +3297,16 @@ fn agent_settings_for_surface(project: &ProjectFile, surface: &str) -> AgentMode
         .unwrap_or_default()
 }
 
-fn validated_agent_settings_for_surface_from_models(
-    project: &mut ProjectFile,
-    surface: &str,
-    _models: &[AgentModelOption],
-) -> AgentModelSettings {
-    agent_settings_for_surface(project, surface)
-}
-
 fn validated_agent_settings_for_surface(
     project: &mut ProjectFile,
     surface: &str,
 ) -> AgentModelSettings {
-    let current = agent_settings_for_surface(project, surface);
-    let Ok(catalogue) = pi_catalogue() else {
-        return current;
-    };
-    validated_agent_settings_for_surface_from_models(project, surface, &catalogue.models)
+    let settings = AgentModelSettings::default();
+    project
+        .agent_state
+        .settings_by_surface
+        .insert(surface.into(), settings.clone());
+    settings
 }
 
 fn agent_session_title(surface: &str) -> String {
@@ -3768,7 +3776,8 @@ fn build_agent_provider_status(
                 current.provider_id, current.model
             ),
             detail: Some(
-                "Choose an available authenticated model before starting another AI turn.".into(),
+                "Sign in with ChatGPT and refresh the catalogue before starting another AI turn."
+                    .into(),
             ),
         });
     }
@@ -3781,46 +3790,6 @@ fn build_agent_provider_status(
         catalogue: catalogue.catalogue,
         secure_credential_storage_available: catalogue.secure_credential_storage_available,
         diagnostics,
-    }
-}
-
-#[cfg(test)]
-fn validate_agent_settings_from_models(
-    models: &[AgentModelOption],
-    provider_id: Option<&str>,
-    model: Option<&str>,
-    reasoning: Option<&str>,
-) -> AgentModelSettings {
-    let requested_provider = provider_id.unwrap_or("openai-codex").trim();
-    let requested_model = model.unwrap_or_default().trim();
-    let selected_model = models.iter().find(|candidate| {
-        candidate.provider_id == requested_provider && candidate.slug == requested_model
-    });
-    let Some(selected_model) = selected_model else {
-        return AgentModelSettings {
-            provider_id: requested_provider.into(),
-            model: requested_model.into(),
-            reasoning_effort: reasoning.unwrap_or("low").into(),
-        };
-    };
-    let requested_reasoning = reasoning.unwrap_or_default().trim().to_ascii_lowercase();
-    let selected_reasoning = selected_model
-        .supported_reasoning_levels
-        .iter()
-        .find(|candidate| candidate.effort == requested_reasoning)
-        .map(|candidate| candidate.effort.clone())
-        .or_else(|| {
-            selected_model
-                .supported_reasoning_levels
-                .iter()
-                .find(|candidate| candidate.effort == "low")
-                .map(|candidate| candidate.effort.clone())
-        })
-        .unwrap_or_else(|| selected_model.default_reasoning_level.clone());
-    AgentModelSettings {
-        provider_id: selected_model.provider_id.clone(),
-        model: selected_model.slug.clone(),
-        reasoning_effort: selected_reasoning,
     }
 }
 
@@ -4172,11 +4141,16 @@ fn agent_action_state_to_action(action: &AgentProposedActionState) -> AgentPropo
 }
 
 fn sanitize_agent_model(model: Option<&str>) -> String {
-    model.unwrap_or("gpt-5.5").trim().to_owned()
+    model.unwrap_or(FRAIA_AI_MODEL_ID).trim().to_owned()
 }
 
 fn sanitize_reasoning_effort(effort: Option<&str>) -> String {
-    match effort.unwrap_or("low").trim().to_ascii_lowercase().as_str() {
+    match effort
+        .unwrap_or(FRAIA_AI_REASONING_EFFORT)
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
         "off" => "off".into(),
         "low" => "low".into(),
         "medium" => "medium".into(),
@@ -4726,7 +4700,7 @@ fn pi_review_schema() -> Value {
         "properties": {
             "agentMode": { "type": "string" },
             "model": { "type": "string" },
-            "reasoningEffort": { "type": "string", "enum": ["off", "low", "medium", "high", "xhigh"] },
+            "reasoningEffort": { "type": "string", "enum": ["low"] },
             "status": { "type": "string", "enum": ["needs_more_information", "ready_to_apply"] },
             "message": { "type": "string" },
             "followUp": { "type": ["string", "null"] },
@@ -10634,65 +10608,16 @@ mod tests {
         assert!(request_is_authorised(&headers, token));
     }
 
-    fn test_pi_model(provider_id: &str, model_id: &str, available: bool) -> AgentModelOption {
-        AgentModelOption {
-            provider_id: provider_id.into(),
-            slug: model_id.into(),
-            display_name: model_id.into(),
-            default_reasoning_level: "low".into(),
-            supported_reasoning_levels: vec![
-                AgentReasoningOption {
-                    effort: "off".into(),
-                    description: String::new(),
-                },
-                AgentReasoningOption {
-                    effort: "low".into(),
-                    description: String::new(),
-                },
-                AgentReasoningOption {
-                    effort: "high".into(),
-                    description: String::new(),
-                },
-            ],
-            available,
-            context_window: Some(128_000),
-            max_tokens: Some(16_384),
-        }
+    #[test]
+    fn agent_model_settings_default_to_chatgpt_luna_low() {
+        let settings = AgentModelSettings::default();
+        assert_eq!(settings.provider_id, FRAIA_AI_PROVIDER_ID);
+        assert_eq!(settings.model, FRAIA_AI_MODEL_ID);
+        assert_eq!(settings.reasoning_effort, FRAIA_AI_REASONING_EFFORT);
     }
 
     #[test]
-    fn pi_model_settings_keep_exact_provider_and_model() {
-        let models = vec![
-            test_pi_model("openai-codex", "gpt-5.5", true),
-            test_pi_model("anthropic", "claude-sonnet", true),
-        ];
-        let settings = validate_agent_settings_from_models(
-            &models,
-            Some("anthropic"),
-            Some("claude-sonnet"),
-            Some("high"),
-        );
-        assert_eq!(settings.provider_id, "anthropic");
-        assert_eq!(settings.model, "claude-sonnet");
-        assert_eq!(settings.reasoning_effort, "high");
-    }
-
-    #[test]
-    fn retired_model_reference_is_preserved_without_silent_switch() {
-        let models = vec![test_pi_model("openai-codex", "gpt-new-default", true)];
-        let settings = validate_agent_settings_from_models(
-            &models,
-            Some("openai-codex"),
-            Some("retired-model"),
-            Some("medium"),
-        );
-        assert_eq!(settings.provider_id, "openai-codex");
-        assert_eq!(settings.model, "retired-model");
-        assert_eq!(settings.reasoning_effort, "medium");
-    }
-
-    #[test]
-    fn legacy_agent_settings_migrate_to_openai_codex_provider() {
+    fn legacy_agent_settings_deserialize_before_project_migration() {
         let settings: AgentModelSettings = serde_json::from_value(json!({
             "model": "gpt-5.5",
             "reasoningEffort": "low"
@@ -10715,18 +10640,17 @@ mod tests {
     }
 
     #[test]
-    fn scheme_surfaces_inherit_default_agent_model_settings() {
+    fn ensure_agent_settings_migrates_every_surface_to_chatgpt_luna_low() {
         let project_dir = std::env::temp_dir().join(format!(
             "fraia-agent-settings-inherit-test-{}",
             fraia_core::utils::iso_now().replace([':', '-'], "")
         ));
         let (mut project, _) =
             create_project(&project_dir, "agent settings inherit test").expect("create project");
-        ensure_agent_settings(&mut project);
         project.agent_state.settings_by_surface.insert(
             "default".into(),
             AgentModelSettings {
-                provider_id: "openai-codex".into(),
+                provider_id: "anthropic".into(),
                 model: "gpt-5.4".into(),
                 reasoning_effort: "high".into(),
             },
@@ -10739,11 +10663,6 @@ mod tests {
                 reasoning_effort: "high".into(),
             },
         );
-
-        let inherited = agent_settings_for_surface(&project, "scheme:light-open-frame");
-        assert_eq!(inherited.model, "gpt-5.4");
-        assert_eq!(inherited.reasoning_effort, "high");
-
         project.agent_state.settings_by_surface.insert(
             "scheme:light-open-frame".into(),
             AgentModelSettings {
@@ -10752,9 +10671,32 @@ mod tests {
                 reasoning_effort: "xhigh".into(),
             },
         );
-        let explicit = agent_settings_for_surface(&project, "scheme:light-open-frame");
-        assert_eq!(explicit.model, "gpt-5.5");
-        assert_eq!(explicit.reasoning_effort, "xhigh");
+
+        assert!(ensure_agent_settings(&mut project));
+        let required = AgentModelSettings::default();
+        assert_eq!(
+            project.agent_state.settings_by_surface.get("default"),
+            Some(&required)
+        );
+        assert_eq!(
+            project.agent_state.settings_by_surface.get("pre_solve"),
+            Some(&required)
+        );
+        assert_eq!(
+            project
+                .agent_state
+                .settings_by_surface
+                .get("comment_review"),
+            Some(&required)
+        );
+        assert_eq!(
+            project
+                .agent_state
+                .settings_by_surface
+                .get("scheme:light-open-frame"),
+            Some(&required)
+        );
+        assert!(!ensure_agent_settings(&mut project));
         let _ = fs::remove_dir_all(project_dir);
     }
 

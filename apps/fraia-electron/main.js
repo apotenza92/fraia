@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { round, selectedBudget } = require('./scripts/perf-budgets.cjs');
-const { FakeFraiaAiRuntime, FraiaAiRuntime } = require('./ai-runtime.cjs');
+const { FakeFraiaAiRuntime, FraiaAiRuntime, publicFraiaCatalogue } = require('./ai-runtime.cjs');
 const { resolveApplicationMetadata, resolveUserDataDirectory } = require('./application-metadata.cjs');
 const { nativePlatformArch, resolveCalculixRuntime, resolveSidecarLaunch } = require('./package-boundary.cjs');
 const { configureAutoUpdates } = require('./update-manager.cjs');
@@ -32,6 +32,7 @@ let mainWindow = null;
 let aiRuntime = null;
 let aiRuntimeReadyPromise = null;
 let updateController = null;
+const FRAIA_AI_PROVIDER_ID = 'openai-codex';
 
 function isPipeClosedError(error) {
   return error?.code === 'EPIPE' || error?.code === 'ERR_STREAM_DESTROYED';
@@ -854,31 +855,30 @@ ipcMain.handle('fraia:generateDesignOptions', (_event, payload) =>
 ipcMain.handle('fraia:agentProviderStatus', (_event, payload) =>
   callApi('/agent/provider-status', { method: 'POST', body: JSON.stringify(payload) })
 );
-ipcMain.handle('fraia:aiProviders', async () => (await ensureAiRuntime()).catalog());
-ipcMain.handle('fraia:aiRefreshCatalog', async () => (await ensureAiRuntime()).refreshCatalog('manual'));
-ipcMain.handle('fraia:aiSubmitApiKey', async (_event, payload) => {
-  const secret = payload?.apiKey;
-  try {
-    return await (await ensureAiRuntime()).submitApiKey(payload?.providerId, secret);
-  } finally {
-    if (payload && 'apiKey' in payload) payload.apiKey = '';
-  }
-});
-ipcMain.handle('fraia:aiStartOAuth', async (_event, payload) =>
-  (await ensureAiRuntime()).startOAuth(payload?.providerId)
+ipcMain.handle('fraia:aiProviders', async () =>
+  publicFraiaCatalogue(await (await ensureAiRuntime()).catalog())
 );
+ipcMain.handle('fraia:aiRefreshCatalog', async () =>
+  publicFraiaCatalogue(await (await ensureAiRuntime()).refreshCatalog('manual'))
+);
+ipcMain.handle('fraia:aiStartOAuth', async (_event, payload) => {
+  if (payload?.providerId !== FRAIA_AI_PROVIDER_ID) {
+    throw new Error('Fraia 0.0.1 supports only Sign in with ChatGPT.');
+  }
+  return (await ensureAiRuntime()).startOAuth(FRAIA_AI_PROVIDER_ID);
+});
 ipcMain.handle('fraia:aiAnswerAuthPrompt', async (_event, payload) =>
   (await ensureAiRuntime()).answerAuthPrompt(payload?.flowId, payload?.value)
 );
 ipcMain.handle('fraia:aiCancelAuth', async (_event, payload) =>
   (await ensureAiRuntime()).cancelAuth(payload?.flowId)
 );
-ipcMain.handle('fraia:aiDisconnect', async (_event, payload) =>
-  (await ensureAiRuntime()).disconnect(payload?.providerId)
-);
-ipcMain.handle('fraia:agentUpdateSettings', (_event, payload) =>
-  callApi('/agent/settings', { method: 'POST', body: JSON.stringify(payload) })
-);
+ipcMain.handle('fraia:aiDisconnect', async (_event, payload) => {
+  if (payload?.providerId !== FRAIA_AI_PROVIDER_ID) {
+    throw new Error('Fraia 0.0.1 supports only the ChatGPT connection.');
+  }
+  return publicFraiaCatalogue(await (await ensureAiRuntime()).disconnect(FRAIA_AI_PROVIDER_ID));
+});
 ipcMain.handle('fraia:resetBaseModelGuide', (_event, payload) =>
   callApi('/agent/base-model-guide/reset', { method: 'POST', body: JSON.stringify(payload) })
 );

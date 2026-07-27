@@ -2,19 +2,24 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ClipboardCheck, LoaderCircle, RotateCcw, Send } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { ModelCombobox } from '../ai/ModelCombobox';
 import { EstimatedAgentProgress, type AgentProgressStage, useEstimatedAgentProgress } from '../chat/AgentProgressIndicator';
 import { ChatMessageText } from '../chat/ChatMessageText';
-import type { AgentModelOption, AgentProviderStatus, AgentSession, BaseModelBrief, WorkbenchState } from '../../lib/types';
+import type { AgentProviderStatus, AgentSession, BaseModelBrief, WorkbenchState } from '../../lib/types';
 import { normalizeWorkbenchState, projectDirOf } from '../../lib/defaultProject';
-import { agentModelId, agentModelProviderId, agentRuntimeReady, availableAgentModels, reasoningOptionsForModel, selectedAgentModel, subscribeToAgentModelCatalogRefresh } from '../../lib/agentOptions';
-import { formatReasoningEffortLabel } from '../../lib/displayLabels';
+import {
+  FRAIA_AI_MODEL_ID,
+  FRAIA_AI_MODEL_NAME,
+  FRAIA_AI_PROVIDER_ID,
+  agentRuntimeReady,
+  selectedAgentModel,
+  subscribeToAgentModelCatalogRefresh,
+} from '../../lib/agentOptions';
 import { CHROME } from '../layout/chromeMetrics';
 
 const SURFACE = 'pre_solve';
@@ -117,7 +122,6 @@ export function BaseChatPanel({
   const [resettingGuide, setResettingGuide] = useState(false);
   const [pendingUserText, setPendingUserText] = useState<string | null>(null);
   const [provider, setProvider] = useState<AgentProviderStatus | null>(null);
-  const [providerBusy, setProviderBusy] = useState(false);
   const [providerError, setProviderError] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -135,17 +139,9 @@ export function BaseChatPanel({
   const agentState = state?.agentState ?? state?.agent_state;
   const session: AgentSession | undefined = useMemo(() => agentState?.sessions?.find((candidate) => candidate.surface === SURFACE), [agentState]);
   const settings = agentState?.settingsBySurface?.[SURFACE] ?? agentState?.settings_by_surface?.[SURFACE];
-  const settingsProviderId = settings?.providerId ?? settings?.provider_id ?? 'openai-codex';
-  const settingsModelId = settings?.modelId ?? settings?.model_id ?? settings?.model ?? '';
+  const settingsProviderId = settings?.providerId ?? settings?.provider_id ?? FRAIA_AI_PROVIDER_ID;
+  const settingsModelId = settings?.modelId ?? settings?.model_id ?? settings?.model ?? FRAIA_AI_MODEL_ID;
   const selectedModel = selectedAgentModel(provider, settingsProviderId, settingsModelId);
-  const providerId = selectedModel ? agentModelProviderId(selectedModel) : settingsProviderId;
-  const model = selectedModel ? agentModelId(selectedModel) : settingsModelId;
-  const modelOptions = availableAgentModels(provider);
-  const reasonings = reasoningOptionsForModel(selectedModel, { allowOff: false });
-  const rawReasoningEffort = settings?.reasoningEffort ?? settings?.reasoning_effort ?? provider?.selectedReasoningEffort ?? provider?.selected_reasoning_effort ?? 'low';
-  const reasoningEffort = rawReasoningEffort === 'off'
-    ? reasonings.find((item) => item.effort === 'low')?.effort ?? selectedModel?.defaultReasoningLevel ?? selectedModel?.default_reasoning_level ?? 'low'
-    : rawReasoningEffort;
   const aiReady = agentRuntimeReady(provider, selectedModel);
   const messages = (session?.messages ?? []).filter(messageIsRenderable);
   const guideStarted = messages.some(messageStartedGuide);
@@ -159,7 +155,6 @@ export function BaseChatPanel({
   const replyProgress = useEstimatedAgentProgress(busy, BASE_GUIDE_REPLY_STAGES, 'Finalising the updated Base Model brief');
   const refreshProvider = useCallback(async () => {
     if (!projectDir) return null;
-    setProviderBusy(true);
     try {
       setProviderError(null);
       const response = await window.fraia.agentProviderStatus({ projectDir, surface: SURFACE });
@@ -168,8 +163,6 @@ export function BaseChatPanel({
     } catch (error: any) {
       setProviderError(error?.message || 'Could not reach the Fraia agent provider.');
       return null;
-    } finally {
-      setProviderBusy(false);
     }
   }, [projectDir]);
 
@@ -177,27 +170,6 @@ export function BaseChatPanel({
     void refreshProvider();
     return subscribeToAgentModelCatalogRefresh(() => { void refreshProvider(); });
   }, [refreshProvider]);
-
-  async function updateSettings(next: { model?: AgentModelOption; reasoningEffort?: string }) {
-    if (!projectDir) return;
-    setProviderError(null);
-    try {
-      const modelOption = next.model ?? selectedModel;
-      if (!modelOption) throw new Error('Choose an available AI model first.');
-      const nextProviderId = agentModelProviderId(modelOption);
-      const nextModelId = agentModelId(modelOption);
-      const options = reasoningOptionsForModel(modelOption, { allowOff: false });
-      const nextReasoning = next.reasoningEffort ?? (options.some((item) => item.effort === reasoningEffort)
-        ? reasoningEffort
-        : modelOption?.defaultReasoningLevel ?? modelOption?.default_reasoning_level ?? reasoningEffort);
-      const response = await window.fraia.agentUpdateSettings({ projectDir, surface: SURFACE, providerId: nextProviderId, modelId: nextModelId, reasoningEffort: nextReasoning });
-      const updated = normalizeWorkbenchState(response);
-      if (updated) onState(updated);
-      await refreshProvider();
-    } catch (error: any) {
-      setProviderError(error?.message || 'Could not update agent settings.');
-    }
-  }
 
   async function startBaseModelGuide() {
     if (!state || !projectDir || guideStarted || startInFlightRef.current) return;
@@ -384,47 +356,16 @@ export function BaseChatPanel({
 
   const statusBanner = (
     <div className="flex shrink-0 flex-col gap-2 border-b p-2">
-      <div className="grid grid-cols-2 gap-2">
-        <label className="flex flex-col gap-1 text-sm font-medium">
-          Model
-        <ModelCombobox
-          models={modelOptions}
-          providers={provider?.providers ?? []}
-          providerId={providerId}
-          modelId={model}
-          disabled={busy || providerBusy || !modelOptions.length}
-          onChange={(nextModel) => { void updateSettings({ model: nextModel }); }}
-        />
-        </label>
-        <label className="flex flex-col gap-1 text-sm font-medium">
-          Reasoning
-        <Select
-          value={reasoningEffort}
-          items={(reasonings.length ? reasonings.map((item) => item.effort) : [reasoningEffort]).map((value) => ({
-            value,
-            label: formatReasoningEffortLabel(value),
-          }))}
-          disabled={busy || providerBusy || !reasonings.length}
-          onValueChange={(value) => {
-            if (typeof value === 'string') updateSettings({ reasoningEffort: value });
-          }}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              {(reasonings.length ? reasonings.map((item) => item.effort) : [reasoningEffort]).map((value) => (
-                <SelectItem key={value} value={value}>{formatReasoningEffortLabel(value)}</SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-        </label>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-baseline gap-2">
+          <span className="text-sm font-medium">Fraia AI</span>
+          <span className="truncate text-xs text-muted-foreground">{FRAIA_AI_MODEL_NAME}</span>
+        </div>
+        <Badge variant={aiReady ? 'secondary' : 'outline'}>{aiReady ? 'Ready' : 'Sign in required'}</Badge>
       </div>
       {showStatus && (
         <div className="flex flex-col gap-1.5">
-      {!aiReady && guideStarted && <Alert><AlertDescription>Connect a provider and choose an available model in Settings → AI providers.</AlertDescription></Alert>}
+      {!aiReady && guideStarted && <Alert><AlertDescription>Open Fraia → Fraia AI and sign in with ChatGPT.</AlertDescription></Alert>}
       {startError && (
         <Alert variant="destructive">
           <AlertDescription>{startError}</AlertDescription>
