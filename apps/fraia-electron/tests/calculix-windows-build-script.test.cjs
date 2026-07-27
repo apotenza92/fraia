@@ -3,6 +3,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
+const gitAttributes = fs.readFileSync(
+  path.resolve(__dirname, '../../../.gitattributes'),
+  'utf8',
+);
 const script = fs.readFileSync(
   path.resolve(__dirname, '../scripts/build-calculix-windows-runtime.ps1'),
   'utf8',
@@ -11,6 +15,10 @@ const loaderDiagnostic = fs.readFileSync(
   path.resolve(__dirname, '../scripts/diagnose-calculix-windows-loader.ps1'),
   'utf8',
 );
+
+test('Windows CalculiX recipes preserve repository bytes on Windows checkouts', () => {
+  assert.match(gitAttributes, /^\*\.ps1 text eol=lf$/m);
+});
 
 test('Windows CalculiX vendor build pins every source and toolchain input', () => {
   for (const hash of [
