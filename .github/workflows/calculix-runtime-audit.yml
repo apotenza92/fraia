@@ -14,8 +14,13 @@ on:
           - linux-arm64
           - linux-x64
           - win32-x64
+      reviewed_source_run_id:
+        description: Successful Linux x64 source run for a Windows candidate
+        required: false
+        type: string
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -82,6 +87,22 @@ jobs:
           }
           $llvm | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
+      - name: Require reviewed source evidence
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace('${{ inputs.reviewed_source_run_id }}')) {
+            throw 'win32-x64 requires reviewed_source_run_id from a successful Linux x64 audit.'
+          }
+
+      - name: Download hash-reviewed source evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: calculix-linux-x64
+          path: ${{ runner.temp }}/reviewed-source
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.reviewed_source_run_id }}
+
       - name: Build and test candidate
         working-directory: apps/fraia-electron
         shell: pwsh
@@ -90,7 +111,17 @@ jobs:
           New-Item -ItemType Directory -Path $root | Out-Null
           ./scripts/build-calculix-windows-runtime.ps1 `
             -OutputDirectory (Join-Path $root 'runtime') `
-            -EvidenceDirectory (Join-Path $root 'evidence')
+            -EvidenceDirectory (Join-Path $root 'evidence') `
+            -ReviewedSourceDirectory (Join-Path '${{ runner.temp }}' 'reviewed-source\evidence\source-inputs')
+
+      - name: Upload failed reproducibility evidence
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: calculix-win32-x64-reproducibility-failure
+          path: ${{ runner.temp }}/win32-x64/evidence
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Upload review candidate
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -148,6 +179,7 @@ jobs:
 
       - name: Build and test candidate
         working-directory: apps/fraia-electron
+        shell: bash
         run: |
           set -euo pipefail
           mkdir -p '/tmp/${{ matrix.target }}'

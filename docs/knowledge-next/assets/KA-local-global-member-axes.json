@@ -1,0 +1,40 @@
+{
+  "alt_text": "Schematic target showing a frame member with local axes, a surrounding global coordinate frame, and transformed member end force directions.",
+  "asset_id": "KA-local-global-member-axes",
+  "asset_type": "diagram",
+  "caption": "Generated-safe local/global axes schematic for frame member modeling.",
+  "concept_tags": [
+    "local axes",
+    "global axes",
+    "frame element",
+    "member forces"
+  ],
+  "copyright_status": "unknown",
+  "embed_policy": "generated_derivative_only",
+  "generated_safe_target": {
+    "candidate_output_path": "docs/knowledge-next/generated/diagrams/local-global-member-axes.svg",
+    "description": "Original schematic showing one sloped member in a global x-y frame, with local member axes and end force sign conventions kept visibly separate.",
+    "must_avoid": [
+      "copying solver documentation graphics",
+      "using software UI screenshots",
+      "hardcoding one solver's sign convention as universal"
+    ],
+    "must_preserve": [
+      "global axes",
+      "local member axes",
+      "member end force directions",
+      "clear sign-convention caveat"
+    ]
+  },
+  "license_notes": "Use OpenSees documentation as modeling context only; redraw in Fraia-native style before embedding.",
+  "original_locator": "OpenSees Elastic Beam Column Element documentation",
+  "redraw_status": "redraw_planned",
+  "schema_version": "knowledge-asset.v0",
+  "source_id": "SRC-6e33dce5df",
+  "title": "Local And Global Member Axes",
+  "used_by_cards": [
+    "KC-authored-member-analysis-element-separation",
+    "KC-member-end-releases",
+    "KC-load-application-equivalent-loads"
+  ]
+}

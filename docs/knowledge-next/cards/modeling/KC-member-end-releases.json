@@ -1,0 +1,126 @@
+{
+  "applicability": {
+    "applies_to": [
+      "frame modelling",
+      "member-end release assumptions",
+      "connection fixity explanation",
+      "overrelease diagnostics"
+    ],
+    "jurisdiction_or_standard_context": "Concept guidance from public professional, solver, and abstract-level research sources; not a steel connection design rule.",
+    "not_applicable_to": [
+      "final connection design",
+      "plastic hinge modelling",
+      "code-specific joint classification"
+    ]
+  },
+  "card_id": "KC-member-end-releases",
+  "claims": [
+    {
+      "claim_id": "C1",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "Modelling and analysis, joints and analysis assumptions",
+          "source_id": "SRC-9be980a1af"
+        },
+        {
+          "locator": "Elastic Beam Column Element release options",
+          "source_id": "SRC-6e33dce5df"
+        }
+      ],
+      "text": "Member end releases are modelling assumptions about which force or moment components transfer between a member end and its connected node."
+    },
+    {
+      "claim_id": "C2",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "Member end releases in framed structures abstract",
+          "source_id": "SRC-a4257cc619"
+        }
+      ],
+      "text": "End releases affect stiffness-method analysis rather than only display, because released end forces require modified stiffness or equivalent load treatment."
+    },
+    {
+      "claim_id": "C3",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "Elastic Beam Column Element, release code documentation",
+          "source_id": "SRC-6e33dce5df"
+        }
+      ],
+      "text": "Release definitions are end-specific and axis/component-specific, so Fraia must preserve member end, local axis, component, and partial-stiffness intent."
+    }
+  ],
+  "concepts": [
+    "member end release",
+    "connection fixity",
+    "local axis",
+    "partial restraint",
+    "overrelease"
+  ],
+  "domain": "modeling",
+  "fraia_mapping": {
+    "pipeline_stages": [
+      "structural_model",
+      "realization",
+      "analysis_results"
+    ],
+    "structural_objects": [
+      "Member",
+      "ReleaseAssignment"
+    ]
+  },
+  "limitations": [
+    "OpenSees syntax is source-scoped evidence for release conventions, not Fraia syntax.",
+    "The Trahair/Bradford source is abstract-level access only; do not rely on inaccessible algorithm details."
+  ],
+  "media_links": [
+    {
+      "asset_id": "KA-member-release-components",
+      "role": "explains"
+    },
+    {
+      "asset_id": "KA-local-global-member-axes",
+      "role": "example"
+    }
+  ],
+  "relationships": [
+    {
+      "relationship_type": "supports",
+      "target": "KC-determinacy-restraint-mechanisms"
+    },
+    {
+      "relationship_type": "supports",
+      "target": "KC-instability-diagnostics"
+    }
+  ],
+  "schema_version": "knowledge-card.v0",
+  "source_links": [
+    {
+      "pages_used": [
+        "Modelling and analysis"
+      ],
+      "role": "primary",
+      "source_id": "SRC-9be980a1af"
+    },
+    {
+      "pages_used": [
+        "Member end releases in framed structures abstract"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-a4257cc619"
+    },
+    {
+      "pages_used": [
+        "Elastic Beam Column Element"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-6e33dce5df"
+    }
+  ],
+  "status": "draft",
+  "summary": "Fraia should model member end releases as explicit force/moment transfer assumptions tied to member end, local axis, component, and provenance.",
+  "title": "Member End Releases"
+}

@@ -1,0 +1,5 @@
+*.ps1 text eol=lf
+apps/fraia-electron/runtimes/calculix/** -text
+apps/fraia-electron/runtimes/calculix/win32-x64/** whitespace=cr-at-eol
+apps/fraia-electron/runtimes/calculix/win32-x64/licenses/GCC-Runtime-Library-Exception-3.1.txt whitespace=-blank-at-eof
+apps/fraia-electron/runtimes/calculix/win32-x64/licenses/OpenBLAS-BSD-3-Clause.txt whitespace=-trailing-space

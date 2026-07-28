@@ -1,0 +1,27 @@
+{
+  "eval_id": "KE-suspicious-reactions",
+  "expected_card_ids": [
+    "KC-reaction-sanity-checks",
+    "KC-free-body-equilibrium",
+    "KC-support-reactions-idealisation",
+    "KC-load-paths",
+    "KC-instability-diagnostics"
+  ],
+  "expected_concepts": [
+    "reaction sanity check",
+    "free-body diagram",
+    "support idealisation",
+    "load path",
+    "instability"
+  ],
+  "notes": "Use when an analysis run has reactions that look too large, zero where support exists, wrong-signed, or inconsistent with applied loads.",
+  "prompt": "A frame model has vertical loads but one support reaction is near zero and another support reaction is unexpectedly large. What knowledge should the agent retrieve before diagnosing the model?",
+  "schema_version": "knowledge-eval.v0",
+  "title": "Suspicious Reactions",
+  "unacceptable_answer_patterns": [
+    "declare the structure safe or unsafe without checking load path and support idealisation",
+    "treat solver reactions as design check results",
+    "ignore instability or missing restraint possibilities",
+    "invent a code-specific pass/fail rule"
+  ]
+}

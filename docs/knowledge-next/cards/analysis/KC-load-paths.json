@@ -1,0 +1,125 @@
+{
+  "applicability": {
+    "applies_to": [
+      "scheme generation",
+      "load-path explanation",
+      "bracing and support diagnostics",
+      "concept-stage structural review"
+    ],
+    "jurisdiction_or_standard_context": "Public engineering guidance on structural load paths; not a code-specific design module.",
+    "not_applicable_to": [
+      "final member sizing",
+      "jurisdiction-specific load calculation",
+      "connection capacity checks"
+    ]
+  },
+  "card_id": "KC-load-paths",
+  "claims": [
+    {
+      "claim_id": "C1",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "Structural load paths explainer",
+          "source_id": "SRC-d83160defb"
+        }
+      ],
+      "text": "A load path is the route by which actions are transferred through structural parts and connections to supports and foundations."
+    },
+    {
+      "claim_id": "C2",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "Continuous Load Path Provided with Connections from the Roof through the Wall to the Foundation",
+          "source_id": "SRC-afd8c4e149"
+        }
+      ],
+      "text": "Continuous load paths depend on connected chains of members and connections; discontinuities, openings, or missing connectors can interrupt gravity, uplift, or lateral transfer."
+    },
+    {
+      "claim_id": "C3",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "Introduction to Load Paths",
+          "source_id": "SRC-833946e3b6"
+        },
+        {
+          "locator": "Structural load paths explainer",
+          "source_id": "SRC-d83160defb"
+        }
+      ],
+      "text": "Fraia should ask for or infer load paths at the system level before treating local member forces as meaningful design actions."
+    }
+  ],
+  "concepts": [
+    "load path",
+    "continuous load path",
+    "gravity load transfer",
+    "lateral load transfer",
+    "connection chain"
+  ],
+  "domain": "structural-analysis",
+  "fraia_mapping": {
+    "pipeline_stages": [
+      "builder_graph",
+      "structural_model",
+      "realization",
+      "analysis_results"
+    ],
+    "structural_objects": [
+      "Member",
+      "Plate",
+      "SupportAssignment",
+      "LoadAssignment"
+    ]
+  },
+  "limitations": [
+    "Some public load-path sources are residential or hazard-focused; transfer concepts must be re-scoped for steel portal frames and other systems.",
+    "A verbal load path is not a substitute for resolved topology, connection assumptions, or analysis."
+  ],
+  "media_links": [
+    {
+      "asset_id": "KA-portal-frame-load-path",
+      "role": "example"
+    }
+  ],
+  "relationships": [
+    {
+      "relationship_type": "supports",
+      "target": "KC-reaction-sanity-checks"
+    },
+    {
+      "relationship_type": "supports",
+      "target": "KC-instability-diagnostics"
+    }
+  ],
+  "schema_version": "knowledge-card.v0",
+  "source_links": [
+    {
+      "pages_used": [
+        "Explainer: Structural load paths"
+      ],
+      "role": "primary",
+      "source_id": "SRC-d83160defb"
+    },
+    {
+      "pages_used": [
+        "Continuous Load Path Provided with Connections from the Roof through the Wall to the Foundation"
+      ],
+      "role": "primary",
+      "source_id": "SRC-afd8c4e149"
+    },
+    {
+      "pages_used": [
+        "Introduction to Load Paths"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-833946e3b6"
+    }
+  ],
+  "status": "draft",
+  "summary": "Fraia should reason about how gravity, uplift, lateral, and stability actions travel through connected structural objects before trusting local member or reaction results.",
+  "title": "Load Paths"
+}

@@ -1,0 +1,126 @@
+{
+  "applicability": {
+    "applies_to": [
+      "support idealisation",
+      "reaction interpretation",
+      "support DOF diagnostics",
+      "concept-stage structural analysis"
+    ],
+    "jurisdiction_or_standard_context": "Statics and structural-analysis fundamentals from public educational sources; not a foundation or connection design check.",
+    "not_applicable_to": [
+      "foundation capacity checks",
+      "nonlinear contact modelling",
+      "project-specific support approval"
+    ]
+  },
+  "card_id": "KC-support-reactions-idealisation",
+  "claims": [
+    {
+      "claim_id": "C1",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "Types of Supports and Their Characteristics",
+          "source_id": "SRC-e0a97ba94d"
+        },
+        {
+          "locator": "Supports, support modelling and DOF notation",
+          "source_id": "SRC-1fa009051f"
+        }
+      ],
+      "text": "Support reactions are consequences of restrained or prescribed degrees of freedom, not arbitrary arrows added after analysis."
+    },
+    {
+      "claim_id": "C2",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "Pin, roller, link, and fixed support descriptions",
+          "source_id": "SRC-e0a97ba94d"
+        }
+      ],
+      "text": "Named support types such as pin, roller, link, and fixed support are shorthand for different translation and rotation restraint assumptions."
+    },
+    {
+      "claim_id": "C3",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "Conditions for Static Equilibrium",
+          "source_id": "SRC-f9a8b7e202"
+        },
+        {
+          "locator": "Equilibrium Structures, support reactions examples",
+          "source_id": "SRC-e0a97ba94d"
+        }
+      ],
+      "text": "Reaction signs must be interpreted with the selected coordinate frame and assumed positive direction before they are treated as physical problems such as uplift or missing restraint."
+    }
+  ],
+  "concepts": [
+    "support reaction",
+    "support idealisation",
+    "degree of freedom",
+    "restraint",
+    "reaction sign"
+  ],
+  "domain": "structural-analysis",
+  "fraia_mapping": {
+    "pipeline_stages": [
+      "structural_model",
+      "realization",
+      "analysis_results"
+    ],
+    "structural_objects": [
+      "Node",
+      "SupportAssignment"
+    ]
+  },
+  "limitations": [
+    "This card covers idealised support behaviour, not real bearing, footing, base-plate, bolt, or soil capacity.",
+    "Unilateral, settlement, spring, or nonlinear support behaviour needs separate modelling rules."
+  ],
+  "media_links": [
+    {
+      "asset_id": "KA-support-dof-reaction-symbols",
+      "role": "explains"
+    }
+  ],
+  "relationships": [
+    {
+      "relationship_type": "requires",
+      "target": "KC-free-body-equilibrium"
+    },
+    {
+      "relationship_type": "supports",
+      "target": "KC-reaction-sanity-checks"
+    }
+  ],
+  "schema_version": "knowledge-card.v0",
+  "source_links": [
+    {
+      "pages_used": [
+        "Types of Supports and Their Characteristics"
+      ],
+      "role": "primary",
+      "source_id": "SRC-e0a97ba94d"
+    },
+    {
+      "pages_used": [
+        "Supports"
+      ],
+      "role": "primary",
+      "source_id": "SRC-1fa009051f"
+    },
+    {
+      "pages_used": [
+        "12.1 Conditions for Static Equilibrium"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-f9a8b7e202"
+    }
+  ],
+  "status": "draft",
+  "summary": "Fraia should represent named supports as explicit restrained or prescribed DOFs so reactions, signs, and physical assumptions remain inspectable.",
+  "title": "Support Reactions and Idealisation"
+}

@@ -1,0 +1,283 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fraia.local/schemas/source-inventory.schema.json",
+  "title": "Fraia Knowledge Source Inventory",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "generated_at",
+    "summary",
+    "sources",
+    "page_audit"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "knowledge-source-inventory.v0"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date"
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "compiled_pages_audited",
+        "raw_notes_audited",
+        "registry_and_plan_files_audited",
+        "unique_sources",
+        "bucket_counts",
+        "public_rebuild_eligible_sources",
+        "deferred_or_replacement_sources",
+        "pages_needing_original_source_rebuild"
+      ],
+      "properties": {
+        "compiled_pages_audited": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "raw_notes_audited": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "registry_and_plan_files_audited": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unique_sources": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pages_needing_original_source_rebuild": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "public_rebuild_eligible_sources": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deferred_or_replacement_sources": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bucket_counts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source_id",
+          "title",
+          "bucket",
+          "public_rebuild_eligible",
+          "rebuild_action",
+          "used_by",
+          "quality_flags",
+          "raw_entry"
+        ],
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "pattern": "^SRC-[a-f0-9]{10}$"
+          },
+          "page_source_marker": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "author_or_organization": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "doi": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "local_source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "retrieved": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "consulted": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reliability_limits": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pages_used": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bucket": {
+            "type": "string",
+            "enum": [
+              "public_professional",
+              "textbook_private_reference",
+              "software_manual",
+              "internal_fraia",
+              "discovery_only",
+              "weak_replace"
+            ]
+          },
+          "public_rebuild_eligible": {
+            "type": "boolean"
+          },
+          "rebuild_action": {
+            "type": "string",
+            "enum": [
+              "eligible_for_public_rebuild_seed",
+              "defer_private_local_source",
+              "trace_to_original_public_source",
+              "use_for_discovery_only",
+              "replace_with_stronger_public_source",
+              "review_before_use"
+            ]
+          },
+          "raw_entry": {
+            "type": "string"
+          },
+          "used_by": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "wiki_pages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "quality_flags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "missing_locator",
+                "missing_source_type",
+                "missing_or_placeholder_date",
+                "missing_reliability_limits",
+                "internal_source_not_original",
+                "replace_or_corroborate",
+                "private_local_deferred"
+              ]
+            },
+            "uniqueItems": true
+          }
+        }
+      }
+    },
+    "page_audit": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "page",
+          "source_count",
+          "original_source_count",
+          "internal_source_count",
+          "status",
+          "flags",
+          "source_ids"
+        ],
+        "properties": {
+          "page": {
+            "type": "string"
+          },
+          "source_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "original_source_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "internal_source_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "has_original_sources",
+              "needs_original_source_rebuild"
+            ]
+          },
+          "flags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^SRC-[a-f0-9]{10}$"
+            },
+            "uniqueItems": true
+          }
+        }
+      }
+    }
+  }
+}

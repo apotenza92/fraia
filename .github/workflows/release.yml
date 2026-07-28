@@ -1,0 +1,789 @@
+name: Desktop release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fraia-desktop-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Validate release tag
+    runs-on: ubuntu-24.04
+    outputs:
+      channel: ${{ steps.release.outputs.channel }}
+      environment: ${{ steps.release.outputs.environment }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prove tag commit belongs to the approved release source
+        env:
+          APPROVED_RELEASE_BRANCH: main
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$DEFAULT_BRANCH" != "$APPROVED_RELEASE_BRANCH" ]; then
+            echo "::error::Repository default branch $DEFAULT_BRANCH is not approved release source $APPROVED_RELEASE_BRANCH"
+            exit 1
+          fi
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          test "$(git rev-parse "${RELEASE_TAG}^{commit}")" = "$RELEASE_SHA"
+          git show-ref --verify --quiet "refs/remotes/origin/$APPROVED_RELEASE_BRANCH"
+          if ! git merge-base --is-ancestor "$RELEASE_SHA" "refs/remotes/origin/$APPROVED_RELEASE_BRANCH"; then
+            echo "::error::Release tag $RELEASE_TAG does not belong to $APPROVED_RELEASE_BRANCH"
+            exit 1
+          fi
+
+      - name: Require a public updater and binary origin
+        env:
+          SOURCE_REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          if [ "$SOURCE_REPOSITORY_PRIVATE" != false ]; then
+            echo 'Fraia release clients require this source repository, GitHub Releases, update feeds, and provenance to remain publicly reachable without authentication.' >&2
+            exit 1
+          fi
+
+      - name: Validate tag and package versions
+        id: release
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const packageJson = require('./apps/fraia-electron/package.json');
+          const cargo = fs.readFileSync('Cargo.toml', 'utf8');
+          const cargoVersion = cargo.match(/\[workspace\.package\][\s\S]*?\nversion\s*=\s*"([^"]+)"/)?.[1];
+          const tag = process.env.GITHUB_REF_NAME;
+          const stable = /^v\d+\.\d+\.\d+$/.test(tag);
+          if (!stable) throw new Error(`Fraia release tags must be stable vX.Y.Z tags; received ${tag}.`);
+          const version = tag.slice(1);
+          if (packageJson.version !== version || cargoVersion !== version) {
+            throw new Error(`Tag ${tag} must match Electron ${packageJson.version} and Cargo ${cargoVersion}.`);
+          }
+          const output = { channel: 'stable', environment: 'stable-release', prerelease: 'false', version };
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `${Object.entries(output).map(([key, value]) => `${key}=${value}`).join('\n')}\n`);
+          NODE
+
+  validate:
+    name: Unprivileged release gate
+    needs: prepare
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/fraia-electron/package-lock.json
+
+      - name: Install Electron dependencies
+        working-directory: apps/fraia-electron
+        run: npm ci
+
+      - name: Require the declared repository license
+        run: test -f LICENSE
+
+      - name: Require maintained release icons
+        run: |
+          cd apps/fraia-electron
+          npm run check:icons
+          test -f build/macos/Fraia.icon/icon.json
+          test -f build/macos/Fraia.icon/Assets/01-artwork.svg
+          test -f build/macos/Fraia.icon/Assets/01-artwork-dark.svg
+          test -f build/icon.png
+          test -f build/generated-icon-manifest.json
+          test -f build/icon.icns
+          test -f build/icon.ico
+          test -f build/icons/512x512.png
+
+      - name: Require reviewed native CalculiX runtime manifests
+        run: node apps/fraia-electron/scripts/verify-calculix-runtimes.cjs --all --skip-dependency-inspection
+
+      - name: Repository and Rust checks
+        env:
+          PYTHONPYCACHEPREFIX: /tmp/fraia-pycache
+        run: |
+          python3 scripts/check-repository-hygiene.py
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets --all-features
+          cargo test --workspace --all-features
+          python3 scripts/lint-knowledge.py
+          python3 scripts/validate-knowledge-next.py
+
+      - name: Electron checks
+        working-directory: apps/fraia-electron
+        run: npm run typecheck && npm run build && xvfb-run -a npm test
+
+  package-macos:
+    name: macOS ${{ matrix.arch }}
+    needs: [prepare, validate]
+    runs-on: ${{ matrix.arch == 'arm64' && 'macos-15' || 'macos-15-intel' }}
+    environment: release-signing
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/fraia-electron/package-lock.json
+
+      - name: Verify native runner
+        shell: bash
+        run: |
+          test "$(node -p 'process.arch')" = "${{ matrix.arch }}"
+          EXPECTED="${{ matrix.arch }}"
+          if [ "$EXPECTED" = x64 ]; then EXPECTED=x86_64; fi
+          test "$(uname -m)" = "$EXPECTED"
+
+      - name: Install dependencies
+        working-directory: apps/fraia-electron
+        run: npm ci
+
+      - name: Build renderer and native Rust sidecar without release credentials
+        working-directory: apps/fraia-electron
+        run: npm run build && npm run build:sidecar
+
+      - name: Build, sign, notarize, and staple
+        working-directory: apps/fraia-electron
+        env:
+          APPLE_NOTARYTOOL_ISSUER_ID: ${{ vars.APPLE_NOTARYTOOL_ISSUER_ID }}
+          APPLE_NOTARYTOOL_KEY_ID: ${{ vars.APPLE_NOTARYTOOL_KEY_ID }}
+          APPLE_NOTARYTOOL_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARYTOOL_KEY_P8_BASE64 }}
+          APPLE_SIGNING_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_SIGNING_CERTIFICATE_P12_BASE64 }}
+          APPLE_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_SIGNING_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_CERTIFICATE_SHA256: ${{ vars.APPLE_SIGNING_CERTIFICATE_SHA256 }}
+          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          FRAIA_RELEASE_ARCH: ${{ matrix.arch }}
+          FRAIA_RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
+          FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
+          FRAIA_REQUIRE_RELEASE_ICON: '1'
+          FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}/apps/fraia-electron/release/${{ needs.prepare.outputs.channel }}/darwin/${{ matrix.arch }}
+          FRAIA_RELEASE_PLATFORM: darwin
+        run: npm run package:release:mac -- --channel "$FRAIA_RELEASE_CHANNEL" --arch "$FRAIA_RELEASE_ARCH" --output-dir "$FRAIA_RELEASE_OUTPUT_DIR"
+
+      - name: Verify signatures and launch without release credentials
+        working-directory: apps/fraia-electron
+        env:
+          APPLE_SIGNING_CERTIFICATE_SHA256: ${{ vars.APPLE_SIGNING_CERTIFICATE_SHA256 }}
+          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
+        run: >-
+          npm run verify:release:mac --
+          --channel "${{ needs.prepare.outputs.channel }}"
+          --arch "${{ matrix.arch }}"
+          --output-dir "release/${{ needs.prepare.outputs.channel }}/darwin/${{ matrix.arch }}"
+
+      - name: Assemble versioned macOS update metadata
+        working-directory: apps/fraia-electron
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUTPUT="release/${{ needs.prepare.outputs.channel }}/darwin/${{ matrix.arch }}"
+          mkdir -p ci-output/assets ci-output/feed
+          for FEED_CHANNEL in stable beta; do
+            node scripts/assemble-update-metadata.mjs \
+              --input "$OUTPUT/latest-mac.yml" \
+              --artifact-dir "$OUTPUT" \
+              --output-root ci-output/feed \
+              --audit-output "ci-output/assets/update-$FEED_CHANNEL-darwin-${{ matrix.arch }}.yml" \
+              --channel "$FEED_CHANNEL" \
+              --platform darwin \
+              --arch "${{ matrix.arch }}" \
+              --tag "${{ github.ref_name }}" \
+              --repository "${{ github.repository }}"
+          done
+          cmp \
+            "ci-output/feed/stable/darwin/${{ matrix.arch }}/latest-mac.yml" \
+            "ci-output/feed/beta/darwin/${{ matrix.arch }}/latest-mac.yml"
+          STEM="Fraia-macOS-${{ matrix.arch }}"
+          cp "$OUTPUT/$STEM.dmg" "$OUTPUT/$STEM.dmg.blockmap" "$OUTPUT/$STEM.dmg.sha256" ci-output/assets/
+          cp "$OUTPUT/$STEM.zip" "$OUTPUT/$STEM.zip.blockmap" "$OUTPUT/$STEM.zip.sha256" ci-output/assets/
+          cp "$OUTPUT/notarization-${{ needs.prepare.outputs.channel }}-${{ matrix.arch }}.json" ci-output/assets/
+
+      - name: Upload macOS candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fraia-darwin-${{ matrix.arch }}
+          path: apps/fraia-electron/ci-output
+          if-no-files-found: error
+          retention-days: 14
+
+  package-windows:
+    name: Windows x64
+    needs: [prepare, validate]
+    runs-on: windows-2025
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/fraia-electron/package-lock.json
+
+      - name: Verify native runner
+        shell: bash
+        run: test "$(node -p 'process.arch')" = x64
+
+      - name: Install and build
+        working-directory: apps/fraia-electron
+        run: npm ci && npm run build && npm run build:sidecar
+
+      - name: Build Windows installer
+        working-directory: apps/fraia-electron
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          FRAIA_RELEASE_ARCH: x64
+          FRAIA_RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
+          FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
+          FRAIA_REQUIRE_RELEASE_ICON: '1'
+          FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}\apps\fraia-electron\release\${{ needs.prepare.outputs.channel }}\win32\x64
+          FRAIA_RELEASE_PLATFORM: win32
+        run: npx --no-install electron-builder --config electron-builder.config.cjs --win nsis --x64 --publish never
+
+      - name: Install, launch, and uninstall Windows package
+        working-directory: apps/fraia-electron
+        run: >-
+          node scripts/verify-native-package.cjs
+          --channel "${{ needs.prepare.outputs.channel }}"
+          --arch x64
+          --output-dir "release/${{ needs.prepare.outputs.channel }}/win32/x64"
+
+      - name: Collect exact Windows assets
+        working-directory: apps/fraia-electron
+        shell: bash
+        run: |
+          mkdir -p ci-output/assets
+          STEM="Fraia-Windows-x64-Setup.exe"
+          OUTPUT="release/${{ needs.prepare.outputs.channel }}/win32/x64"
+          cp "$OUTPUT/$STEM" "$OUTPUT/$STEM.blockmap" ci-output/assets/
+
+      - name: Upload Windows candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fraia-win32-x64
+          path: apps/fraia-electron/ci-output
+          if-no-files-found: error
+          retention-days: 14
+
+  package-linux:
+    name: Linux ${{ matrix.arch }}
+    needs: [prepare, validate]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/fraia-electron/package-lock.json
+
+      - name: Verify native runner
+        run: test "$(node -p 'process.arch')" = "${{ matrix.arch }}"
+
+      - name: Install package tools
+        run: sudo apt-get update && sudo apt-get install -y cpio fakeroot rpm
+
+      - name: Install and build
+        working-directory: apps/fraia-electron
+        run: npm ci && npm run build && npm run build:sidecar
+
+      - name: Build Linux packages
+        working-directory: apps/fraia-electron
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          FRAIA_RELEASE_ARCH: ${{ matrix.arch }}
+          FRAIA_RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
+          FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
+          FRAIA_REQUIRE_RELEASE_ICON: '1'
+          FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}/apps/fraia-electron/release/${{ needs.prepare.outputs.channel }}/linux/${{ matrix.arch }}
+          FRAIA_RELEASE_PLATFORM: linux
+        run: npx --no-install electron-builder --config electron-builder.config.cjs --linux AppImage deb rpm --${{ matrix.arch }} --publish never
+
+      - name: Extract and launch every Linux package
+        working-directory: apps/fraia-electron
+        run: >-
+          xvfb-run -a node scripts/verify-native-package.cjs
+          --channel "${{ needs.prepare.outputs.channel }}"
+          --arch "${{ matrix.arch }}"
+          --output-dir "release/${{ needs.prepare.outputs.channel }}/linux/${{ matrix.arch }}"
+
+      - name: Collect exact Linux assets
+        working-directory: apps/fraia-electron
+        shell: bash
+        run: |
+          mkdir -p ci-output/assets
+          STEM="Fraia-Linux-${{ matrix.arch }}"
+          OUTPUT="release/${{ needs.prepare.outputs.channel }}/linux/${{ matrix.arch }}"
+          cp "$OUTPUT/$STEM.AppImage" "$OUTPUT/$STEM.AppImage.blockmap" "$OUTPUT/$STEM.deb" "$OUTPUT/$STEM.rpm" ci-output/assets/
+
+      - name: Upload Linux candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fraia-linux-${{ matrix.arch }}
+          path: apps/fraia-electron/ci-output
+          if-no-files-found: error
+          retention-days: 14
+
+  test-macos-updater:
+    name: macOS updater ${{ matrix.scenario }} ${{ matrix.arch }}
+    needs: [prepare, package-macos]
+    runs-on: ${{ matrix.arch == 'arm64' && 'macos-15' || 'macos-15-intel' }}
+    environment:
+      name: stable-updater-verification
+    permissions:
+      attestations: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
+        scenario: [valid, corrupt, signature]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/fraia-electron/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/fraia-electron
+        run: npm ci
+
+      - name: Download signed candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fraia-darwin-${{ matrix.arch }}
+          path: candidate
+
+      - name: Resolve previous public channel package
+        id: previous
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ARCH: ${{ matrix.arch }}
+          MACOS_UPDATER_BOOTSTRAP_TAG: ${{ vars.MACOS_UPDATER_BOOTSTRAP_TAG }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp "repos/${{ github.repository }}/releases?per_page=100" > releases.json
+          node <<'NODE'
+          const fs = require('node:fs');
+          const releases = JSON.parse(fs.readFileSync('releases.json', 'utf8')).flat();
+          const asset = `Fraia-macOS-${process.env.RELEASE_ARCH}.zip`;
+          const previous = releases
+            .filter((release) => !release.draft && release.tag_name !== process.env.GITHUB_REF_NAME)
+            .filter((release) => !release.prerelease)
+            .filter((release) => release.assets.some((candidate) => candidate.name === asset))
+            .sort((left, right) => String(right.published_at).localeCompare(String(left.published_at)))[0];
+          if (previous) {
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `tag=${previous.tag_name}\nasset=${asset}\nbootstrap=false\n`);
+            return;
+          }
+          if (process.env.MACOS_UPDATER_BOOTSTRAP_TAG !== process.env.GITHUB_REF_NAME) {
+            throw new Error('No prior stable package exists. Set MACOS_UPDATER_BOOTSTRAP_TAG to this exact first tag only.');
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, 'bootstrap=true\n');
+          NODE
+      - name: Download and test N-1 update
+        if: steps.previous.outputs.bootstrap != 'true'
+        env:
+          APPLE_PRIOR_SIGNING_CERTIFICATE_SHA256: ${{ vars.APPLE_PRIOR_SIGNING_CERTIFICATE_SHA256 }}
+          APPLE_SIGNING_CERTIFICATE_SHA256: ${{ vars.APPLE_SIGNING_CERTIFICATE_SHA256 }}
+          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir previous
+          gh release download "${{ steps.previous.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "${{ steps.previous.outputs.asset }}" \
+            --pattern SHA256SUMS \
+            --dir previous
+          node apps/fraia-electron/scripts/test-macos-update.cjs \
+            --scenario "${{ matrix.scenario }}" \
+            --channel "${{ needs.prepare.outputs.channel }}" \
+            --arch "${{ matrix.arch }}" \
+            --previous-zip "previous/${{ steps.previous.outputs.asset }}" \
+            --previous-checksums previous/SHA256SUMS \
+            --candidate-directory candidate/assets \
+            --candidate-metadata "candidate/assets/update-stable-darwin-${{ matrix.arch }}.yml" \
+            --repository "${{ github.repository }}"
+
+      - name: Record exact bootstrap evidence
+        if: steps.previous.outputs.bootstrap == 'true'
+        run: test "${{ vars.MACOS_UPDATER_BOOTSTRAP_TAG }}" = "${{ github.ref_name }}"
+
+  assemble:
+    name: Assemble exact release bundle
+    needs: [prepare, package-macos, package-windows, package-linux, test-macos-updater]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Download all candidates without merging
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: fraia-*
+          path: candidates
+
+      - name: Assemble deterministic CalculiX corresponding source
+        working-directory: apps/fraia-electron
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${{ runner.temp }}/calculix-source-cache" \
+            "${{ github.workspace }}/candidates/calculix-source/assets"
+          node scripts/assemble-calculix-corresponding-source.cjs \
+            --cache "${{ runner.temp }}/calculix-source-cache" \
+            --output "${{ github.workspace }}/candidates/calculix-source/assets/Fraia-CalculiX-Corresponding-Source.tar"
+          node scripts/verify-calculix-corresponding-source.cjs \
+            --bundle "${{ github.workspace }}/candidates/calculix-source/assets/Fraia-CalculiX-Corresponding-Source.tar" \
+            --repository "${{ github.repository }}" \
+            --runtime-root runtimes/calculix \
+            --tag "${{ github.ref_name }}"
+
+      - name: Assemble and validate exact assets and feeds
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t INPUTS < <(find candidates -type d -name assets | LC_ALL=C sort)
+          ARGS=()
+          for input in "${INPUTS[@]}"; do ARGS+=(--input "$input"); done
+          node apps/fraia-electron/scripts/release-assets.cjs \
+            --channel "${{ needs.prepare.outputs.channel }}" \
+            --output publish/assets \
+            "${ARGS[@]}" > expected-assets.txt
+          mkdir -p publish/feed
+          while IFS= read -r feed_root; do cp -R "$feed_root/." publish/feed/; done < <(find candidates -type d -name feed | LC_ALL=C sort)
+          test "$(find publish/feed -type f | wc -l | tr -d ' ')" = 4
+          for ARCH in arm64 x64; do
+            cmp \
+              "publish/feed/stable/darwin/$ARCH/latest-mac.yml" \
+              "publish/feed/beta/darwin/$ARCH/latest-mac.yml"
+          done
+
+      - name: Upload verified release bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fraia-release-bundle
+          path: publish
+          if-no-files-found: error
+          retention-days: 30
+
+  attest:
+    name: Attest release bundle
+    needs: assemble
+    runs-on: ubuntu-24.04
+    permissions:
+      artifact-metadata: write
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - name: Download release bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fraia-release-bundle
+          path: publish
+
+      - name: Attest every checksummed asset
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: publish/assets/*
+
+  publish:
+    name: Publish ${{ needs.prepare.outputs.channel }} release
+    needs: [prepare, assemble, attest]
+    runs-on: ubuntu-24.04
+    environment:
+      name: ${{ needs.prepare.outputs.environment }}
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          path: source
+
+      - name: Download release bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fraia-release-bundle
+          path: publish
+
+      - name: Create or byte-verify exact draft assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ github.ref_name }}"
+          REPOSITORY="${{ github.repository }}"
+          node source/apps/fraia-electron/scripts/release-assets.cjs \
+            --channel "${{ needs.prepare.outputs.channel }}" \
+            --output /tmp/reassembled-assets \
+            --input publish/assets > expected-assets.txt
+          rm -rf /tmp/reassembled-assets
+          TITLE="Fraia ${{ needs.prepare.outputs.version }}"
+          if ! gh release view "$TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$REPOSITORY" --verify-tag --title "$TITLE" --generate-notes --draft
+          fi
+          IS_DRAFT=$(gh release view "$TAG" --repo "$REPOSITORY" --json isDraft --jq .isDraft)
+          gh api "repos/$REPOSITORY/releases/tags/$TAG" --jq '.assets[].name' | LC_ALL=C sort > existing-assets.txt
+          comm -23 existing-assets.txt expected-assets.txt > unexpected-assets.txt
+          if [ -s unexpected-assets.txt ]; then echo 'Release contains unexpected assets:' >&2; cat unexpected-assets.txt >&2; exit 1; fi
+          mkdir -p existing-release
+          if [ -s existing-assets.txt ]; then
+            gh release download "$TAG" --repo "$REPOSITORY" --dir existing-release
+            while IFS= read -r name; do cmp "publish/assets/$name" "existing-release/$name"; done < existing-assets.txt
+          fi
+          if [ "$IS_DRAFT" = true ]; then
+            comm -13 existing-assets.txt expected-assets.txt > missing-assets.txt
+            while IFS= read -r name; do gh release upload "$TAG" "publish/assets/$name" --repo "$REPOSITORY"; done < missing-assets.txt
+          elif ! diff -q existing-assets.txt expected-assets.txt; then
+            echo 'Published release asset contract differs; refusing to replace assets automatically.' >&2
+            exit 1
+          fi
+          rm -rf downloaded-release
+          mkdir downloaded-release
+          gh release download "$TAG" --repo "$REPOSITORY" --dir downloaded-release
+          find downloaded-release -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort > actual-assets.txt
+          diff --unified expected-assets.txt actual-assets.txt
+          (cd downloaded-release && sha256sum --check --strict SHA256SUMS)
+
+      - name: Publish verified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          TITLE="Fraia ${{ needs.prepare.outputs.version }}"
+          gh release edit "${{ github.ref_name }}" --repo "${{ github.repository }}" --title "$TITLE" --draft=false --prerelease=false --latest
+
+      - name: Verify public release before sealing updater feed
+        shell: bash
+        run: |
+          set -euo pipefail
+          unset GH_TOKEN GITHUB_TOKEN
+          TAG="${{ github.ref_name }}"
+          REPOSITORY="${{ github.repository }}"
+          RELEASE_BASE="https://github.com/$REPOSITORY/releases/download/$TAG"
+          API_URL="https://api.github.com/repos/$REPOSITORY/releases/tags/$TAG"
+          EXPECTED_PRERELEASE="${{ needs.prepare.outputs.prerelease }}"
+          for attempt in {1..12}; do
+            if curl --fail --location --silent --show-error "$API_URL" -o public-release.json \
+              && [ "$(jq -r '.draft' public-release.json)" = false ] \
+              && [ "$(jq -r '.prerelease' public-release.json)" = "$EXPECTED_PRERELEASE" ]; then
+              jq -r '.assets[].name' public-release.json | LC_ALL=C sort > public-assets.txt
+              if diff --unified expected-assets.txt public-assets.txt; then break; fi
+            fi
+            if [ "$attempt" = 12 ]; then
+              echo 'Public release did not converge to the exact asset contract.' >&2
+              exit 1
+            fi
+            sleep 5
+          done
+          curl --fail --location --silent --show-error "$RELEASE_BASE/SHA256SUMS" -o public-SHA256SUMS
+          mapfile -t public_checksums < public-SHA256SUMS
+          for checksum_line in "${public_checksums[@]}"; do
+            checksum="${checksum_line%% *}"
+            filename="${checksum_line#*  }"
+            curl --fail --location --silent --show-error "$RELEASE_BASE/$filename" -o "public-$filename"
+            printf '%s  %s\n' "$checksum" "public-$filename" | sha256sum --check --strict -
+          done
+
+      - name: Prepare sealed updater-feed publication bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          DESTINATION="updates branch / stable and beta"
+          rm -rf feed-publication
+          mkdir -p feed-publication/feed/stable feed-publication/feed/beta
+          cp -R publish/feed/stable/. feed-publication/feed/stable/
+          cp -R publish/feed/beta/. feed-publication/feed/beta/
+          for ARCH in arm64 x64; do
+            cmp \
+              "feed-publication/feed/stable/darwin/$ARCH/latest-mac.yml" \
+              "feed-publication/feed/beta/darwin/$ARCH/latest-mac.yml"
+          done
+          touch feed-publication/.nojekyll
+          cat > feed-publication/PUBLICATION.txt <<EOF
+          Fraia updater-feed publication bundle
+          Tag: ${{ github.ref_name }}
+          Commit: ${{ github.sha }}
+          Destination: $DESTINATION
+          Publication: tag workflow, after explicit stable-release approval
+          EOF
+          (
+            cd feed-publication
+            checksum_file="$(mktemp)"
+            trap 'rm -f "$checksum_file"' EXIT
+            find . -type f ! -name SHA256SUMS -print0 \
+              | LC_ALL=C sort -z \
+              | xargs -0 sha256sum > "$checksum_file"
+            mv "$checksum_file" SHA256SUMS
+            trap - EXIT
+            sha256sum --check --strict SHA256SUMS
+          )
+
+      - name: Upload sealed updater-feed publication bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fraia-update-feed-publication-${{ github.ref_name }}
+          path: feed-publication
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Checkout the seeded updater-feed branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          path: update-site
+          ref: updates
+
+      - name: Publish stable bytes to both updater channels atomically
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf update-site/stable/darwin update-site/beta/darwin
+          mkdir -p update-site/stable update-site/beta
+          cp -R feed-publication/feed/stable/. update-site/stable/
+          cp -R feed-publication/feed/beta/. update-site/beta/
+          cp feed-publication/.nojekyll feed-publication/PUBLICATION.txt update-site/
+          test "$(find update-site/stable update-site/beta -type f | wc -l | tr -d ' ')" = 4
+          for ARCH in arm64 x64; do
+            cmp \
+              "update-site/stable/darwin/$ARCH/latest-mac.yml" \
+              "update-site/beta/darwin/$ARCH/latest-mac.yml"
+          done
+          (
+            cd update-site
+            git config user.name github-actions
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add -- .nojekyll PUBLICATION.txt stable beta
+            if ! git diff --cached --quiet; then
+              git commit -m "Publish Fraia ${{ needs.prepare.outputs.version }} update feeds"
+              git push origin HEAD:updates
+            fi
+          )
+
+  verify-publication:
+    name: Verify public release and feeds
+    needs: [prepare, publish]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download expected bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fraia-release-bundle
+          path: expected
+
+      - name: Download sealed updater-feed publication bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fraia-update-feed-publication-${{ github.ref_name }}
+          path: feed-publication
+
+      - name: Verify unauthenticated assets and sealed feed bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_BASE="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}"
+          mkdir -p public
+          curl --fail --location --silent --show-error "$RELEASE_BASE/SHA256SUMS" -o public/SHA256SUMS
+          mapfile -t public_checksums < public/SHA256SUMS
+          for checksum_line in "${public_checksums[@]}"; do
+            checksum="${checksum_line%% *}"
+            filename="${checksum_line#*  }"
+            curl --fail --location --silent --show-error "$RELEASE_BASE/$filename" -o "public/$filename"
+            printf '%s  %s\n' "$checksum" "public/$filename" | sha256sum --check --strict -
+          done
+          (cd feed-publication && sha256sum --check --strict SHA256SUMS)
+          RAW_BASE="https://raw.githubusercontent.com/${{ github.repository }}/updates"
+          for attempt in {1..12}; do
+            complete=true
+            for CHANNEL in stable beta; do
+              for ARCH in arm64 x64; do
+                path="$CHANNEL/darwin/$ARCH/latest-mac.yml"
+                if ! curl --fail --location --silent --show-error "$RAW_BASE/$path" -o "public-$CHANNEL-$ARCH.yml" \
+                  || ! cmp "expected/feed/$path" "public-$CHANNEL-$ARCH.yml"; then
+                  complete=false
+                fi
+              done
+            done
+            if [ "$complete" = true ]; then break; fi
+            if [ "$attempt" = 12 ]; then
+              echo 'Public updater feeds did not converge to the exact stable and beta projections.' >&2
+              exit 1
+            fi
+            sleep 5
+          done
+          for ARCH in arm64 x64; do
+            cmp "public-stable-$ARCH.yml" "public-beta-$ARCH.yml"
+          done
+          while IFS= read -r expected_feed; do
+            relative="${expected_feed#expected/feed/}"
+            cmp "$expected_feed" "feed-publication/feed/$relative"
+          done < <(find expected/feed -type f | LC_ALL=C sort)

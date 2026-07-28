@@ -1,0 +1,13 @@
+[package]
+name = "fraia-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+fraia-math = { path = "../fraia-math" }
+fraia-geometry = { path = "../fraia-geometry" }
+fraia-physics = { path = "../fraia-physics" }

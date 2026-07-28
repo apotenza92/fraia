@@ -1,0 +1,129 @@
+{
+  "applicability": {
+    "applies_to": [
+      "Fraia structural object modeling",
+      "analysis realization",
+      "result explanation",
+      "retrieval disambiguation"
+    ],
+    "jurisdiction_or_standard_context": "Fraia product-architecture card informed by public structural analysis and solver documentation. Not a design-code rule.",
+    "not_applicable_to": [
+      "finite-element formulation selection",
+      "mesh convergence proof",
+      "member capacity checks"
+    ]
+  },
+  "card_id": "KC-authored-member-analysis-element-separation",
+  "claims": [
+    {
+      "claim_id": "C1",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "https://eng.libretexts.org/Bookshelves/Mechanical_Engineering/Mechanics_of_Materials_(Roylance)/05:_General_Stress_Analysis/5.03:_Finite_Element_Method",
+          "source_id": "SRC-8419c2b9c6"
+        }
+      ],
+      "text": "Finite element analysis represents a continuum or structure through discrete elements connected at nodes."
+    },
+    {
+      "claim_id": "C2",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "OpenSees Elastic Beam Column Element documentation",
+          "source_id": "SRC-6e33dce5df"
+        }
+      ],
+      "text": "A frame or beam-column element is a solver-level analysis object with element connectivity, transformation, and section or stiffness inputs."
+    },
+    {
+      "claim_id": "C3",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Modelling_and_analysis",
+          "source_id": "SRC-9be980a1af"
+        },
+        {
+          "locator": "Applications of the direct stiffness method",
+          "source_id": "SRC-4a41e74bd1"
+        }
+      ],
+      "text": "Fraia should keep an authored member such as a beam, column, or rafter distinct from any one or more analysis elements used to realize it for calculation."
+    }
+  ],
+  "concepts": [
+    "authored member",
+    "analysis element",
+    "realization",
+    "finite element",
+    "result provenance"
+  ],
+  "domain": "fraia-product-architecture",
+  "fraia_mapping": {
+    "pipeline_stages": [
+      "structural_model",
+      "realization",
+      "analysis_results"
+    ],
+    "structural_objects": [
+      "Member",
+      "Node"
+    ]
+  },
+  "limitations": [
+    "This card defines a Fraia modeling distinction; external sources support the analysis-element concept, not Fraia's internal object names.",
+    "A single authored member may map to one or many analysis elements depending on releases, segmentation, meshing, and solver requirements."
+  ],
+  "media_links": [
+    {
+      "asset_id": "KA-local-global-member-axes",
+      "role": "example"
+    }
+  ],
+  "relationships": [
+    {
+      "relationship_type": "supports",
+      "target": "KC-member-end-releases"
+    },
+    {
+      "relationship_type": "supports",
+      "target": "KC-steel-design-action-check-input-separation"
+    }
+  ],
+  "schema_version": "knowledge-card.v0",
+  "source_links": [
+    {
+      "pages_used": [
+        "Finite element method"
+      ],
+      "role": "primary",
+      "source_id": "SRC-8419c2b9c6"
+    },
+    {
+      "pages_used": [
+        "Elastic Beam Column Element"
+      ],
+      "role": "primary",
+      "source_id": "SRC-6e33dce5df"
+    },
+    {
+      "pages_used": [
+        "Modelling and analysis"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-9be980a1af"
+    },
+    {
+      "pages_used": [
+        "Applications of the direct stiffness method"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-4a41e74bd1"
+    }
+  ],
+  "status": "draft",
+  "summary": "Fraia should distinguish user-authored structural members from solver-level analysis elements so results and explanations preserve provenance.",
+  "title": "Authored Member And Analysis Element Separation"
+}

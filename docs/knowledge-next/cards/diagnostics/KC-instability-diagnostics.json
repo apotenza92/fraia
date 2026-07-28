@@ -1,0 +1,154 @@
+{
+  "applicability": {
+    "applies_to": [
+      "solver instability explanation",
+      "pre-solve and post-solve diagnostics",
+      "underrestraint and disconnected topology review",
+      "result trust downgrading"
+    ],
+    "jurisdiction_or_standard_context": "Public/open software and solver documentation used for generic diagnostic patterns; software-specific workflows are not Fraia behaviour.",
+    "not_applicable_to": [
+      "final automatic repair",
+      "software-specific support instructions",
+      "code-compliant stability design"
+    ]
+  },
+  "card_id": "KC-instability-diagnostics",
+  "claims": [
+    {
+      "claim_id": "C1",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "Stability",
+          "source_id": "SRC-160832a054"
+        },
+        {
+          "locator": "Warning: stiffness matrix is singular",
+          "source_id": "SRC-2dadd09595"
+        }
+      ],
+      "text": "Singular or unstable stiffness behaviour often indicates degrees of freedom that can move without enough resistance, but the cause must be localized before changing the authored model."
+    },
+    {
+      "claim_id": "C2",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "Connectivity FAQ",
+          "source_id": "SRC-46f4a11354"
+        },
+        {
+          "locator": "Finding and Fixing Calculation Instabilities",
+          "source_id": "SRC-eadbb18f41"
+        }
+      ],
+      "text": "Disconnected topology, coincident but unmerged nodes, unintended releases, missing supports, and crossing unconnected members are common instability or mechanism sources."
+    },
+    {
+      "claim_id": "C3",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "Model debugging",
+          "source_id": "SRC-2c4eebe57e"
+        },
+        {
+          "locator": "Ill-conditioning theory",
+          "source_id": "SRC-df393de74d"
+        }
+      ],
+      "text": "Ill-conditioning and extreme stiffness contrasts should be distinguished from pure mechanisms because both can undermine result trust while requiring different model review."
+    }
+  ],
+  "concepts": [
+    "instability",
+    "mechanism",
+    "singular stiffness",
+    "connectivity error",
+    "ill-conditioning",
+    "result trust"
+  ],
+  "domain": "diagnostics",
+  "fraia_mapping": {
+    "pipeline_stages": [
+      "structural_model",
+      "realization",
+      "analysis_results",
+      "design_actions"
+    ],
+    "structural_objects": [
+      "Node",
+      "Member",
+      "SupportAssignment",
+      "ReleaseAssignment"
+    ]
+  },
+  "limitations": [
+    "Software documentation is useful practical evidence but product-specific warnings, UI steps, and thresholds must not be copied into Fraia behaviour.",
+    "Private/local Strand7 evidence is intentionally excluded from this public-only card."
+  ],
+  "media_links": [],
+  "relationships": [
+    {
+      "relationship_type": "requires",
+      "target": "KC-determinacy-restraint-mechanisms"
+    },
+    {
+      "relationship_type": "see_also",
+      "target": "KC-member-end-releases"
+    },
+    {
+      "relationship_type": "supports",
+      "target": "KC-reaction-sanity-checks"
+    }
+  ],
+  "schema_version": "knowledge-card.v0",
+  "source_links": [
+    {
+      "pages_used": [
+        "Stability"
+      ],
+      "role": "primary",
+      "source_id": "SRC-160832a054"
+    },
+    {
+      "pages_used": [
+        "Warning: stiffness matrix is singular"
+      ],
+      "role": "primary",
+      "source_id": "SRC-2dadd09595"
+    },
+    {
+      "pages_used": [
+        "Connectivity FAQ"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-46f4a11354"
+    },
+    {
+      "pages_used": [
+        "Finding and Fixing Calculation Instabilities"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-eadbb18f41"
+    },
+    {
+      "pages_used": [
+        "Model debugging"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-2c4eebe57e"
+    },
+    {
+      "pages_used": [
+        "Ill-conditioning theory"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-df393de74d"
+    }
+  ],
+  "status": "draft",
+  "summary": "Fraia should diagnose solver instability by mapping singularity, mechanism, connectivity, release, support, and stiffness-contrast evidence back to authored and resolved model objects before trusting results.",
+  "title": "Instability Diagnostics"
+}

@@ -1,0 +1,99 @@
+{
+  "applicability": {
+    "applies_to": [
+      "portal-frame secondary member modeling",
+      "restraint/load-transfer explanation",
+      "roof and wall framing concept review"
+    ],
+    "jurisdiction_or_standard_context": "UK/Eurocode-oriented portal-frame guidance. Concept guidance only.",
+    "not_applicable_to": [
+      "purlin capacity design",
+      "cladding system certification",
+      "manufacturer-specific restraint rules"
+    ]
+  },
+  "card_id": "KC-steel-portal-purlins-and-girts",
+  "claims": [
+    {
+      "claim_id": "C1",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Portal_frames#Plan_bracing",
+          "source_id": "SRC-37f553a164"
+        }
+      ],
+      "text": "Portal-frame roof plan bracing can provide a stiff anchorage for purlins that restrain rafters."
+    },
+    {
+      "claim_id": "C2",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Portal_frames#Vertical_bracing",
+          "source_id": "SRC-37f553a164"
+        }
+      ],
+      "text": "Side rails and cladding can rely on a braced side-wall framework, and that framework can help stabilize columns when represented correctly."
+    },
+    {
+      "claim_id": "C3",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Portal_frames#Restraint_to_inner_flanges",
+          "source_id": "SRC-37f553a164"
+        }
+      ],
+      "text": "Secondary members should be represented with their restraint role and load-transfer role separated, because a purlin or girt may do one, both, or neither for a given check."
+    }
+  ],
+  "concepts": [
+    "purlin",
+    "girt",
+    "side rail",
+    "rafter restraint",
+    "secondary member"
+  ],
+  "domain": "steel-systems",
+  "fraia_mapping": {
+    "pipeline_stages": [
+      "builder_graph",
+      "structural_model",
+      "realization",
+      "check_inputs"
+    ],
+    "structural_objects": [
+      "Member",
+      "LoadAssignment"
+    ]
+  },
+  "limitations": [
+    "This card does not prove that a purlin, side rail, cladding system, or stay can provide the restraint required by a design check.",
+    "Manufacturer data and project-specific connection details may be required before assigning restraint stiffness."
+  ],
+  "media_links": [],
+  "relationships": [
+    {
+      "relationship_type": "requires",
+      "target": "KC-member-restraint-and-unbraced-length"
+    },
+    {
+      "relationship_type": "supports",
+      "target": "KC-portal-frame-longitudinal-transverse-stability"
+    }
+  ],
+  "schema_version": "knowledge-card.v0",
+  "source_links": [
+    {
+      "pages_used": [
+        "Portal frames: Vertical bracing, Plan bracing, Restraint to inner flanges"
+      ],
+      "role": "primary",
+      "source_id": "SRC-37f553a164"
+    }
+  ],
+  "status": "draft",
+  "summary": "Purlins and girts should be modeled as secondary members whose load-transfer and restraint roles are explicit, not assumed from their names alone.",
+  "title": "Steel Portal Purlins And Girts"
+}

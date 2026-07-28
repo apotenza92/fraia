@@ -1,0 +1,38 @@
+{
+  "alt_text": "Schematic target showing a distributed load over a beam segment and an equivalent resultant force placed at the load centroid.",
+  "asset_id": "KA-distributed-load-equivalent-resultant",
+  "asset_type": "diagram",
+  "caption": "Generated-safe distributed load to equivalent resultant schematic.",
+  "concept_tags": [
+    "distributed load",
+    "equivalent resultant",
+    "load centroid",
+    "load application"
+  ],
+  "copyright_status": "unknown",
+  "embed_policy": "generated_derivative_only",
+  "generated_safe_target": {
+    "candidate_output_path": "docs/knowledge-next/generated/diagrams/distributed-load-equivalent-resultant.svg",
+    "description": "Original diagram comparing a uniform distributed load on a beam span with an equivalent resultant arrow at the centroid, without reproducing source examples.",
+    "must_avoid": [
+      "copying educational source figures",
+      "including detailed derivations",
+      "overstating equivalence outside the intended static context"
+    ],
+    "must_preserve": [
+      "distributed load arrows",
+      "resultant force arrow",
+      "centroid/location indicator",
+      "span segment context"
+    ]
+  },
+  "license_notes": "Metadata-only until a generated Fraia-native load schematic exists.",
+  "original_locator": "Distributed Loads, Engineering LibreTexts",
+  "redraw_status": "redraw_planned",
+  "schema_version": "knowledge-asset.v0",
+  "source_id": "SRC-85e8bab79d",
+  "title": "Distributed Load Equivalent Resultant",
+  "used_by_cards": [
+    "KC-load-application-equivalent-loads"
+  ]
+}

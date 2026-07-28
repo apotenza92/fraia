@@ -1,0 +1,41 @@
+{
+  "alt_text": "Schematic target comparing transverse portal frame action with longitudinal roof and wall bracing paths in a single-storey steel building.",
+  "asset_id": "KA-portal-frame-bracing-stability-axes",
+  "asset_type": "diagram",
+  "caption": "Generated-safe portal-frame longitudinal/transverse stability schematic.",
+  "concept_tags": [
+    "portal frame",
+    "bracing",
+    "transverse stability",
+    "longitudinal stability",
+    "plan bracing"
+  ],
+  "copyright_status": "unknown",
+  "embed_policy": "generated_derivative_only",
+  "generated_safe_target": {
+    "candidate_output_path": "docs/knowledge-next/generated/diagrams/portal-frame-bracing-stability-axes.svg",
+    "description": "Original diagram with a small 3D portal-frame building outline: transverse frame plane highlighted separately from longitudinal roof/wall bracing load path.",
+    "must_avoid": [
+      "copying source bracing diagrams",
+      "embedding photographs",
+      "implying brace sizes or capacities"
+    ],
+    "must_preserve": [
+      "transverse frame plane",
+      "longitudinal building axis",
+      "roof plan bracing",
+      "wall vertical bracing",
+      "force transfer arrows"
+    ]
+  },
+  "license_notes": "Metadata-only source reference; generated derivative required before embedding.",
+  "original_locator": "SteelConstruction.info Portal frames: Vertical bracing and Plan bracing",
+  "redraw_status": "redraw_planned",
+  "schema_version": "knowledge-asset.v0",
+  "source_id": "SRC-37f553a164",
+  "title": "Portal Frame Bracing Stability Axes",
+  "used_by_cards": [
+    "KC-steel-bracing-principles",
+    "KC-portal-frame-longitudinal-transverse-stability"
+  ]
+}

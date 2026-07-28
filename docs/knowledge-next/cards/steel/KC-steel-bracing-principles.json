@@ -1,0 +1,117 @@
+{
+  "applicability": {
+    "applies_to": [
+      "bracing concept review",
+      "load-path explanation",
+      "steel frame stability diagnostics"
+    ],
+    "jurisdiction_or_standard_context": "SteelConstruction.info bracing guidance includes bridge and building examples; portal-frame claims are UK/Eurocode-oriented.",
+    "not_applicable_to": [
+      "brace member design",
+      "seismic system qualification",
+      "connection capacity checks"
+    ]
+  },
+  "card_id": "KC-steel-bracing-principles",
+  "claims": [
+    {
+      "claim_id": "C1",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Bracing_systems#What_does_bracing_do.3F",
+          "source_id": "SRC-504746b8d3"
+        }
+      ],
+      "text": "Bracing can control buckling, distribute load effects, and provide dimensional control, depending on the system and connection details."
+    },
+    {
+      "claim_id": "C2",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Portal_frames#Vertical_bracing",
+          "source_id": "SRC-37f553a164"
+        }
+      ],
+      "text": "In portal-frame buildings, vertical bracing commonly transfers longitudinal horizontal actions to the ground and provides a stable framework for side rails and cladding."
+    },
+    {
+      "claim_id": "C3",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "Bracing in steel sheds",
+          "source_id": "SRC-a17357d4ab"
+        }
+      ],
+      "text": "A bracing card should preserve whether a brace is intended for member restraint, global stability, construction stability, load transfer, or more than one of those functions."
+    }
+  ],
+  "concepts": [
+    "bracing",
+    "global stability",
+    "member restraint",
+    "load distribution",
+    "dimensional control"
+  ],
+  "domain": "steel-stability",
+  "fraia_mapping": {
+    "pipeline_stages": [
+      "builder_graph",
+      "structural_model",
+      "realization",
+      "check_inputs"
+    ],
+    "structural_objects": [
+      "Member"
+    ]
+  },
+  "limitations": [
+    "General bracing principles do not prove that a particular brace is strong, stiff, connected, or correctly placed.",
+    "Seismic bracing systems and bridge bracing have additional source-specific requirements not covered here."
+  ],
+  "media_links": [
+    {
+      "asset_id": "KA-portal-frame-bracing-stability-axes",
+      "role": "example"
+    }
+  ],
+  "relationships": [
+    {
+      "relationship_type": "supports",
+      "target": "KC-load-paths"
+    },
+    {
+      "relationship_type": "supports",
+      "target": "KC-portal-frame-longitudinal-transverse-stability"
+    }
+  ],
+  "schema_version": "knowledge-card.v0",
+  "source_links": [
+    {
+      "pages_used": [
+        "Bracing systems: What does bracing do?"
+      ],
+      "role": "primary",
+      "source_id": "SRC-504746b8d3"
+    },
+    {
+      "pages_used": [
+        "Portal frames: Vertical bracing"
+      ],
+      "role": "primary",
+      "source_id": "SRC-37f553a164"
+    },
+    {
+      "pages_used": [
+        "Bracing in steel sheds"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-a17357d4ab"
+    }
+  ],
+  "status": "draft",
+  "summary": "Bracing knowledge should describe the job a brace is doing before it is treated as a restraint, load path, or global stability component.",
+  "title": "Steel Bracing Principles"
+}

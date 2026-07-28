@@ -1,0 +1,128 @@
+{
+  "applicability": {
+    "applies_to": [
+      "reaction explanation",
+      "load-path reasoning",
+      "member or joint equilibrium explanation",
+      "concept-stage structural diagnostics"
+    ],
+    "jurisdiction_or_standard_context": "Statics and structural-analysis fundamentals from open educational sources; not a code check.",
+    "not_applicable_to": [
+      "final structural design approval",
+      "dynamic analysis",
+      "nonlinear solver validation"
+    ]
+  },
+  "card_id": "KC-free-body-equilibrium",
+  "claims": [
+    {
+      "claim_id": "C1",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "Free Body Diagrams, creating free body diagrams",
+          "source_id": "SRC-764acec0a5"
+        }
+      ],
+      "text": "A free-body diagram defines the isolated body and the external forces, reactions, moments, dimensions, and frame needed before equilibrium equations are meaningful."
+    },
+    {
+      "claim_id": "C2",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "Conditions for Static Equilibrium",
+          "source_id": "SRC-f9a8b7e202"
+        },
+        {
+          "locator": "Equilibrium in Two Dimensions and Three Dimensions",
+          "source_id": "SRC-e0a97ba94d"
+        }
+      ],
+      "text": "Static equilibrium requires force and moment balance for the selected body; planar problems use two force balances and one moment balance, while spatial problems require the corresponding six balances."
+    },
+    {
+      "claim_id": "C3",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "Free Body Diagrams, examples and two-dimensional reactions",
+          "source_id": "SRC-764acec0a5"
+        }
+      ],
+      "text": "Changing the isolated body changes which interactions are external reactions or loads, so Fraia explanations must name the selected whole structure, member, joint, support, or cut region."
+    }
+  ],
+  "concepts": [
+    "free-body diagram",
+    "static equilibrium",
+    "force balance",
+    "moment balance",
+    "body selection"
+  ],
+  "domain": "structural-analysis",
+  "fraia_mapping": {
+    "pipeline_stages": [
+      "structural_model",
+      "analysis_results",
+      "design_actions"
+    ],
+    "structural_objects": [
+      "Node",
+      "Member",
+      "SupportAssignment",
+      "LoadAssignment"
+    ]
+  },
+  "limitations": [
+    "Equilibrium can reveal reaction/load inconsistencies but does not prove stability, connectivity, stiffness, or design adequacy.",
+    "This card is concept guidance and does not define numeric tolerance policy."
+  ],
+  "media_links": [
+    {
+      "asset_id": "KA-free-body-diagram-components",
+      "role": "explains"
+    }
+  ],
+  "relationships": [
+    {
+      "relationship_type": "supports",
+      "target": "KC-support-reactions-idealisation"
+    },
+    {
+      "relationship_type": "supports",
+      "target": "KC-reaction-sanity-checks"
+    },
+    {
+      "relationship_type": "supports",
+      "target": "KC-determinacy-restraint-mechanisms"
+    }
+  ],
+  "schema_version": "knowledge-card.v0",
+  "source_links": [
+    {
+      "pages_used": [
+        "Free Body Diagrams"
+      ],
+      "role": "primary",
+      "source_id": "SRC-764acec0a5"
+    },
+    {
+      "pages_used": [
+        "12.1 Conditions for Static Equilibrium"
+      ],
+      "role": "primary",
+      "source_id": "SRC-f9a8b7e202"
+    },
+    {
+      "pages_used": [
+        "1.3 Equilibrium Structures, Support Reactions, Determinacy and Stability of Beams and Frames"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-e0a97ba94d"
+    }
+  ],
+  "status": "draft",
+  "summary": "Free-body diagrams and equilibrium equations are Fraia's first sanity-check language for explaining reactions, load paths, internal actions, and diagnostics.",
+  "title": "Free-Body Diagrams and Equilibrium"
+}

@@ -1,0 +1,126 @@
+{
+  "applicability": {
+    "applies_to": [
+      "portal-frame scheme reasoning",
+      "industrial building concept models",
+      "system-level load-path explanation"
+    ],
+    "jurisdiction_or_standard_context": "Public UK/Eurocode-oriented SteelConstruction.info and SCI single-storey building guidance. Concept guidance only.",
+    "not_applicable_to": [
+      "final portal-frame design",
+      "crane building design without additional sources",
+      "fire boundary condition design"
+    ]
+  },
+  "card_id": "KC-steel-portal-frame-system-overview",
+  "claims": [
+    {
+      "claim_id": "C1",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Portal_frames",
+          "source_id": "SRC-37f553a164"
+        }
+      ],
+      "text": "Steel portal frames are generally low-rise structures with columns and horizontal or pitched rafters joined by moment-resisting connections."
+    },
+    {
+      "claim_id": "C2",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Portal_frames",
+          "source_id": "SRC-37f553a164"
+        }
+      ],
+      "text": "A portal frame resists lateral and vertical actions through member bending stiffness and rigid or moment-resisting joints, often with haunches at high-moment regions."
+    },
+    {
+      "claim_id": "C3",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "Single-storey steel buildings Part 4: Detailed Design of Portal Frames",
+          "source_id": "SRC-65fc8dcb5b"
+        },
+        {
+          "locator": "Engineering students' guide to single storey buildings",
+          "source_id": "SRC-b31f9afb1f"
+        }
+      ],
+      "text": "Portal-frame scheme cards should capture system form, primary frame spacing, haunch assumptions, secondary members, and stability system assumptions before detailed member checks."
+    }
+  ],
+  "concepts": [
+    "portal frame",
+    "rafter",
+    "column",
+    "moment-resisting connection",
+    "haunch"
+  ],
+  "domain": "steel-systems",
+  "fraia_mapping": {
+    "pipeline_stages": [
+      "builder_graph",
+      "structural_model",
+      "realization"
+    ],
+    "structural_objects": [
+      "Member",
+      "Node",
+      "SupportAssignment"
+    ]
+  },
+  "limitations": [
+    "The card does not encode plastic design, second-order analysis, fire, crane, or robustness design procedures.",
+    "Use region-specific design sources before converting this overview into check inputs."
+  ],
+  "media_links": [
+    {
+      "asset_id": "KA-portal-frame-load-path",
+      "role": "example"
+    }
+  ],
+  "relationships": [
+    {
+      "relationship_type": "requires",
+      "target": "KC-load-paths"
+    },
+    {
+      "relationship_type": "supports",
+      "target": "KC-portal-frame-base-fixity-tradeoffs"
+    },
+    {
+      "relationship_type": "supports",
+      "target": "KC-portal-frame-longitudinal-transverse-stability"
+    }
+  ],
+  "schema_version": "knowledge-card.v0",
+  "source_links": [
+    {
+      "pages_used": [
+        "Portal frames"
+      ],
+      "role": "primary",
+      "source_id": "SRC-37f553a164"
+    },
+    {
+      "pages_used": [
+        "Single-storey steel buildings Part 4"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-65fc8dcb5b"
+    },
+    {
+      "pages_used": [
+        "Engineering students' guide to single storey buildings"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-b31f9afb1f"
+    }
+  ],
+  "status": "draft",
+  "summary": "Portal-frame cards should describe the primary moment-resisting frame, secondary members, and stability assumptions as a system before member checks are generated.",
+  "title": "Steel Portal Frame System Overview"
+}

@@ -1,0 +1,26 @@
+{
+  "eval_id": "KE-solver-result-vs-design-action-check",
+  "expected_card_ids": [
+    "KC-steel-design-action-check-input-separation",
+    "KC-steel-bending-members",
+    "KC-steel-compression-members",
+    "KC-reaction-sanity-checks",
+    "KC-authored-member-analysis-element-separation"
+  ],
+  "expected_concepts": [
+    "design action",
+    "check input",
+    "check result",
+    "result provenance"
+  ],
+  "notes": "Use when an answer needs to separate raw solver forces/reactions from code-scoped steel design inputs and check outcomes.",
+  "prompt": "The solver reports axial force and major-axis moment for a steel column. What should the agent retrieve before saying whether the member passes?",
+  "schema_version": "knowledge-eval.v0",
+  "title": "Solver Result Vs Design Action And Check Result",
+  "unacceptable_answer_patterns": [
+    "say the member passes or fails from raw forces alone",
+    "skip restraint, section, material, and standard context",
+    "merge analysis results with check results",
+    "invent a jurisdiction-specific code rule"
+  ]
+}

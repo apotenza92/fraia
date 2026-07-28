@@ -1,0 +1,109 @@
+{
+  "applicability": {
+    "applies_to": [
+      "steel beam stability explanation",
+      "restraint-sensitive concept review",
+      "early warning for slender unrestrained beams"
+    ],
+    "jurisdiction_or_standard_context": "Uses public UK/Eurocode-oriented guidance plus an open-access LTB article; not a design procedure.",
+    "not_applicable_to": [
+      "LTB capacity calculation",
+      "restraint stiffness design",
+      "final code verification"
+    ]
+  },
+  "card_id": "KC-lateral-torsional-buckling-concepts",
+  "claims": [
+    {
+      "claim_id": "C1",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Member_design#Lateral_torsional_buckling_resistance",
+          "source_id": "SRC-de331c3f98"
+        }
+      ],
+      "text": "A laterally unrestrained steel member in major-axis bending can be governed by lateral-torsional buckling rather than only cross-section bending resistance."
+    },
+    {
+      "claim_id": "C2",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Member_design#Lateral_torsional_buckling_resistance",
+          "source_id": "SRC-de331c3f98"
+        }
+      ],
+      "text": "Sufficient restraint to the compression flange can remove lateral-torsional buckling as a governing susceptibility for a beam check."
+    },
+    {
+      "claim_id": "C3",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "Lateral Torsional Buckling of Steel Beams Elastically Restrained at the Support Nodes",
+          "source_id": "SRC-346ae46879"
+        }
+      ],
+      "text": "Restraint stiffness and restraint location can materially affect lateral-torsional buckling behavior, so Fraia should not collapse restraint into a simple yes/no tag when better data is available."
+    }
+  ],
+  "concepts": [
+    "lateral-torsional buckling",
+    "compression flange restraint",
+    "elastic critical moment",
+    "restraint stiffness",
+    "unrestrained beam"
+  ],
+  "domain": "steel-stability",
+  "fraia_mapping": {
+    "pipeline_stages": [
+      "analysis_results",
+      "design_actions",
+      "check_inputs"
+    ],
+    "structural_objects": [
+      "Member"
+    ]
+  },
+  "limitations": [
+    "No LTB formula or reduction factor is encoded in this card.",
+    "Applicable standards and national annexes must be selected before any LTB design check."
+  ],
+  "media_links": [
+    {
+      "asset_id": "KA-member-restraint-unbraced-length",
+      "role": "explains"
+    }
+  ],
+  "relationships": [
+    {
+      "relationship_type": "requires",
+      "target": "KC-member-restraint-and-unbraced-length"
+    },
+    {
+      "relationship_type": "see_also",
+      "target": "KC-steel-bending-members"
+    }
+  ],
+  "schema_version": "knowledge-card.v0",
+  "source_links": [
+    {
+      "pages_used": [
+        "Member design: Lateral torsional buckling resistance"
+      ],
+      "role": "primary",
+      "source_id": "SRC-de331c3f98"
+    },
+    {
+      "pages_used": [
+        "Lateral Torsional Buckling of Steel Beams Elastically Restrained at the Support Nodes"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-346ae46879"
+    }
+  ],
+  "status": "draft",
+  "summary": "Lateral-torsional buckling is a restraint-sensitive steel beam stability mode that must remain separate from simple cross-section bending capacity.",
+  "title": "Lateral-Torsional Buckling Concepts"
+}

@@ -1,0 +1,105 @@
+{
+  "applicability": {
+    "applies_to": [
+      "steel column concept reasoning",
+      "compression-member diagnostics",
+      "member check preparation"
+    ],
+    "jurisdiction_or_standard_context": "Public UK/Eurocode and AISC-context sources. This is concept guidance, not a code check.",
+    "not_applicable_to": [
+      "final compression member sizing",
+      "buckling-curve selection without a standard context",
+      "slender-element capacity calculation"
+    ]
+  },
+  "card_id": "KC-steel-compression-members",
+  "claims": [
+    {
+      "claim_id": "C1",
+      "confidence": "high",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Member_design#Uniform_members_in_compression",
+          "source_id": "SRC-de331c3f98"
+        }
+      ],
+      "text": "Compression-member behavior is strongly controlled by buckling length, cross-section properties, axis of buckling, and imperfections."
+    },
+    {
+      "claim_id": "C2",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "Notes on AISC 360-16 Provisions for Slender Compression Elements in Compression Members",
+          "source_id": "SRC-c4a211ba11"
+        }
+      ],
+      "text": "Compression checks may need to distinguish overall member buckling from local or slender-element effects."
+    },
+    {
+      "claim_id": "C3",
+      "confidence": "medium",
+      "source_refs": [
+        {
+          "locator": "https://steelconstruction.info/Member_design#Uniform_members_in_compression",
+          "source_id": "SRC-de331c3f98"
+        }
+      ],
+      "text": "Fraia should carry the restraint and effective-length assumptions used for a compression member into the check-input artifact."
+    }
+  ],
+  "concepts": [
+    "compression member",
+    "steel column",
+    "buckling length",
+    "slenderness",
+    "local buckling"
+  ],
+  "domain": "steel-design",
+  "fraia_mapping": {
+    "pipeline_stages": [
+      "realization",
+      "analysis_results",
+      "design_actions",
+      "check_inputs"
+    ],
+    "structural_objects": [
+      "Member"
+    ]
+  },
+  "limitations": [
+    "No effective-length factor, buckling curve, or section-classification rule is selected here.",
+    "The source context must be preserved before using the card in AISC, Eurocode, Australian, or other design settings."
+  ],
+  "media_links": [],
+  "relationships": [
+    {
+      "relationship_type": "requires",
+      "target": "KC-member-restraint-and-unbraced-length"
+    },
+    {
+      "relationship_type": "requires",
+      "target": "KC-steel-design-action-check-input-separation"
+    }
+  ],
+  "schema_version": "knowledge-card.v0",
+  "source_links": [
+    {
+      "pages_used": [
+        "Member design: Uniform members in compression"
+      ],
+      "role": "primary",
+      "source_id": "SRC-de331c3f98"
+    },
+    {
+      "pages_used": [
+        "Notes on the AISC 360-16 Provisions for Slender Compression Elements in Compression Members"
+      ],
+      "role": "corroborating",
+      "source_id": "SRC-c4a211ba11"
+    }
+  ],
+  "status": "draft",
+  "summary": "Compression-member reasoning should preserve restraint, length, axis, and local slenderness assumptions before any design check is run.",
+  "title": "Steel Compression Members"
+}
