@@ -24,7 +24,7 @@ test("packaged app persists an edited project and exposes a deterministic solver
   const runtimeEnvironment = Object.fromEntries([
     "DBUS_SESSION_BUS_ADDRESS", "DISPLAY", "HOME", "LANG", "LC_ALL", "LOCALAPPDATA", "PATH",
     "SystemRoot", "TEMP", "TMP", "TMPDIR", "USER", "USERPROFILE", "WAYLAND_DISPLAY", "WINDIR",
-    "XDG_RUNTIME_DIR",
+    "XAUTHORITY", "XDG_RUNTIME_DIR",
   ].flatMap((name) => process.env[name] ? [[name, process.env[name] as string]] : []))
 
   const phase = (message: string) => console.log(`[packaged-e2e] ${message}`)

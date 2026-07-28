@@ -166,8 +166,8 @@ test('manual CI keeps deterministic checks default and native package preflight 
 
 test('native package checks pin the reviewed macOS icon toolchain and deterministic Linux renderer', () => {
   for (const source of [workflow, continuousIntegration]) {
-    assert.match(source, /DEVELOPER_DIR: \/Applications\/Xcode_26\.2\.app\/Contents\/Developer/);
-    assert.match(source, /FRAIA_XCODE_VERSION: '26\.2'/);
+    assert.match(source, /DEVELOPER_DIR: \/Applications\/Xcode_26\.1\.1\.app\/Contents\/Developer/);
+    assert.match(source, /FRAIA_XCODE_VERSION: '26\.1\.1'/);
     assert.match(source, /test "\$\(xcodebuild -version \| sed -n '1p'\)" = "Xcode \$FRAIA_XCODE_VERSION"/);
     assert.match(source, /test "\$\(xcrun --find actool\)" = "\$DEVELOPER_DIR\/usr\/bin\/actool"/);
   }
@@ -175,6 +175,7 @@ test('native package checks pin the reviewed macOS icon toolchain and determinis
     assert.match(source, /"--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"/);
   }
   assert.match(packagedElectronTest, /"--no-sandbox"/);
+  assert.match(packagedElectronTest, /"XAUTHORITY"/);
   assert.match(packagedE2e, /entry\.replaceAll\('\\\\', '\/'\)/);
   assert.match(packagedE2e, /packagePath\.split\('\/'\)\.join\(path\.sep\)/);
   assert.match(packagedE2e, /require\.resolve\('@playwright\/test\/cli'\)/);
