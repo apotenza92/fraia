@@ -131,6 +131,19 @@ jobs:
         run: |
           if [ "${{ matrix.platform }}" = linux ]; then
             xvfb-run -a npm run test:package
+          elif [ "${{ matrix.platform }}" = darwin ]; then
+            set +e
+            npm run test:package 2>&1 | tee "$RUNNER_TEMP/fraia-package-attempt.log"
+            PACKAGE_STATUS="${PIPESTATUS[0]}"
+            set -e
+            if [ "$PACKAGE_STATUS" -eq 0 ]; then
+              exit 0
+            fi
+            if ! grep -Eq 'AssetCatalogAgent-AssetRuntime|autorelease pool page .* corrupted' "$RUNNER_TEMP/fraia-package-attempt.log"; then
+              exit "$PACKAGE_STATUS"
+            fi
+            echo "Retrying once after a verified Xcode AssetCatalogAgent infrastructure crash."
+            npm run test:package
           else
             npm run test:package
           fi

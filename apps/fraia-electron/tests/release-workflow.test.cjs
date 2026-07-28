@@ -22,6 +22,10 @@ const packagedE2e = fs.readFileSync(
   path.join(__dirname, '..', 'scripts', 'run-packaged-e2e.cjs'),
   'utf8',
 );
+const signedMacosBuild = fs.readFileSync(
+  path.join(__dirname, '..', 'scripts', 'build-signed-macos.cjs'),
+  'utf8',
+);
 const runtimeAudit = fs.readFileSync(
   path.join(repositoryRoot, '.github', 'workflows', 'calculix-runtime-audit.yml'),
   'utf8',
@@ -170,10 +174,17 @@ test('native package checks pin the reviewed macOS icon toolchain and determinis
   for (const source of [packagedElectronTest, desktopElectronTest]) {
     assert.match(source, /"--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"/);
   }
+  assert.match(packagedElectronTest, /"--no-sandbox"/);
   assert.match(packagedE2e, /entry\.replaceAll\('\\\\', '\/'\)/);
   assert.match(packagedE2e, /packagePath\.split\('\/'\)\.join\(path\.sep\)/);
+  assert.match(packagedE2e, /require\.resolve\('@playwright\/test\/cli'\)/);
+  assert.match(packagedE2e, /spawnSync\(process\.execPath/);
   assert.match(packagedElectronTest, /test\.setTimeout\(120_000\)/);
   assert.match(packagedElectronTest, /\[packaged-e2e\]/);
+  assert.match(continuousIntegration, /AssetCatalogAgent-AssetRuntime/);
+  assert.match(continuousIntegration, /Retrying once after a verified Xcode AssetCatalogAgent infrastructure crash/);
+  assert.match(signedMacosBuild, /AssetCatalogAgent-AssetRuntime/);
+  assert.match(signedMacosBuild, /runElectronBuilderWithActoolRetry/);
 });
 
 test('native runtime audit uses Bash for strict Linux container execution', () => {

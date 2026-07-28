@@ -5,7 +5,7 @@ import path from "node:path"
 
 const packagedExecutable = process.env.FRAIA_PACKAGED_EXECUTABLE
 const deterministicLinuxRenderingArgs = process.platform === "linux"
-  ? ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
+  ? ["--no-sandbox", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
   : []
 
 test.skip(!packagedExecutable, "run packaged verification through npm run test:package")

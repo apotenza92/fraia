@@ -136,10 +136,9 @@ assertBinaryArchitecture(sidecar, process.arch);
 verifyProductionDependencyBoundary(layout.resources);
 prepareUnsignedMacosRuntime(layout.resources);
 
-const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-const result = spawnSync(npx, [
-  '--no-install',
-  'playwright',
+const playwrightCli = require.resolve('@playwright/test/cli');
+const result = spawnSync(process.execPath, [
+  playwrightCli,
   'test',
   '--config',
   'playwright.electron.config.ts',
