@@ -119,11 +119,12 @@ case "$evidence/" in
   "$output/"*) printf 'The evidence directory must not be inside the output directory.\n' >&2; exit 2 ;;
 esac
 
-work_root=$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/fraia-calculix-windows-arm64.XXXXXX")
+runner_temp=$(cygpath -u "${RUNNER_TEMP:?RUNNER_TEMP is required}")
+work_root=$(mktemp -d "${runner_temp}/fraia-calculix-windows-arm64.XXXXXX")
 chmod 700 "$work_root"
 cleanup() {
   case "$work_root" in
-    "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"/fraia-calculix-windows-arm64.*) rm -rf -- "$work_root" ;;
+    "${runner_temp}"/fraia-calculix-windows-arm64.*) rm -rf -- "$work_root" ;;
     *) printf 'Refusing to remove unexpected work directory: %s\n' "$work_root" >&2 ;;
   esac
 }
