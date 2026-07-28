@@ -124,10 +124,9 @@ function verifyExtractedLinux(root, contract, label) {
 function verifyLinux(contract) {
   const stem = path.join(contract.outputDir, `${contract.artifactPrefix}-Linux-${contract.arch}`);
   const appImage = `${stem}.AppImage`;
-  const blockmap = `${appImage}.blockmap`;
   const deb = `${stem}.deb`;
   const rpm = `${stem}.rpm`;
-  for (const target of [appImage, blockmap, deb, rpm]) if (!fs.existsSync(target)) throw new Error(`Linux release artifact is missing: ${target}`);
+  for (const target of [appImage, deb, rpm]) if (!fs.existsSync(target)) throw new Error(`Linux release artifact is missing: ${target}`);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-linux-packages-'));
   try {
     fs.chmodSync(appImage, 0o755);

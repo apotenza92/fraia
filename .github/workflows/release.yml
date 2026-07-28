@@ -376,7 +376,7 @@ jobs:
           mkdir -p ci-output/assets
           STEM="Fraia-Linux-${{ matrix.arch }}"
           OUTPUT="release/${{ needs.prepare.outputs.channel }}/linux/${{ matrix.arch }}"
-          cp "$OUTPUT/$STEM.AppImage" "$OUTPUT/$STEM.AppImage.blockmap" "$OUTPUT/$STEM.deb" "$OUTPUT/$STEM.rpm" ci-output/assets/
+          cp "$OUTPUT/$STEM.AppImage" "$OUTPUT/$STEM.deb" "$OUTPUT/$STEM.rpm" ci-output/assets/
 
       - name: Upload Linux candidate
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

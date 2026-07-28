@@ -1,10 +1,32 @@
 const assert = require('node:assert/strict');
+const { execFileSync } = require('node:child_process');
+const path = require('node:path');
 const test = require('node:test');
 const { releaseContract, metadataFileName } = require('../release-contract.cjs');
 const packageMetadata = require('../package.json');
 
 test('native package metadata points to Fraia public source', () => {
   assert.equal(packageMetadata.homepage, 'https://github.com/apotenza92/fraia');
+});
+
+test('Linux packages retain Fraia canonical architecture tokens across formats', () => {
+  const configPath = path.resolve(__dirname, '..', 'electron-builder.config.cjs');
+  for (const arch of ['arm64', 'x64']) {
+    const artifactName = execFileSync(
+      process.execPath,
+      ['-e', `process.stdout.write(require(${JSON.stringify(configPath)}).linux.artifactName)`],
+      {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          FRAIA_RELEASE_ARCH: arch,
+          FRAIA_RELEASE_CHANNEL: 'stable',
+          FRAIA_RELEASE_PLATFORM: 'linux',
+        },
+      },
+    );
+    assert.equal(artifactName, `Fraia-Linux-${arch}.\${ext}`);
+  }
 });
 
 test('Fraia has one stable durable application identity', () => {

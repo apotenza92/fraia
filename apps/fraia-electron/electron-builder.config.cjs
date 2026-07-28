@@ -131,7 +131,7 @@ module.exports = {
       { target: 'deb', arch: [contract.arch] },
       { target: 'rpm', arch: [contract.arch] },
     ],
-    artifactName: `${contract.artifactPrefix}-Linux-\${arch}.\${ext}`,
+    artifactName: `${contract.artifactPrefix}-Linux-${contract.arch}.\${ext}`,
   },
   publish: [{
     provider: 'generic',
