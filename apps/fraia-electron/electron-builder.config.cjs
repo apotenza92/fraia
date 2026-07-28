@@ -78,6 +78,7 @@ module.exports = {
   ],
   mac: {
     category: 'public.app-category.productivity',
+    minimumSystemVersion: '15.0',
     hardenedRuntime: true,
     gatekeeperAssess: false,
     entitlements: 'build/entitlements.mac.plist',

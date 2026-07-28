@@ -3,7 +3,12 @@ const asar = require('@electron/asar');
 const fs = require('node:fs');
 const path = require('node:path');
 const { assertBinaryArchitecture } = require('../binary-architecture.cjs');
-const { nativePlatformArch, sidecarExecutableName } = require('../package-boundary.cjs');
+const { assertMacosMinimumVersion } = require('../macos-version-contract.cjs');
+const {
+  nativePlatformArch,
+  packagedCalculixPath,
+  sidecarExecutableName,
+} = require('../package-boundary.cjs');
 
 const appRoot = path.resolve(__dirname, '..');
 const releaseRoot = path.join(appRoot, 'release');
@@ -133,6 +138,15 @@ const sidecar = path.join(layout.resources, 'sidecar', nativePlatformArch(), sid
 if (!fs.existsSync(sidecar)) throw new Error(`Exact packaged Fraia sidecar is missing: ${sidecar}.`);
 assertBinaryArchitecture(layout.executable, process.arch);
 assertBinaryArchitecture(sidecar, process.arch);
+if (process.platform === 'darwin') {
+  for (const target of [
+    layout.executable,
+    sidecar,
+    packagedCalculixPath(layout.resources, 'darwin', process.arch),
+  ]) {
+    assertMacosMinimumVersion(target);
+  }
+}
 verifyProductionDependencyBoundary(layout.resources);
 prepareUnsignedMacosRuntime(layout.resources);
 

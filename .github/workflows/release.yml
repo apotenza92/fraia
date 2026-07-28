@@ -136,7 +136,7 @@ jobs:
   package-macos:
     name: macOS ${{ matrix.arch }}
     needs: [prepare, validate]
-    runs-on: ${{ matrix.arch == 'arm64' && 'macos-15' || 'macos-15-intel' }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'macos-26' || 'macos-26-intel' }}
     environment: release-signing
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.1.1.app/Contents/Developer

@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const asar = require('@electron/asar');
 const { assertBinaryArchitecture } = require('../binary-architecture.cjs');
+const { assertMacosMinimumVersion } = require('../macos-version-contract.cjs');
 const { nativePlatformArch, packagedCalculixPath, sidecarExecutableName } = require('../package-boundary.cjs');
 const { releaseContract } = require('../release-contract.cjs');
 
@@ -139,6 +140,9 @@ function verifyApp(appPath, contract, expectations) {
   const readPlist = (key) => run('plutil', ['-extract', key, 'raw', '-o', '-', info]).stdout.trim();
   if (readPlist('CFBundleIdentifier') !== contract.appId) throw new Error(`${appPath} has the wrong bundle identifier.`);
   if (readPlist('CFBundleName') !== contract.productName) throw new Error(`${appPath} has the wrong product name.`);
+  if (readPlist('LSMinimumSystemVersion') !== '15.0') {
+    throw new Error(`${appPath} does not declare the reviewed macOS 15.0 minimum.`);
+  }
   const iconName = readPlist('CFBundleIconFile');
   if (!iconName || /electron/i.test(iconName)) throw new Error(`${appPath} uses Electron's default icon.`);
   const version = readPlist('CFBundleShortVersionString');
@@ -150,6 +154,7 @@ function verifyApp(appPath, contract, expectations) {
   for (const target of [executable, sidecar, calculix]) {
     if (!fs.existsSync(target)) throw new Error(`Required native executable is missing: ${target}`);
     assertBinaryArchitecture(target, contract.arch);
+    assertMacosMinimumVersion(target);
   }
   const calculixNotices = path.join(path.dirname(calculix), 'THIRD_PARTY_NOTICES.txt');
   if (!fs.existsSync(calculixNotices) || fs.statSync(calculixNotices).size === 0) {
