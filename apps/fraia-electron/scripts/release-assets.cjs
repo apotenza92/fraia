@@ -21,7 +21,7 @@ function expectedReleaseAssetNames(channel) {
       `update-beta-darwin-${arch}.yml`,
     );
     const linux = `${prefix}-Linux-${arch}`;
-    names.push(`${linux}.AppImage`, `${linux}.AppImage.blockmap`, `${linux}.deb`, `${linux}.rpm`);
+    names.push(`${linux}.AppImage`, `${linux}.deb`, `${linux}.rpm`);
   }
   const windows = `${prefix}-Windows-x64-Setup.exe`;
   names.push(windows, `${windows}.blockmap`);

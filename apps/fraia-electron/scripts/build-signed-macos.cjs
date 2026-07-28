@@ -170,6 +170,12 @@ function main(argv = process.argv.slice(2)) {
     fs.rmSync(path.join(outputDir, 'notarization-app.json'));
     run('xcrun', ['stapler', 'staple', dmg], { env: releaseEnvironment });
     run('xcrun', ['stapler', 'validate', dmg], { env: releaseEnvironment });
+    run(process.execPath, [
+      'scripts/finalize-macos-update-artifacts.mjs',
+      '--metadata', path.join(outputDir, 'latest-mac.yml'),
+      '--artifact-dir', outputDir,
+      '--arch', arch,
+    ], { env: releaseEnvironment });
     for (const artifact of [dmg, zip]) fs.writeFileSync(`${artifact}.sha256`, `${sha256(artifact)}  ${path.basename(artifact)}\n`);
     run(process.execPath, ['scripts/verify-macos-package.cjs', '--channel', channel, '--arch', arch, '--output-dir', outputDir, '--skip-launch'], { env: releaseEnvironment });
   } finally {

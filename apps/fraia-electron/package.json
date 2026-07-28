@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.2",
   "description": "Fraia Electron workbench shell",
+  "homepage": "https://github.com/apotenza92/fraia",
   "author": "Alex Potenza",
   "license": "MIT",
   "main": "main.js",

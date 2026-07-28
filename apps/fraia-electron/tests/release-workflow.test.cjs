@@ -71,6 +71,8 @@ test('one stable release is tag-only, native on five solver-backed targets, and 
   const nativeVerifier = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'verify-native-package.cjs'), 'utf8');
   const macVerifier = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'verify-macos-package.cjs'), 'utf8');
   assert.match(nativeVerifier, /runtime-manifest\.json/);
+  assert.match(nativeVerifier, /waitForPathRemoval\(install\)/);
+  assert.match(nativeVerifier, /maxRetries: 20/);
   assert.match(macVerifier, /runtime-manifest\.json/);
   assert.match(macVerifier, /LSMinimumSystemVersion/);
   assert.match(macVerifier, /reviewed macOS 15\.0 minimum/);
@@ -88,6 +90,7 @@ test('canonical Apple credentials are isolated from build and followed by creden
   assert.match(workflow, /Build renderer and native Rust sidecar without release credentials/);
   assert.match(workflow, /Verify signatures and launch without release credentials/);
   assert.match(signing, /pass --skip-build/);
+  assert.match(signing, /finalize-macos-update-artifacts\.mjs/);
   assert.doesNotMatch(`${workflow}\n${signing}`, /CSC_LINK|APPLE_ID_PASSWORD|app-specific password/i);
   const macVerifier = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'verify-macos-package.cjs'), 'utf8');
   assert.match(macVerifier, /validateSignature\(dmg, expectations/);
@@ -170,6 +173,9 @@ test('manual CI keeps deterministic checks default and native package preflight 
   assert.match(continuousIntegration, /verify-calculix-runtimes\.cjs/);
   assert.match(continuousIntegration, /--target "\$\{\{ matrix\.platform \}\}-\$\{\{ matrix\.arch \}\}"/);
   assert.match(continuousIntegration, /npm run test:package/);
+  assert.match(continuousIntegration, /--linux AppImage deb rpm --\$\{\{ matrix\.arch \}\} --publish never/);
+  assert.match(continuousIntegration, /--win nsis --\$\{\{ matrix\.arch \}\} --publish never/);
+  assert.match(continuousIntegration, /verify-native-package\.cjs/);
   assert.match(continuousIntegration, /FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'/);
   assert.doesNotMatch(continuousIntegration, /build-calculix-(?:macos|linux)-runtime|build-calculix-windows-runtime/);
   assert.doesNotMatch(continuousIntegration, /curl |wget |actions\/download-artifact/);

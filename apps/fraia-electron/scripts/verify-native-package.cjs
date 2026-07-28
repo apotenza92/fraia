@@ -67,6 +67,27 @@ function smoke(executable) {
   run(command, ['scripts/run-packaged-e2e.cjs'], { cwd: path.resolve(__dirname, '..'), env: environment });
 }
 
+function waitForPathRemoval(target, { timeoutMs = 30_000, intervalMs = 250 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  const waitBuffer = new Int32Array(new SharedArrayBuffer(4));
+  while (fs.existsSync(target)) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      throw new Error(`Timed out waiting for the native uninstaller to remove ${target}.`);
+    }
+    Atomics.wait(waitBuffer, 0, 0, Math.min(intervalMs, remaining));
+  }
+}
+
+function removeTemporaryTree(target) {
+  fs.rmSync(target, {
+    recursive: true,
+    force: true,
+    maxRetries: 20,
+    retryDelay: 250,
+  });
+}
+
 function verifyWindows(contract) {
   const installer = path.join(contract.outputDir, `${contract.artifactPrefix}-Windows-${contract.arch}-Setup.exe`);
   const blockmap = `${installer}.blockmap`;
@@ -80,7 +101,8 @@ function verifyWindows(contract) {
     smoke(executable);
     const uninstaller = findExactlyOne(install, (candidate) => /^uninstall.*\.exe$/i.test(path.basename(candidate)), 'NSIS uninstaller');
     run(uninstaller, ['/S']);
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+    waitForPathRemoval(install);
+  } finally { removeTemporaryTree(root); }
 }
 
 function extractRpm(packagePath, destination) {
@@ -102,10 +124,9 @@ function verifyExtractedLinux(root, contract, label) {
 function verifyLinux(contract) {
   const stem = path.join(contract.outputDir, `${contract.artifactPrefix}-Linux-${contract.arch}`);
   const appImage = `${stem}.AppImage`;
-  const blockmap = `${appImage}.blockmap`;
   const deb = `${stem}.deb`;
   const rpm = `${stem}.rpm`;
-  for (const target of [appImage, blockmap, deb, rpm]) if (!fs.existsSync(target)) throw new Error(`Linux release artifact is missing: ${target}`);
+  for (const target of [appImage, deb, rpm]) if (!fs.existsSync(target)) throw new Error(`Linux release artifact is missing: ${target}`);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-linux-packages-'));
   try {
     fs.chmodSync(appImage, 0o755);
