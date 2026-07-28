@@ -90,6 +90,7 @@ test('canonical Apple credentials are isolated from build and followed by creden
   assert.match(workflow, /Build renderer and native Rust sidecar without release credentials/);
   assert.match(workflow, /Verify signatures and launch without release credentials/);
   assert.match(signing, /pass --skip-build/);
+  assert.match(signing, /finalize-macos-update-artifacts\.mjs/);
   assert.doesNotMatch(`${workflow}\n${signing}`, /CSC_LINK|APPLE_ID_PASSWORD|app-specific password/i);
   const macVerifier = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'verify-macos-package.cjs'), 'utf8');
   assert.match(macVerifier, /validateSignature\(dmg, expectations/);
