@@ -38,6 +38,9 @@ test('Windows ARM64 audit pins source, recipe, repository, and toolchain inputs'
 test('Windows ARM64 audit is native, source-built, reproducible, and fail-closed', () => {
   assert.match(script, /RUNNER_ARCH:-} != 'ARM64'/);
   assert.match(script, /MSYSTEM:-} != 'CLANGARM64'/);
+  assert.match(script, /clang\.exe/);
+  assert.match(script, /flang\.exe/);
+  assert.match(script, /cygpath -w "\$clang_executable"/);
   assert.match(script, /Machine: IMAGE_FILE_MACHINE_ARM64 \(0xAA64\)/);
   assert.match(script, /build_once "\$work_root\/build-one"/);
   assert.match(script, /build_once "\$work_root\/build-two"/);

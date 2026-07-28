@@ -96,8 +96,14 @@ for package_name in "${!expected_packages[@]}"; do
   fi
 done
 
-clang_header=$(llvm-readobj --file-headers "$(command -v clang)")
-flang_header=$(llvm-readobj --file-headers "$(command -v flang)")
+clang_executable="$MINGW_PREFIX/bin/clang.exe"
+flang_executable="$MINGW_PREFIX/bin/flang.exe"
+if [[ ! -f "$clang_executable" || ! -f "$flang_executable" ]]; then
+  printf 'The reviewed CLANGARM64 compiler executables are unavailable.\n' >&2
+  exit 1
+fi
+clang_header=$(llvm-readobj --file-headers "$(cygpath -w "$clang_executable")")
+flang_header=$(llvm-readobj --file-headers "$(cygpath -w "$flang_executable")")
 if ! grep -Fq 'Machine: IMAGE_FILE_MACHINE_ARM64 (0xAA64)' <<<"$clang_header" ||
   ! grep -Fq 'Machine: IMAGE_FILE_MACHINE_ARM64 (0xAA64)' <<<"$flang_header"; then
   printf 'The reviewed Clang and Flang executables must themselves be native Windows ARM64.\n' >&2
@@ -626,6 +632,10 @@ done
 printf '%s\n' "$package_versions" >"$evidence_staging/toolchain/PACKAGES.txt"
 for tool_name in clang cmake flang llvm-ar llvm-objdump llvm-ranlib lld-link ninja; do
   tool_path=$(command -v "$tool_name")
+  if [[ ! -f "$tool_path" && -f "${tool_path}.exe" ]]; then
+    tool_path="${tool_path}.exe"
+  fi
+  [[ -f "$tool_path" ]]
   printf '%s  %s\n' "$(sha256sum "$tool_path" | awk '{ print $1 }')" "$tool_name"
 done >"$evidence_staging/toolchain/SHA256SUMS"
 {
