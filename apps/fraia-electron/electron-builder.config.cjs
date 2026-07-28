@@ -132,8 +132,12 @@ module.exports = {
 function selectAdaptiveMacosIconToolchain() {
   if (!fs.existsSync(iconPaths.darwin)) return false;
 
+  const configuredDeveloperDirectory = process.env.DEVELOPER_DIR?.trim();
+  if (configuredDeveloperDirectory) {
+    return adaptiveMacosActoolVersion(configuredDeveloperDirectory) !== null;
+  }
+
   const candidates = new Set();
-  if (process.env.DEVELOPER_DIR) candidates.add(process.env.DEVELOPER_DIR);
   try {
     for (const entry of fs.readdirSync('/Applications')) {
       if (/^Xcode.*\.app$/.test(entry)) {
@@ -146,28 +150,33 @@ function selectAdaptiveMacosIconToolchain() {
 
   let selected = null;
   for (const developerDirectory of candidates) {
-    try {
-      const output = execFileSync('/usr/bin/xcrun', ['actool', '--version'], {
-        encoding: 'utf8',
-        env: { ...process.env, DEVELOPER_DIR: developerDirectory },
-        stdio: ['ignore', 'pipe', 'ignore'],
-      });
-      const version = output.match(
-        /<key>short-bundle-version<\/key>\s*<string>(\d+(?:\.\d+)*)<\/string>/,
-      )?.[1];
-      if (version && Number.parseInt(version, 10) >= 26) {
-        if (!selected || compareVersions(version, selected.version) > 0) {
-          selected = { developerDirectory, version };
-        }
+    const version = adaptiveMacosActoolVersion(developerDirectory);
+    if (version) {
+      if (!selected || compareVersions(version, selected.version) > 0) {
+        selected = { developerDirectory, version };
       }
-    } catch {
-      // Continue until an installed Xcode with actool 26+ is found.
     }
   }
 
   if (!selected) return false;
   process.env.DEVELOPER_DIR = selected.developerDirectory;
   return true;
+}
+
+function adaptiveMacosActoolVersion(developerDirectory) {
+  try {
+    const output = execFileSync('/usr/bin/xcrun', ['actool', '--version'], {
+      encoding: 'utf8',
+      env: { ...process.env, DEVELOPER_DIR: developerDirectory },
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const version = output.match(
+      /<key>short-bundle-version<\/key>\s*<string>(\d+(?:\.\d+)*)<\/string>/,
+    )?.[1];
+    return version && Number.parseInt(version, 10) >= 26 ? version : null;
+  } catch {
+    return null;
+  }
 }
 
 function compareVersions(left, right) {

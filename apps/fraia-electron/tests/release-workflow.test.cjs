@@ -10,6 +10,18 @@ const builder = fs.readFileSync(path.join(__dirname, '..', 'electron-builder.con
 const signing = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'build-signed-macos.cjs'), 'utf8');
 const updaterTest = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'test-macos-update.cjs'), 'utf8');
 const continuousIntegration = fs.readFileSync(path.join(repositoryRoot, '.github', 'workflows', 'ci.yml'), 'utf8');
+const packagedElectronTest = fs.readFileSync(
+  path.join(__dirname, 'electron', 'packaged-app.spec.ts'),
+  'utf8',
+);
+const desktopElectronTest = fs.readFileSync(
+  path.join(__dirname, 'electron', 'base-ui-migration.spec.ts'),
+  'utf8',
+);
+const packagedE2e = fs.readFileSync(
+  path.join(__dirname, '..', 'scripts', 'run-packaged-e2e.cjs'),
+  'utf8',
+);
 const runtimeAudit = fs.readFileSync(
   path.join(repositoryRoot, '.github', 'workflows', 'calculix-runtime-audit.yml'),
   'utf8',
@@ -146,6 +158,19 @@ test('manual CI keeps deterministic checks default and native package preflight 
   assert.match(continuousIntegration, /FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'/);
   assert.doesNotMatch(continuousIntegration, /build-calculix-(?:macos|linux)-runtime|build-calculix-windows-runtime/);
   assert.doesNotMatch(continuousIntegration, /curl |wget |actions\/download-artifact/);
+});
+
+test('native package checks pin the reviewed macOS icon toolchain and deterministic Linux renderer', () => {
+  for (const source of [workflow, continuousIntegration]) {
+    assert.match(source, /DEVELOPER_DIR: \/Applications\/Xcode_26\.2\.app\/Contents\/Developer/);
+    assert.match(source, /FRAIA_XCODE_VERSION: '26\.2'/);
+    assert.match(source, /test "\$\(xcodebuild -version \| sed -n '1p'\)" = "Xcode \$FRAIA_XCODE_VERSION"/);
+    assert.match(source, /test "\$\(xcrun --find actool\)" = "\$DEVELOPER_DIR\/usr\/bin\/actool"/);
+  }
+  for (const source of [packagedElectronTest, desktopElectronTest]) {
+    assert.match(source, /"--use-gl=angle", "--use-angle=swiftshader"/);
+  }
+  assert.match(packagedE2e, /entry\.replaceAll\('\\\\', '\/'\)/);
 });
 
 test('native runtime audit uses Bash for strict Linux container execution', () => {

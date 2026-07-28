@@ -76,7 +76,9 @@ function prepareUnsignedMacosRuntime(resources) {
 function verifyProductionDependencyBoundary(resources) {
   const archive = path.join(resources, 'app.asar');
   if (!fs.existsSync(archive)) throw new Error(`Packaged Fraia ASAR is missing: ${archive}.`);
-  const entries = new Set(asar.listPackage(archive));
+  const entries = new Set(
+    asar.listPackage(archive).map((entry) => entry.replaceAll('\\', '/')),
+  );
   const packageLock = JSON.parse(fs.readFileSync(path.join(appRoot, 'package-lock.json'), 'utf8'));
   const productionDependencies = [
     '@earendil-works/pi-agent-core',

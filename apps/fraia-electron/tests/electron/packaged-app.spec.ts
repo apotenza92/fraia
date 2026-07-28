@@ -4,6 +4,9 @@ import os from "node:os"
 import path from "node:path"
 
 const packagedExecutable = process.env.FRAIA_PACKAGED_EXECUTABLE
+const deterministicLinuxRenderingArgs = process.platform === "linux"
+  ? ["--use-gl=angle", "--use-angle=swiftshader"]
+  : []
 
 test.skip(!packagedExecutable, "run packaged verification through npm run test:package")
 
@@ -25,6 +28,7 @@ test("packaged app persists an edited project and exposes a deterministic solver
 
   const launch = () => electron.launch({
     executablePath: packagedExecutable,
+    args: deterministicLinuxRenderingArgs,
     env: {
       ...runtimeEnvironment,
       FRAIA_APPD_PATH: path.join(temporaryRoot, "must-not-launch"),

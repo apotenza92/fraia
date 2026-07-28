@@ -9,6 +9,9 @@ const allowedConsoleWarnings = [
   /THREE\.Clock: This module has been deprecated/,
   /Electron Security Warning \(Insecure Content-Security-Policy\)/,
 ]
+const deterministicLinuxRenderingArgs = process.platform === "linux"
+  ? ["--use-gl=angle", "--use-angle=swiftshader"]
+  : []
 
 test("desktop shell preserves keyboard and accessibility contracts", async () => {
   const appRoot = process.cwd()
@@ -28,7 +31,7 @@ test("desktop shell preserves keyboard and accessibility contracts", async () =>
   const consoleProblems = [] as string[]
   const pageErrors = [] as string[]
   const electronApp = await electron.launch({
-    args: [".", `--user-data-dir=${userDataDir}`],
+    args: [...deterministicLinuxRenderingArgs, ".", `--user-data-dir=${userDataDir}`],
     cwd: appRoot,
     env: {
       ...process.env,
@@ -130,7 +133,7 @@ test("fake Pi runtime signs in with ChatGPT, uses Luna, completes, cancels, and 
   fs.mkdirSync(userDataDir, { recursive: true })
 
   const launch = (turnDelayMs = 0) => electron.launch({
-    args: [".", `--user-data-dir=${userDataDir}`],
+    args: [...deterministicLinuxRenderingArgs, ".", `--user-data-dir=${userDataDir}`],
     cwd: appRoot,
     env: {
       ...process.env,
