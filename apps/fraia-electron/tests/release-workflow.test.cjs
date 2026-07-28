@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const vm = require('node:vm');
 
 const repositoryRoot = path.resolve(__dirname, '..', '..', '..');
 const workflowPath = path.join(repositoryRoot, '.github', 'workflows', 'release.yml');
@@ -40,6 +41,83 @@ function jobSource(jobId) {
   assert.ok(match, `workflow job ${jobId} is missing`);
   return match[1];
 }
+
+test('inline Node release workflow scripts are valid standalone programs', () => {
+  const scripts = [...workflow.matchAll(/^[ \t]*node <<'NODE'\n([\s\S]*?)^[ \t]*NODE$/gm)]
+    .map((match) => match[1]);
+  assert.equal(scripts.length, 2, 'every inline Node release script must be syntax checked');
+  scripts.forEach((script, index) => {
+    assert.doesNotThrow(
+      () => new vm.Script(script),
+      `inline Node release script ${index + 1} must parse without a module or function wrapper`,
+    );
+  });
+});
+
+test('first-release updater resolution uses the exact bootstrap tag and later releases use N-1', () => {
+  const resolver = [...workflow.matchAll(/^[ \t]*node <<'NODE'\n([\s\S]*?)^[ \t]*NODE$/gm)]
+    .map((match) => match[1])
+    .find((script) => script.includes('MACOS_UPDATER_BOOTSTRAP_TAG'));
+  assert.ok(resolver, 'updater release resolver is missing');
+
+  const runResolver = (releasePages, environment) => {
+    let output = '';
+    new vm.Script(resolver).runInNewContext({
+      process: {
+        env: {
+          GITHUB_OUTPUT: 'output',
+          RELEASE_ARCH: 'x64',
+          ...environment,
+        },
+      },
+      require: (specifier) => {
+        assert.equal(specifier, 'node:fs');
+        return {
+          appendFileSync: (file, value) => {
+            assert.equal(file, 'output');
+            output += value;
+          },
+          readFileSync: (file, encoding) => {
+            assert.equal(file, 'releases.json');
+            assert.equal(encoding, 'utf8');
+            return JSON.stringify(releasePages);
+          },
+        };
+      },
+    });
+    return output;
+  };
+
+  assert.equal(
+    runResolver([], {
+      GITHUB_REF_NAME: 'v0.0.2',
+      MACOS_UPDATER_BOOTSTRAP_TAG: 'v0.0.2',
+    }),
+    'bootstrap=true\n',
+  );
+  assert.equal(
+    runResolver([[
+      {
+        assets: [{ name: 'Fraia-macOS-x64.zip' }],
+        draft: false,
+        prerelease: false,
+        published_at: '2026-07-28T00:00:00Z',
+        tag_name: 'v0.0.2',
+      },
+    ]], {
+      GITHUB_REF_NAME: 'v0.0.3',
+      MACOS_UPDATER_BOOTSTRAP_TAG: '',
+    }),
+    'tag=v0.0.2\nasset=Fraia-macOS-x64.zip\nbootstrap=false\n',
+  );
+  assert.throws(
+    () => runResolver([], {
+      GITHUB_REF_NAME: 'v0.0.3',
+      MACOS_UPDATER_BOOTSTRAP_TAG: 'v0.0.2',
+    }),
+    /No prior stable package exists/,
+  );
+});
 
 test('one stable release is tag-only, native on five solver-backed targets, and uses protected publication boundaries', () => {
   assert.match(workflow, /tags:\n\s+- 'v\*'/);

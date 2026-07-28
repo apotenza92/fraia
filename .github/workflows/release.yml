@@ -444,12 +444,12 @@ jobs:
             .sort((left, right) => String(right.published_at).localeCompare(String(left.published_at)))[0];
           if (previous) {
             fs.appendFileSync(process.env.GITHUB_OUTPUT, `tag=${previous.tag_name}\nasset=${asset}\nbootstrap=false\n`);
-            return;
+          } else {
+            if (process.env.MACOS_UPDATER_BOOTSTRAP_TAG !== process.env.GITHUB_REF_NAME) {
+              throw new Error('No prior stable package exists. Set MACOS_UPDATER_BOOTSTRAP_TAG to this exact first tag only.');
+            }
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'bootstrap=true\n');
           }
-          if (process.env.MACOS_UPDATER_BOOTSTRAP_TAG !== process.env.GITHUB_REF_NAME) {
-            throw new Error('No prior stable package exists. Set MACOS_UPDATER_BOOTSTRAP_TAG to this exact first tag only.');
-          }
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, 'bootstrap=true\n');
           NODE
       - name: Download and test N-1 update
         if: steps.previous.outputs.bootstrap != 'true'
