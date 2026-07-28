@@ -13,6 +13,7 @@ on:
           - darwin-x64
           - linux-arm64
           - linux-x64
+          - win32-arm64
           - win32-x64
       reviewed_source_run_id:
         description: Successful Linux x64 source run for a Windows candidate
@@ -128,6 +129,69 @@ jobs:
         with:
           name: calculix-win32-x64
           path: ${{ runner.temp }}/win32-x64
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-arm64:
+    name: Windows candidate (win32-arm64)
+    if: ${{ inputs.target == 'win32-arm64' }}
+    runs-on: windows-11-arm
+    timeout-minutes: 360
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Require native Windows ARM64 host
+        shell: pwsh
+        run: |
+          if ('${{ runner.arch }}' -ne 'ARM64') {
+            throw 'win32-arm64 requires a native Windows ARM64 hosted runner.'
+          }
+          if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64') {
+            throw 'The Windows host operating system is not native ARM64.'
+          }
+
+      - name: Setup reviewed MSYS2 CLANGARM64 environment
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
+        with:
+          msystem: CLANGARM64
+          update: true
+          install: >-
+            base-devel
+            mingw-w64-clang-aarch64-clang
+            mingw-w64-clang-aarch64-cmake
+            mingw-w64-clang-aarch64-flang
+            mingw-w64-clang-aarch64-llvm-openmp
+            mingw-w64-clang-aarch64-ninja
+            mingw-w64-clang-aarch64-winpthreads
+
+      - name: Build and test candidate
+        working-directory: apps/fraia-electron
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          root="$(cygpath -u '${{ runner.temp }}')/win32-arm64"
+          mkdir -p "$root"
+          ./scripts/build-calculix-windows-arm64-runtime.sh \
+            --output "$root/runtime" \
+            --evidence "$root/evidence"
+
+      - name: Upload failed reproducibility evidence
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: calculix-win32-arm64-failure
+          path: ${{ runner.temp }}/win32-arm64/evidence
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload review candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: calculix-win32-arm64
+          path: ${{ runner.temp }}/win32-arm64
           if-no-files-found: error
           retention-days: 14
 
