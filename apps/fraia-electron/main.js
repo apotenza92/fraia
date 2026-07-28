@@ -650,6 +650,22 @@ function reloadWindow(window, ignoreCache = false) {
   }
 }
 
+function showUpdateReady({ releaseNotes, version }) {
+  const options = {
+    type: 'info',
+    title: 'Fraia Update Ready',
+    message: `Fraia ${version} is ready to install.`,
+    detail: releaseNotes,
+    buttons: ['Restart and Update', 'Later'],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+  };
+  return mainWindow && !mainWindow.isDestroyed()
+    ? dialog.showMessageBox(mainWindow, options)
+    : dialog.showMessageBox(options);
+}
+
 function installApplicationMenu() {
   const frequencyLabels = {
     never: 'Never',
@@ -955,7 +971,12 @@ app.whenReady().then(async () => {
     createWindow();
     if (app.isPackaged && process.platform === 'darwin') {
       const { autoUpdater } = require('electron-updater');
-      updateController = configureAutoUpdates({ app, autoUpdater, packageMetadata });
+      updateController = configureAutoUpdates({
+        app,
+        autoUpdater,
+        packageMetadata,
+        showUpdateReady,
+      });
     }
     installApplicationMenu();
   } catch (error) {

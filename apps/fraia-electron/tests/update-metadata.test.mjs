@@ -28,6 +28,8 @@ test('one stable package projects byte-identical metadata to stable and beta fee
       }],
       path: artifactName,
       sha512: createHash('sha512').update(artifact).digest('base64'),
+      releaseName: 'Fraia 0.0.1',
+      releaseNotes: '### Added\n\n- Stable update notes.',
       releaseDate: '2026-07-26T00:00:00.000Z',
     }));
 
@@ -52,6 +54,7 @@ test('one stable package projects byte-identical metadata to stable and beta fee
       stable.toString(),
       /https:\/\/github\.com\/apotenza92\/fraia\/releases\/download\/v0\.0\.1\/Fraia-macOS-arm64\.zip/,
     );
+    assert.match(stable.toString(), /Stable update notes/);
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }

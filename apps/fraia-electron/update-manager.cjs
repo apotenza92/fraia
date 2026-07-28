@@ -50,6 +50,22 @@ function readLastCheck(filePath) {
   } catch { return 0; }
 }
 
+function normalizeReleaseNotes(value) {
+  const notes = Array.isArray(value)
+    ? value.map((entry) => {
+      if (typeof entry === 'string') return entry;
+      if (!entry || typeof entry !== 'object') return '';
+      const note = typeof entry.note === 'string' ? entry.note.trim() : '';
+      const version = typeof entry.version === 'string' ? entry.version.trim() : '';
+      return note && version ? `${version}\n${note}` : note;
+    }).filter(Boolean).join('\n\n')
+    : typeof value === 'string' ? value : '';
+  return (notes.trim() || 'This update includes reliability and compatibility improvements.')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^[ \t]*[-*][ \t]+/gm, '• ')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+}
+
 function configureAutoUpdates({
   app,
   autoUpdater,
@@ -58,6 +74,7 @@ function configureAutoUpdates({
   log = console,
   platform = process.platform,
   schedule = { clearInterval, clearTimeout, setInterval, setTimeout },
+  showUpdateReady = async () => ({ response: 1 }),
 } = {}) {
   if (!app?.isPackaged || platform !== 'darwin' || env.FRAIA_DISABLE_UPDATES === '1') {
     return { enabled: false };
@@ -99,10 +116,21 @@ function configureAutoUpdates({
   });
   autoUpdater.on('update-available', (info) => event('update-available', { version: info.version }));
   autoUpdater.on('update-not-available', (info) => event('update-not-available', { version: info.version }));
-  autoUpdater.on('update-downloaded', (info) => {
-    event('update-downloaded', { version: info.version });
+  let promptedVersion = null;
+  autoUpdater.on('update-downloaded', async (info) => {
+    const releaseNotes = normalizeReleaseNotes(info.releaseNotes);
+    event('update-downloaded', { version: info.version, releaseNotes });
     if (testMode && env.FRAIA_E2E_INSTALL_UPDATE === '1') {
       schedule.setTimeout(() => autoUpdater.quitAndInstall(false, true), 100);
+      return;
+    }
+    if (promptedVersion === info.version) return;
+    promptedVersion = info.version;
+    try {
+      const result = await showUpdateReady({ releaseNotes, version: info.version });
+      if (result?.response === 0) autoUpdater.quitAndInstall(false, true);
+    } catch (error) {
+      log.error('[updater] could not present downloaded update', error);
     }
   });
 
@@ -179,6 +207,7 @@ module.exports = {
   UPDATE_FREQUENCIES,
   UPDATE_FREQUENCY_MS,
   configureAutoUpdates,
+  normalizeReleaseNotes,
   readFrequency,
   readLastCheck,
   safeWriteEvent,
