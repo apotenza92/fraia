@@ -3,7 +3,12 @@ const asar = require('@electron/asar');
 const fs = require('node:fs');
 const path = require('node:path');
 const { assertBinaryArchitecture } = require('../binary-architecture.cjs');
-const { nativePlatformArch, sidecarExecutableName } = require('../package-boundary.cjs');
+const { assertMacosMinimumVersion } = require('../macos-version-contract.cjs');
+const {
+  nativePlatformArch,
+  packagedCalculixPath,
+  sidecarExecutableName,
+} = require('../package-boundary.cjs');
 
 const appRoot = path.resolve(__dirname, '..');
 const releaseRoot = path.join(appRoot, 'release');
@@ -76,7 +81,9 @@ function prepareUnsignedMacosRuntime(resources) {
 function verifyProductionDependencyBoundary(resources) {
   const archive = path.join(resources, 'app.asar');
   if (!fs.existsSync(archive)) throw new Error(`Packaged Fraia ASAR is missing: ${archive}.`);
-  const entries = new Set(asar.listPackage(archive));
+  const entries = new Set(
+    asar.listPackage(archive).map((entry) => entry.replaceAll('\\', '/')),
+  );
   const packageLock = JSON.parse(fs.readFileSync(path.join(appRoot, 'package-lock.json'), 'utf8'));
   const productionDependencies = [
     '@earendil-works/pi-agent-core',
@@ -89,7 +96,8 @@ function verifyProductionDependencyBoundary(resources) {
     if (!entries.has(`/${packagePath}`)) {
       throw new Error(`Packaged Fraia is missing production dependency ${dependency}.`);
     }
-    const packaged = JSON.parse(asar.extractFile(archive, packagePath).toString('utf8'));
+    const extractionPath = packagePath.split('/').join(path.sep);
+    const packaged = JSON.parse(asar.extractFile(archive, extractionPath).toString('utf8'));
     const locked = packageLock.packages[`node_modules/${dependency}`];
     if (packaged.version !== locked?.version || packaged.license !== 'MIT') {
       throw new Error(`Packaged Fraia has unreviewed ${dependency} version or licence metadata.`);
@@ -130,13 +138,21 @@ const sidecar = path.join(layout.resources, 'sidecar', nativePlatformArch(), sid
 if (!fs.existsSync(sidecar)) throw new Error(`Exact packaged Fraia sidecar is missing: ${sidecar}.`);
 assertBinaryArchitecture(layout.executable, process.arch);
 assertBinaryArchitecture(sidecar, process.arch);
+if (process.platform === 'darwin') {
+  for (const target of [
+    layout.executable,
+    sidecar,
+    packagedCalculixPath(layout.resources, 'darwin', process.arch),
+  ]) {
+    assertMacosMinimumVersion(target);
+  }
+}
 verifyProductionDependencyBoundary(layout.resources);
 prepareUnsignedMacosRuntime(layout.resources);
 
-const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-const result = spawnSync(npx, [
-  '--no-install',
-  'playwright',
+const playwrightCli = require.resolve('@playwright/test/cli');
+const result = spawnSync(process.execPath, [
+  playwrightCli,
   'test',
   '--config',
   'playwright.electron.config.ts',

@@ -24,6 +24,21 @@ function run(command, args, { env = process.env, capture = false, allowFailure =
   return result;
 }
 
+function runElectronBuilderWithActoolRetry(args, { env, outputDir }) {
+  const first = run('npx', args, { env, capture: true, allowFailure: true });
+  if (first.stdout) process.stdout.write(first.stdout);
+  if (first.stderr) process.stderr.write(first.stderr);
+  if (first.status === 0) return;
+  const output = `${first.stdout || ''}\n${first.stderr || ''}`;
+  if (!/AssetCatalogAgent-AssetRuntime|autorelease pool page .* corrupted/.test(output)) {
+    throw new Error(`npx ${args.join(' ')} failed (${first.status}).`);
+  }
+  console.warn('Retrying once after a verified Xcode AssetCatalogAgent infrastructure crash.');
+  fs.rmSync(outputDir, { recursive: true, force: true });
+  fs.mkdirSync(outputDir, { recursive: true });
+  run('npx', args, { env });
+}
+
 function decodeBase64(value, label) {
   let encoded = value.trim();
   if (encoded.startsWith("'") && encoded.endsWith("'")) encoded = encoded.slice(1, -1);
@@ -125,7 +140,10 @@ function main(argv = process.argv.slice(2)) {
       FRAIA_RELEASE_PLATFORM: 'darwin',
       FRAIA_REQUIRE_NOTARIZATION: '1',
     };
-    run('npx', ['--no-install', 'electron-builder', '--config', 'electron-builder.config.cjs', '--mac', 'dmg', 'zip', `--${arch}`, '--publish', 'never'], { env: releaseEnvironment });
+    runElectronBuilderWithActoolRetry(
+      ['--no-install', 'electron-builder', '--config', 'electron-builder.config.cjs', '--mac', 'dmg', 'zip', `--${arch}`, '--publish', 'never'],
+      { env: releaseEnvironment, outputDir },
+    );
 
     const stem = `${contract.artifactPrefix}-macOS-${arch}`;
     const dmg = path.join(outputDir, `${stem}.dmg`);

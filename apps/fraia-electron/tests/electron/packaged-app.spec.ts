@@ -4,10 +4,14 @@ import os from "node:os"
 import path from "node:path"
 
 const packagedExecutable = process.env.FRAIA_PACKAGED_EXECUTABLE
+const deterministicLinuxRenderingArgs = process.platform === "linux"
+  ? ["--no-sandbox", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
+  : []
 
 test.skip(!packagedExecutable, "run packaged verification through npm run test:package")
 
 test("packaged app persists an edited project and exposes a deterministic solver boundary", async () => {
+  test.setTimeout(120_000)
   expect(packagedExecutable, "FRAIA_PACKAGED_EXECUTABLE must identify the unpacked packaged app").toBeTruthy()
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "fraia-packaged-e2e-"))
   const userDataDir = path.join(temporaryRoot, "user-data")
@@ -20,25 +24,36 @@ test("packaged app persists an edited project and exposes a deterministic solver
   const runtimeEnvironment = Object.fromEntries([
     "DBUS_SESSION_BUS_ADDRESS", "DISPLAY", "HOME", "LANG", "LC_ALL", "LOCALAPPDATA", "PATH",
     "SystemRoot", "TEMP", "TMP", "TMPDIR", "USER", "USERPROFILE", "WAYLAND_DISPLAY", "WINDIR",
-    "XDG_RUNTIME_DIR",
+    "XAUTHORITY", "XDG_RUNTIME_DIR",
   ].flatMap((name) => process.env[name] ? [[name, process.env[name] as string]] : []))
 
-  const launch = () => electron.launch({
-    executablePath: packagedExecutable,
-    env: {
-      ...runtimeEnvironment,
-      FRAIA_APPD_PATH: path.join(temporaryRoot, "must-not-launch"),
-      FRAIA_DEFAULT_PROJECT_DIR: defaultProjectDir,
-      ...(requireCalculix ? {} : { FRAIA_DISABLE_CALCULIX_RUNTIME: "1" }),
-      FRAIA_DISABLE_MANAGED_CCX_BOOTSTRAP: "1",
-      FRAIA_USER_DATA_DIR: userDataDir,
-    },
-  })
+  const phase = (message: string) => console.log(`[packaged-e2e] ${message}`)
+  const launch = async () => {
+    phase("launching packaged application")
+    const launched = await electron.launch({
+      executablePath: packagedExecutable,
+      args: deterministicLinuxRenderingArgs,
+      env: {
+        ...runtimeEnvironment,
+        FRAIA_APPD_PATH: path.join(temporaryRoot, "must-not-launch"),
+        FRAIA_DEFAULT_PROJECT_DIR: defaultProjectDir,
+        ...(requireCalculix ? {} : { FRAIA_DISABLE_CALCULIX_RUNTIME: "1" }),
+        FRAIA_DISABLE_MANAGED_CCX_BOOTSTRAP: "1",
+        FRAIA_USER_DATA_DIR: userDataDir,
+      },
+    })
+    launched.process().stdout?.on("data", (chunk) => process.stdout.write(`[packaged-app stdout] ${chunk}`))
+    launched.process().stderr?.on("data", (chunk) => process.stderr.write(`[packaged-app stderr] ${chunk}`))
+    phase("packaged application launched")
+    return launched
+  }
 
   let electronApp = await launch()
   try {
+    phase("waiting for first window")
     let page = await electronApp.firstWindow()
     await page.waitForLoadState("domcontentloaded")
+    phase("first window loaded")
 
     const health = await page.evaluate(() => window.fraia.health())
     expect(health).toMatchObject({
@@ -55,6 +70,7 @@ test("packaged app persists an edited project and exposes a deterministic solver
     ])
     expect(aiCatalogue.providers[0].authState).toBe("disconnected")
     expect(aiCatalogue.models[0].available).toBe(false)
+    phase("health, package identity, and AI catalogue verified")
 
     const state = await page.evaluate(async ({ projectDir }) => {
       await window.fraia.createProject({ projectDir, name: "Packaged Persistence" })
@@ -67,7 +83,9 @@ test("packaged app persists an edited project and exposes a deterministic solver
     expect(state.state.scene.nodes).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: "node.packaged" }),
     ]))
+    phase("project edit persisted")
 
+    phase("starting packaged CalculiX boundary")
     const calculixResult = await page.evaluate(async ({ solverProjectDir }) => {
       await window.fraia.createProject({ projectDir: solverProjectDir, name: "Solver Boundary" })
       await window.fraia.seedFrameDemo({ projectDir: solverProjectDir })
@@ -92,10 +110,12 @@ test("packaged app persists an edited project and exposes a deterministic solver
     } else {
       expect(calculixResult.error).toContain("CalculiX runtime unavailable")
     }
+    phase("packaged CalculiX boundary verified")
 
     await page.evaluate(() => localStorage.setItem("fraia:package-smoke", "persisted"))
     await electronApp.close()
 
+    phase("relaunching for persistence verification")
     electronApp = await launch()
     page = await electronApp.firstWindow()
     await page.waitForLoadState("domcontentloaded")
@@ -104,6 +124,7 @@ test("packaged app persists an edited project and exposes a deterministic solver
     expect(reopened.state.scene.nodes).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: "node.packaged" }),
     ]))
+    phase("relaunch persistence verified")
   } finally {
     await electronApp.close().catch(() => {})
     fs.rmSync(temporaryRoot, { recursive: true, force: true })

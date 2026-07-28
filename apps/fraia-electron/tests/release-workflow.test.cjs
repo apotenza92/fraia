@@ -10,6 +10,22 @@ const builder = fs.readFileSync(path.join(__dirname, '..', 'electron-builder.con
 const signing = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'build-signed-macos.cjs'), 'utf8');
 const updaterTest = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'test-macos-update.cjs'), 'utf8');
 const continuousIntegration = fs.readFileSync(path.join(repositoryRoot, '.github', 'workflows', 'ci.yml'), 'utf8');
+const packagedElectronTest = fs.readFileSync(
+  path.join(__dirname, 'electron', 'packaged-app.spec.ts'),
+  'utf8',
+);
+const desktopElectronTest = fs.readFileSync(
+  path.join(__dirname, 'electron', 'base-ui-migration.spec.ts'),
+  'utf8',
+);
+const packagedE2e = fs.readFileSync(
+  path.join(__dirname, '..', 'scripts', 'run-packaged-e2e.cjs'),
+  'utf8',
+);
+const signedMacosBuild = fs.readFileSync(
+  path.join(__dirname, '..', 'scripts', 'build-signed-macos.cjs'),
+  'utf8',
+);
 const runtimeAudit = fs.readFileSync(
   path.join(repositoryRoot, '.github', 'workflows', 'calculix-runtime-audit.yml'),
   'utf8',
@@ -42,6 +58,7 @@ test('one stable release is tag-only, native on five solver-backed targets, and 
   assert.match(workflow, /Require the declared repository license/);
   assert.match(workflow, /run: test -f LICENSE/);
   assert.match(builder, /FRAIA_REQUIRE_RELEASE_ICON/);
+  assert.match(builder, /minimumSystemVersion: '15\.0'/);
   assert.match(workflow, /Require a public updater and binary origin/);
   assert.match(workflow, /SOURCE_REPOSITORY_PRIVATE/);
   assert.match(workflow, /Require reviewed native CalculiX runtime manifests/);
@@ -54,6 +71,8 @@ test('one stable release is tag-only, native on five solver-backed targets, and 
   const macVerifier = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'verify-macos-package.cjs'), 'utf8');
   assert.match(nativeVerifier, /runtime-manifest\.json/);
   assert.match(macVerifier, /runtime-manifest\.json/);
+  assert.match(macVerifier, /LSMinimumSystemVersion/);
+  assert.match(macVerifier, /reviewed macOS 15\.0 minimum/);
 });
 
 test('canonical Apple credentials are isolated from build and followed by credential-free verification', () => {
@@ -136,7 +155,7 @@ test('manual CI keeps deterministic checks default and native package preflight 
   assert.match(continuousIntegration, /run_native_package_preflight:/);
   assert.match(continuousIntegration, /default: false/);
   assert.match(continuousIntegration, /if: \$\{\{ inputs\.run_native_package_preflight \}\}/);
-  for (const runner of ['macos-15', 'macos-15-intel', 'windows-2025', 'ubuntu-24.04', 'ubuntu-24.04-arm']) {
+  for (const runner of ['macos-26', 'macos-26-intel', 'windows-2025', 'ubuntu-24.04', 'ubuntu-24.04-arm']) {
     assert.match(continuousIntegration, new RegExp(runner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
   assert.doesNotMatch(continuousIntegration, /windows-11-arm|win32-arm64/);
@@ -146,6 +165,37 @@ test('manual CI keeps deterministic checks default and native package preflight 
   assert.match(continuousIntegration, /FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'/);
   assert.doesNotMatch(continuousIntegration, /build-calculix-(?:macos|linux)-runtime|build-calculix-windows-runtime/);
   assert.doesNotMatch(continuousIntegration, /curl |wget |actions\/download-artifact/);
+});
+
+test('native package checks pin the reviewed macOS icon toolchain and deterministic Linux renderer', () => {
+  for (const source of [workflow, continuousIntegration]) {
+    assert.match(source, /DEVELOPER_DIR: \/Applications\/Xcode_26\.1\.1\.app\/Contents\/Developer/);
+    assert.match(source, /FRAIA_XCODE_VERSION: '26\.1\.1'/);
+    assert.match(source, /test "\$\(xcodebuild -version \| sed -n '1p'\)" = "Xcode \$FRAIA_XCODE_VERSION"/);
+    assert.match(source, /test "\$\(xcrun --find actool\)" = "\$DEVELOPER_DIR\/usr\/bin\/actool"/);
+  }
+  assert.match(continuousIntegration, /runner: macos-26/);
+  assert.match(continuousIntegration, /runner: macos-26-intel/);
+  assert.match(workflow, /runs-on: \$\{\{ matrix\.arch == 'arm64' && 'macos-26' \|\| 'macos-26-intel' \}\}/);
+  const updaterMacos = jobSource('test-macos-updater');
+  assert.match(updaterMacos, /macos-15/);
+  assert.match(updaterMacos, /macos-15-intel/);
+  for (const source of [packagedElectronTest, desktopElectronTest]) {
+    assert.match(source, /"--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"/);
+  }
+  assert.match(packagedElectronTest, /"--no-sandbox"/);
+  assert.match(packagedElectronTest, /"XAUTHORITY"/);
+  assert.match(packagedE2e, /entry\.replaceAll\('\\\\', '\/'\)/);
+  assert.match(packagedE2e, /packagePath\.split\('\/'\)\.join\(path\.sep\)/);
+  assert.match(packagedE2e, /require\.resolve\('@playwright\/test\/cli'\)/);
+  assert.match(packagedE2e, /spawnSync\(process\.execPath/);
+  assert.match(packagedE2e, /assertMacosMinimumVersion/);
+  assert.match(packagedElectronTest, /test\.setTimeout\(120_000\)/);
+  assert.match(packagedElectronTest, /\[packaged-e2e\]/);
+  assert.match(continuousIntegration, /AssetCatalogAgent-AssetRuntime/);
+  assert.match(continuousIntegration, /Retrying once after a verified Xcode AssetCatalogAgent infrastructure crash/);
+  assert.match(signedMacosBuild, /AssetCatalogAgent-AssetRuntime/);
+  assert.match(signedMacosBuild, /runElectronBuilderWithActoolRetry/);
 });
 
 test('native runtime audit uses Bash for strict Linux container execution', () => {

@@ -114,6 +114,33 @@ class NonPersistentCredentialStore {
   async delete() {}
 }
 
+function fakeAiTestSafeStorage() {
+  const key = crypto.createHash('sha256')
+    .update('Fraia fake AI runtime credentials; test tokens only')
+    .digest();
+  const prefix = Buffer.from('fraia-fake-ai-v1\0');
+  return {
+    isEncryptionAvailable: () => true,
+    encryptString: (value) => {
+      const nonce = crypto.randomBytes(12);
+      const cipher = crypto.createCipheriv('aes-256-gcm', key, nonce);
+      const ciphertext = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+      return Buffer.concat([prefix, nonce, cipher.getAuthTag(), ciphertext]);
+    },
+    decryptString: (value) => {
+      if (!Buffer.isBuffer(value) || value.length < prefix.length + 28 || !value.subarray(0, prefix.length).equals(prefix)) {
+        throw new Error('invalid fake AI credential ciphertext');
+      }
+      const nonce = value.subarray(prefix.length, prefix.length + 12);
+      const authenticationTag = value.subarray(prefix.length + 12, prefix.length + 28);
+      const ciphertext = value.subarray(prefix.length + 28);
+      const decipher = crypto.createDecipheriv('aes-256-gcm', key, nonce);
+      decipher.setAuthTag(authenticationTag);
+      return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+    },
+  };
+}
+
 function reasoningLevels(model) {
   if (!model?.reasoning) return [{ effort: 'off', description: 'Reasoning is not exposed for this model.' }];
   // Pi's thinkingLevelMap translates public levels for a provider; its keys are
@@ -568,9 +595,10 @@ function fakeValueForSchema(schema) {
 class FakeFraiaAiRuntime extends FraiaAiRuntime {
   async initialize() {
     const credentialFile = path.join(this.userDataDir, 'ai', 'credentials.bin');
-    this.credentials = this.safeStorage?.isEncryptionAvailable?.()
-      ? new SecureCredentialStore({ safeStorage: this.safeStorage, filePath: credentialFile })
-      : new NonPersistentCredentialStore();
+    const credentialCipher = this.safeStorage?.isEncryptionAvailable?.()
+      ? this.safeStorage
+      : fakeAiTestSafeStorage();
+    this.credentials = new SecureCredentialStore({ safeStorage: credentialCipher, filePath: credentialFile });
     this.catalogRefreshedAt = new Date().toISOString();
     return this;
   }
@@ -683,6 +711,7 @@ module.exports = {
   FraiaAiRuntime,
   NonPersistentCredentialStore,
   SecureCredentialStore,
+  fakeAiTestSafeStorage,
   publicFraiaCatalogue,
   reasoningLevels,
   typeBoxSchema,
