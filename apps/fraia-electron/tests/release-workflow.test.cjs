@@ -31,6 +31,7 @@ const runtimeAudit = fs.readFileSync(
   'utf8',
 );
 const mainProcess = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+const changelog = fs.readFileSync(path.join(repositoryRoot, 'CHANGELOG.md'), 'utf8');
 
 function jobSource(jobId) {
   const match = workflow.match(
@@ -146,6 +147,13 @@ test('one stable publication atomically advances byte-identical stable and beta 
   assert.match(workflow, /git push origin HEAD:updates/);
   assert.doesNotMatch(workflow, /git add -A/);
   assert.match(workflow, /fraia-update-feed-publication-\$\{\{ github\.ref_name \}\}/);
+  assert.match(workflow, /changelog\.cjs/);
+  assert.match(workflow, /--notes-file release-notes\.md/);
+  assert.doesNotMatch(workflow, /--generate-notes/);
+  assert.match(workflow, /\.body' public-release\.json/);
+  assert.match(builder, /releaseInfo/);
+  assert.match(builder, /releaseNotes/);
+  assert.match(changelog, /^# Changelog/m);
 });
 
 test('manual CI keeps deterministic checks default and native package preflight explicitly opt-in', () => {
@@ -229,6 +237,11 @@ test('packaged updater code is shipped and Windows and Linux remain update-disab
   assert.match(updater, /platform !== 'darwin'/);
   assert.match(updater, /allowPrerelease = false/);
   assert.match(updater, /loopback-only/);
+  assert.match(mainProcess, /Restart and Update/);
+  assert.match(mainProcess, /Later/);
+  assert.match(mainProcess, /showUpdateReady/);
+  assert.match(mainProcess, /defaultId: 1/);
+  assert.match(mainProcess, /cancelId: 1/);
 });
 
 test('all third-party workflow actions are pinned to full commit SHAs', () => {

@@ -4,7 +4,13 @@ const test = require('node:test');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { UPDATE_FREQUENCY_MS, configureAutoUpdates, safeWriteEvent, validateTestFeedUrl } = require('../update-manager.cjs');
+const {
+  UPDATE_FREQUENCY_MS,
+  configureAutoUpdates,
+  normalizeReleaseNotes,
+  safeWriteEvent,
+  validateTestFeedUrl,
+} = require('../update-manager.cjs');
 
 function updaterDouble() {
   const updater = new EventEmitter();
@@ -55,6 +61,64 @@ test('macOS stable updater is automatic and configurable', async () => {
   assert.equal(scheduled.at(-1)[0], 'timeout');
   assert.ok(scheduled.at(-1)[1] <= UPDATE_FREQUENCY_MS.daily && scheduled.at(-1)[1] > UPDATE_FREQUENCY_MS.daily - 1_000);
   fs.rmSync(userData, { recursive: true, force: true });
+});
+
+test('downloaded updates show release notes and respect restart or later', async () => {
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-updater-ready-'));
+  const schedule = { clearInterval() {}, clearTimeout() {}, setInterval() { return 1; }, setTimeout() { return 2; } };
+  const metadata = { fraiaReleaseChannel: 'stable', fraiaUpdateFeedUrl: 'https://example.invalid/feed' };
+  const prompts = [];
+  const laterUpdater = updaterDouble();
+  configureAutoUpdates({
+    app: { isPackaged: true, getPath: () => userData, getVersion: () => '0.0.1' },
+    autoUpdater: laterUpdater,
+    packageMetadata: metadata,
+    platform: 'darwin',
+    schedule,
+    showUpdateReady: async (details) => { prompts.push(details); return { response: 1 }; },
+  });
+  laterUpdater.emit('update-downloaded', {
+    version: '0.0.2',
+    releaseNotes: [{ version: '0.0.2', note: '### Added\n\n- Native solver.' }],
+  });
+  laterUpdater.emit('update-downloaded', {
+    version: '0.0.2',
+    releaseNotes: 'Duplicate event must not open a second prompt.',
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(prompts, [{
+    version: '0.0.2',
+    releaseNotes: '0.0.2\nAdded\n\n• Native solver.',
+  }]);
+  assert.equal(laterUpdater.installArgs, undefined);
+  assert.equal(laterUpdater.autoInstallOnAppQuit, true);
+
+  const restartUpdater = updaterDouble();
+  configureAutoUpdates({
+    app: { isPackaged: true, getPath: () => userData, getVersion: () => '0.0.1' },
+    autoUpdater: restartUpdater,
+    packageMetadata: metadata,
+    platform: 'darwin',
+    schedule,
+    showUpdateReady: async () => ({ response: 0 }),
+  });
+  restartUpdater.emit('update-downloaded', { version: '0.0.2', releaseNotes: 'Fixed analysis.' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(restartUpdater.installArgs, [false, true]);
+  fs.rmSync(userData, { recursive: true, force: true });
+});
+
+test('release-note normalization handles updater string, array, and empty forms', () => {
+  assert.equal(normalizeReleaseNotes('  Added native solving.  '), 'Added native solving.');
+  assert.equal(
+    normalizeReleaseNotes([{ version: '0.0.2', note: 'Added native solving.' }]),
+    '0.0.2\nAdded native solving.',
+  );
+  assert.equal(
+    normalizeReleaseNotes('### Fixed\n\n- [Updater](https://example.invalid) reliability.'),
+    'Fixed\n\n• Updater reliability.',
+  );
+  assert.match(normalizeReleaseNotes(undefined), /reliability and compatibility/);
 });
 
 test('stable defaults daily and persisted frequency survives restart', () => {

@@ -102,6 +102,12 @@ jobs:
       - name: Require the declared repository license
         run: test -f LICENSE
 
+      - name: Require authoritative release notes
+        run: >-
+          node apps/fraia-electron/scripts/changelog.cjs
+          --version "${{ needs.prepare.outputs.version }}"
+          --output /tmp/fraia-release-notes.md
+
       - name: Require maintained release icons
         run: |
           cd apps/fraia-electron
@@ -598,10 +604,24 @@ jobs:
             --input publish/assets > expected-assets.txt
           rm -rf /tmp/reassembled-assets
           TITLE="Fraia ${{ needs.prepare.outputs.version }}"
+          node source/apps/fraia-electron/scripts/changelog.cjs \
+            --changelog source/CHANGELOG.md \
+            --version "${{ needs.prepare.outputs.version }}" \
+            --output release-notes.md
           if ! gh release view "$TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$TAG" --repo "$REPOSITORY" --verify-tag --title "$TITLE" --generate-notes --draft
+            gh release create "$TAG" --repo "$REPOSITORY" --verify-tag --title "$TITLE" --notes-file release-notes.md --draft
           fi
           IS_DRAFT=$(gh release view "$TAG" --repo "$REPOSITORY" --json isDraft --jq .isDraft)
+          EXPECTED_BODY=$(cat release-notes.md)
+          EXISTING_BODY=$(gh release view "$TAG" --repo "$REPOSITORY" --json body --jq .body)
+          if [ "$EXISTING_BODY" != "$EXPECTED_BODY" ]; then
+            if [ "$IS_DRAFT" = true ]; then
+              gh release edit "$TAG" --repo "$REPOSITORY" --notes-file release-notes.md
+            else
+              echo 'Published release notes differ from CHANGELOG.md; refusing to mutate the published release.' >&2
+              exit 1
+            fi
+          fi
           gh api "repos/$REPOSITORY/releases/tags/$TAG" --jq '.assets[].name' | LC_ALL=C sort > existing-assets.txt
           comm -23 existing-assets.txt expected-assets.txt > unexpected-assets.txt
           if [ -s unexpected-assets.txt ]; then echo 'Release contains unexpected assets:' >&2; cat unexpected-assets.txt >&2; exit 1; fi
@@ -630,7 +650,7 @@ jobs:
         shell: bash
         run: |
           TITLE="Fraia ${{ needs.prepare.outputs.version }}"
-          gh release edit "${{ github.ref_name }}" --repo "${{ github.repository }}" --title "$TITLE" --draft=false --prerelease=false --latest
+          gh release edit "${{ github.ref_name }}" --repo "${{ github.repository }}" --title "$TITLE" --notes-file release-notes.md --draft=false --prerelease=false --latest
 
       - name: Verify public release before sealing updater feed
         shell: bash
@@ -645,7 +665,8 @@ jobs:
           for attempt in {1..12}; do
             if curl --fail --location --silent --show-error "$API_URL" -o public-release.json \
               && [ "$(jq -r '.draft' public-release.json)" = false ] \
-              && [ "$(jq -r '.prerelease' public-release.json)" = "$EXPECTED_PRERELEASE" ]; then
+              && [ "$(jq -r '.prerelease' public-release.json)" = "$EXPECTED_PRERELEASE" ] \
+              && [ "$(jq -r '.body' public-release.json)" = "$(cat release-notes.md)" ]; then
               jq -r '.assets[].name' public-release.json | LC_ALL=C sort > public-assets.txt
               if diff --unified expected-assets.txt public-assets.txt; then break; fi
             fi

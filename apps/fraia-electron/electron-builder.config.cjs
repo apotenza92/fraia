@@ -7,14 +7,20 @@ const {
   packagedCalculixSourceDirectory,
   sidecarExecutableName,
 } = require('./package-boundary.cjs');
+const packageMetadata = require('./package.json');
 const { validateRuntimeDirectory } = require('./calculix-runtime-manifest.cjs');
 const { releaseContract } = require('./release-contract.cjs');
+const { readReleaseNotes } = require('./scripts/changelog.cjs');
 
 const platformArch = nativePlatformArch();
 const sidecarName = sidecarExecutableName();
 const calculixSourceDirectory = packagedCalculixSourceDirectory(__dirname);
 const calculixExecutable = path.join(calculixSourceDirectory, calculixExecutableName());
 const contract = releaseContract();
+const releaseNotes = readReleaseNotes({
+  changelogPath: path.resolve(__dirname, '..', '..', 'CHANGELOG.md'),
+  version: packageMetadata.version,
+});
 const hasSigningKeychain = Boolean(process.env.CSC_KEYCHAIN);
 const iconPaths = {
   darwin: path.join(__dirname, 'build', 'macos', 'Fraia.icon'),
@@ -44,6 +50,10 @@ module.exports = {
   productName: contract.productName,
   asar: true,
   compression: 'maximum',
+  releaseInfo: {
+    releaseName: `Fraia ${packageMetadata.version}`,
+    releaseNotes: releaseNotes.body,
+  },
   extraMetadata: {
     name: contract.packageName,
     productName: contract.productName,
