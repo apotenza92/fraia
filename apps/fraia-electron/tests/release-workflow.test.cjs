@@ -71,6 +71,8 @@ test('one stable release is tag-only, native on five solver-backed targets, and 
   const nativeVerifier = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'verify-native-package.cjs'), 'utf8');
   const macVerifier = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'verify-macos-package.cjs'), 'utf8');
   assert.match(nativeVerifier, /runtime-manifest\.json/);
+  assert.match(nativeVerifier, /waitForPathRemoval\(install\)/);
+  assert.match(nativeVerifier, /maxRetries: 20/);
   assert.match(macVerifier, /runtime-manifest\.json/);
   assert.match(macVerifier, /LSMinimumSystemVersion/);
   assert.match(macVerifier, /reviewed macOS 15\.0 minimum/);

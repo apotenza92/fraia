@@ -1,6 +1,11 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { releaseContract, metadataFileName } = require('../release-contract.cjs');
+const packageMetadata = require('../package.json');
+
+test('native package metadata points to Fraia public source', () => {
+  assert.equal(packageMetadata.homepage, 'https://github.com/apotenza92/fraia');
+});
 
 test('Fraia has one stable durable application identity', () => {
   const stable = releaseContract({ channel: 'stable', platform: 'darwin', arch: 'arm64' });
