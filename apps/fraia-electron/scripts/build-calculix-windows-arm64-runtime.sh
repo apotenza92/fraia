@@ -203,6 +203,18 @@ write_calculix_project() {
   local payload_root=$7
   local controlled_root=$8
   local source_name
+  local source_root_cmake
+  local spooles_root_cmake
+  local spooles_library_cmake
+  local arpack_library_cmake
+  local openblas_library_cmake
+  local payload_root_cmake
+  source_root_cmake=$(cygpath -m "$source_root")
+  spooles_root_cmake=$(cygpath -m "$spooles_root")
+  spooles_library_cmake=$(cygpath -m "$spooles_library")
+  arpack_library_cmake=$(cygpath -m "$arpack_library")
+  openblas_library_cmake=$(cygpath -m "$openblas_library")
+  payload_root_cmake=$(cygpath -m "$payload_root")
 
   mkdir -p "$project_root"
   {
@@ -218,7 +230,7 @@ write_calculix_project() {
         printf 'CalculiX Makefile.inc references missing source %s.\n' "$source_name" >&2
         return 1
       fi
-      printf '  "%s"\n' "$source_root/$source_name"
+      printf '  "%s"\n' "$(cygpath -m "$source_root/$source_name")"
     done < <(
       awk '
         /^[[:space:]]*[A-Za-z0-9_.]+[.][cf][[:space:]]*\\?[[:space:]]*$/ {
@@ -230,7 +242,7 @@ write_calculix_project() {
     )
     printf ')\n'
     printf 'add_library(ccxcore STATIC ${CCX_SOURCES})\n'
-    printf 'target_include_directories(ccxcore PRIVATE "%s")\n' "$spooles_root"
+    printf 'target_include_directories(ccxcore PRIVATE "%s")\n' "$spooles_root_cmake"
     printf 'target_compile_definitions(ccxcore PRIVATE ARCH=Linux SPOOLES ARPACK MATRIXSTORAGE NETWORKOUT USE_MT=1)\n'
     printf 'target_compile_options(ccxcore PRIVATE\n'
     printf '  "$<$<COMPILE_LANGUAGE:C>:-O2;-g0;-std=gnu17;-Wno-implicit-function-declaration;-Wno-incompatible-pointer-types;-ffile-prefix-map=%s=/usr/src/fraia-runtime;-fdebug-prefix-map=%s=/usr/src/fraia-runtime>"\n' \
@@ -238,8 +250,8 @@ write_calculix_project() {
     printf '  "$<$<COMPILE_LANGUAGE:Fortran>:-O2;-g0;-fopenmp;-cpp;-ffile-prefix-map=%s=/usr/src/fraia-runtime;-fdebug-prefix-map=%s=/usr/src/fraia-runtime>"\n' \
       "$controlled_root" "$controlled_root"
     printf ')\n'
-    printf 'add_executable(ccx "%s/ccx_2.23.c")\n' "$source_root"
-    printf 'target_include_directories(ccx PRIVATE "%s")\n' "$spooles_root"
+    printf 'add_executable(ccx "%s/ccx_2.23.c")\n' "$source_root_cmake"
+    printf 'target_include_directories(ccx PRIVATE "%s")\n' "$spooles_root_cmake"
     printf 'target_compile_definitions(ccx PRIVATE ARCH=Linux SPOOLES ARPACK MATRIXSTORAGE NETWORKOUT USE_MT=1)\n'
     printf 'target_compile_options(ccx PRIVATE -O2 -g0 -std=gnu17 -Wno-implicit-function-declaration -Wno-incompatible-pointer-types "-ffile-prefix-map=%s=/usr/src/fraia-runtime" "-fdebug-prefix-map=%s=/usr/src/fraia-runtime")\n' \
       "$controlled_root" "$controlled_root"
@@ -254,11 +266,11 @@ write_calculix_project() {
     printf ')\n'
     printf 'target_link_libraries(ccx PRIVATE\n'
     printf '  "-Wl,--start-group" ccxcore "%s" "%s" "%s"\n' \
-      "$spooles_library" "$arpack_library" "$openblas_library"
+      "$spooles_library_cmake" "$arpack_library_cmake" "$openblas_library_cmake"
     printf '  omp winpthread m "-Wl,--end-group"\n'
     printf ')\n'
     printf 'set_target_properties(ccx PROPERTIES OUTPUT_NAME ccx SUFFIX ".exe" RUNTIME_OUTPUT_DIRECTORY "%s")\n' \
-      "$payload_root"
+      "$payload_root_cmake"
   } >"$project_root/CMakeLists.txt"
 }
 
@@ -288,15 +300,17 @@ build_once() {
     "$build_root/spooles/ETree/src/transform.c"
 
   local spooles_root="$build_root/spooles"
+  local spooles_root_cmake
+  spooles_root_cmake=$(cygpath -m "$spooles_root")
   mkdir -p "$build_root/spooles-project"
   {
     printf 'cmake_minimum_required(VERSION 3.24)\n'
     printf 'project(FraiaSPOOLES C)\n'
-    printf 'file(GLOB_RECURSE SPOOLES_SOURCES CONFIGURE_DEPENDS "%s/*/src/*.c")\n' "$spooles_root"
+    printf 'file(GLOB_RECURSE SPOOLES_SOURCES CONFIGURE_DEPENDS "%s/*/src/*.c")\n' "$spooles_root_cmake"
     printf 'list(FILTER SPOOLES_SOURCES EXCLUDE REGEX "/MPI/")\n'
     printf 'list(SORT SPOOLES_SOURCES)\n'
     printf 'add_library(spooles STATIC ${SPOOLES_SOURCES})\n'
-    printf 'target_include_directories(spooles PUBLIC "%s")\n' "$spooles_root"
+    printf 'target_include_directories(spooles PUBLIC "%s")\n' "$spooles_root_cmake"
     printf 'target_compile_options(spooles PRIVATE -O2 -g0 -std=gnu17 "-ffile-prefix-map=%s=/usr/src/fraia-runtime" "-fdebug-prefix-map=%s=/usr/src/fraia-runtime")\n' \
       "$physical_windows_root" "$physical_windows_root"
     printf 'set_target_properties(spooles PROPERTIES OUTPUT_NAME spooles PREFIX lib)\n'
