@@ -105,6 +105,10 @@ jobs:
         shell: bash
         run: test "$(node -p 'process.arch')" = "${{ matrix.arch }}"
 
+      - name: Install Linux package tools
+        if: ${{ matrix.platform == 'linux' }}
+        run: sudo apt-get update && sudo apt-get install -y cpio fakeroot rpm
+
       - name: Verify reviewed Xcode
         if: ${{ matrix.platform == 'darwin' }}
         shell: bash
@@ -147,3 +151,39 @@ jobs:
           else
             npm run test:package
           fi
+
+      - name: Build and exercise Linux release packages
+        if: ${{ matrix.platform == 'linux' }}
+        working-directory: apps/fraia-electron
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          FRAIA_RELEASE_ARCH: ${{ matrix.arch }}
+          FRAIA_RELEASE_CHANNEL: stable
+          FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
+          FRAIA_REQUIRE_RELEASE_ICON: '1'
+          FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}/apps/fraia-electron/ci-release/stable/linux/${{ matrix.arch }}
+          FRAIA_RELEASE_PLATFORM: linux
+        run: |
+          npx --no-install electron-builder --config electron-builder.config.cjs --linux AppImage deb rpm --${{ matrix.arch }} --publish never
+          xvfb-run -a node scripts/verify-native-package.cjs \
+            --channel stable \
+            --arch "${{ matrix.arch }}" \
+            --output-dir "ci-release/stable/linux/${{ matrix.arch }}"
+
+      - name: Build and exercise Windows installer
+        if: ${{ matrix.platform == 'win32' }}
+        working-directory: apps/fraia-electron
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          FRAIA_RELEASE_ARCH: ${{ matrix.arch }}
+          FRAIA_RELEASE_CHANNEL: stable
+          FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
+          FRAIA_REQUIRE_RELEASE_ICON: '1'
+          FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}/apps/fraia-electron/ci-release/stable/win32/${{ matrix.arch }}
+          FRAIA_RELEASE_PLATFORM: win32
+        run: |
+          npx --no-install electron-builder --config electron-builder.config.cjs --win nsis --${{ matrix.arch }} --publish never
+          node scripts/verify-native-package.cjs \
+            --channel stable \
+            --arch "${{ matrix.arch }}" \
+            --output-dir "ci-release/stable/win32/${{ matrix.arch }}"

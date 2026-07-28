@@ -172,6 +172,9 @@ test('manual CI keeps deterministic checks default and native package preflight 
   assert.match(continuousIntegration, /verify-calculix-runtimes\.cjs/);
   assert.match(continuousIntegration, /--target "\$\{\{ matrix\.platform \}\}-\$\{\{ matrix\.arch \}\}"/);
   assert.match(continuousIntegration, /npm run test:package/);
+  assert.match(continuousIntegration, /--linux AppImage deb rpm --\$\{\{ matrix\.arch \}\} --publish never/);
+  assert.match(continuousIntegration, /--win nsis --\$\{\{ matrix\.arch \}\} --publish never/);
+  assert.match(continuousIntegration, /verify-native-package\.cjs/);
   assert.match(continuousIntegration, /FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'/);
   assert.doesNotMatch(continuousIntegration, /build-calculix-(?:macos|linux)-runtime|build-calculix-windows-runtime/);
   assert.doesNotMatch(continuousIntegration, /curl |wget |actions\/download-artifact/);
