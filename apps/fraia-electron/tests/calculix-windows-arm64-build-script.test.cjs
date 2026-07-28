@@ -44,6 +44,9 @@ test('Windows ARM64 audit is native, source-built, reproducible, and fail-closed
   assert.match(script, /cygpath -u "\$\{RUNNER_TEMP:/);
   assert.match(script, /source_root_cmake=\$\(cygpath -m "\$source_root"\)/);
   assert.match(script, /spooles_root_cmake=\$\(cygpath -m "\$spooles_root"\)/);
+  assert.match(script, /-DMINGW64=1/);
+  assert.match(script, /-DCMAKE_SYSTEM_PROCESSOR=ARM64/);
+  assert.match(script, /\^#define ARCH_ARM64/);
   assert.match(script, /Machine: IMAGE_FILE_MACHINE_ARM64 \(0xAA64\)/);
   assert.match(script, /build_once "\$work_root\/build-one"/);
   assert.match(script, /build_once "\$work_root\/build-two"/);

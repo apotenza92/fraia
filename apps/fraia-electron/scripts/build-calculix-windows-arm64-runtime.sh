@@ -341,6 +341,8 @@ build_once() {
     -DBUILD_SHARED_LIBS=OFF \
     -DNO_SHARED=ON \
     -DDYNAMIC_ARCH=OFF \
+    -DMINGW64=1 \
+    -DCMAKE_SYSTEM_PROCESSOR=ARM64 \
     -DTARGET=ARMV8 \
     -DUSE_OPENMP=OFF \
     -DUSE_THREAD=ON \
@@ -349,6 +351,10 @@ build_once() {
     "-DCMAKE_Fortran_FLAGS_RELEASE=-O2 -g0 -ffile-prefix-map=$physical_windows_root=/usr/src/fraia-runtime -fdebug-prefix-map=$physical_windows_root=/usr/src/fraia-runtime" \
     -DCMAKE_INSTALL_PREFIX="$prefix" \
     >"$build_root/openblas-configure.log" 2>&1
+  if ! grep -Eq '^#define ARCH_ARM64[[:space:]]+1$' "$build_root/openblas-build/config.h"; then
+    printf 'OpenBLAS did not configure ARM64 kernels.\n' >&2
+    return 1
+  fi
   cmake --build "$build_root/openblas-build" --parallel 2 \
     >"$build_root/openblas-build.log" 2>&1
   cmake --install "$build_root/openblas-build" >>"$build_root/openblas-build.log" 2>&1
