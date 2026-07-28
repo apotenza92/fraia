@@ -168,9 +168,12 @@ test('native package checks pin the reviewed macOS icon toolchain and determinis
     assert.match(source, /test "\$\(xcrun --find actool\)" = "\$DEVELOPER_DIR\/usr\/bin\/actool"/);
   }
   for (const source of [packagedElectronTest, desktopElectronTest]) {
-    assert.match(source, /"--use-gl=angle", "--use-angle=swiftshader"/);
+    assert.match(source, /"--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"/);
   }
   assert.match(packagedE2e, /entry\.replaceAll\('\\\\', '\/'\)/);
+  assert.match(packagedE2e, /packagePath\.split\('\/'\)\.join\(path\.sep\)/);
+  assert.match(packagedElectronTest, /test\.setTimeout\(120_000\)/);
+  assert.match(packagedElectronTest, /\[packaged-e2e\]/);
 });
 
 test('native runtime audit uses Bash for strict Linux container execution', () => {

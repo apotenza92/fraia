@@ -91,7 +91,8 @@ function verifyProductionDependencyBoundary(resources) {
     if (!entries.has(`/${packagePath}`)) {
       throw new Error(`Packaged Fraia is missing production dependency ${dependency}.`);
     }
-    const packaged = JSON.parse(asar.extractFile(archive, packagePath).toString('utf8'));
+    const extractionPath = packagePath.split('/').join(path.sep);
+    const packaged = JSON.parse(asar.extractFile(archive, extractionPath).toString('utf8'));
     const locked = packageLock.packages[`node_modules/${dependency}`];
     if (packaged.version !== locked?.version || packaged.license !== 'MIT') {
       throw new Error(`Packaged Fraia has unreviewed ${dependency} version or licence metadata.`);

@@ -9,6 +9,7 @@ const {
   FraiaAiRuntime,
   NonPersistentCredentialStore,
   SecureCredentialStore,
+  fakeAiTestSafeStorage,
   publicFraiaCatalogue,
   reasoningLevels,
   typeBoxSchema,
@@ -77,6 +78,20 @@ test('non-persistent store exposes no credentials and refuses writes', async () 
   assert.equal(await store.read('provider'), undefined);
   assert.deepEqual(await store.list(), []);
   await assert.rejects(() => store.modify('provider', async () => ({ type: 'api_key', key: 'secret' })), /persistent authentication is disabled/);
+});
+
+test('fake AI test cipher persists only fake tokens without relying on OS encryption', async () => {
+  const first = fakeAiTestSafeStorage();
+  const second = fakeAiTestSafeStorage();
+  const plaintext = 'fake-chatgpt-access-token';
+  const encrypted = first.encryptString(plaintext);
+
+  assert.equal(encrypted.includes(Buffer.from(plaintext)), false);
+  assert.equal(second.decryptString(encrypted), plaintext);
+  assert.throws(
+    () => second.decryptString(Buffer.from(encrypted).fill(0, encrypted.length - 1)),
+    /invalid fake AI credential ciphertext|Unsupported state or unable to authenticate data/,
+  );
 });
 
 test('catalogue reasoning levels reflect model capability', () => {
@@ -390,12 +405,12 @@ test('structured turns surface provider failures and enforce the configured time
   }), /cancelled/);
 });
 
-test('fake Pi runtime covers encrypted reconnect, structured turns, cancellation, and restart', async (t) => {
+test('fake Pi runtime covers encrypted reconnect without OS encryption, structured turns, cancellation, and restart', async (t) => {
   const { directory } = temporaryFile();
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const events = [];
   const options = {
-    safeStorage: fakeSafeStorage(),
+    safeStorage: fakeSafeStorage(false),
     userDataDir: directory,
     emitStatus: (event) => events.push(event),
   };

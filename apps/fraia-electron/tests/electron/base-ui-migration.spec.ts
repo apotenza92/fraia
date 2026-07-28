@@ -10,7 +10,7 @@ const allowedConsoleWarnings = [
   /Electron Security Warning \(Insecure Content-Security-Policy\)/,
 ]
 const deterministicLinuxRenderingArgs = process.platform === "linux"
-  ? ["--use-gl=angle", "--use-angle=swiftshader"]
+  ? ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
   : []
 
 test("desktop shell preserves keyboard and accessibility contracts", async () => {
