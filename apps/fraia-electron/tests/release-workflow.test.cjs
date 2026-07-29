@@ -287,6 +287,10 @@ test('manual CI keeps deterministic checks default and native package preflight 
   assert.match(continuousIntegration, /run_native_package_preflight:/);
   assert.match(continuousIntegration, /default: false/);
   assert.match(continuousIntegration, /if: \$\{\{ inputs\.run_native_package_preflight \}\}/);
+  assert.match(continuousIntegration, /run_macos_signing_audit:/);
+  assert.match(continuousIntegration, /uses: \.\/\.github\/workflows\/macos-signing-audit\.yml/);
+  assert.match(continuousIntegration, /run_tuf_signing_audit:/);
+  assert.match(continuousIntegration, /uses: \.\/\.github\/workflows\/tuf-signing-audit\.yml/);
   for (const runner of ['macos-26', 'macos-26-intel', 'windows-11-arm', 'windows-2025', 'ubuntu-24.04', 'ubuntu-24.04-arm']) {
     assert.match(continuousIntegration, new RegExp(runner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }

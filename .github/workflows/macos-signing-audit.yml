@@ -1,6 +1,7 @@
 name: macOS signing audit
 
 on:
+  workflow_call:
   workflow_dispatch:
 
 permissions:
