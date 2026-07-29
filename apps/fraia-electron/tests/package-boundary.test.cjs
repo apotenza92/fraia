@@ -22,6 +22,7 @@ test('production uses the reviewed low-level Pi runtime without coding-agent shr
     '@earendil-works/pi-agent-core',
     '@earendil-works/pi-ai',
     'electron-updater',
+    'tuf-js',
     'typebox',
   ]);
   for (const dependency of Object.keys(packageJson.dependencies)) {

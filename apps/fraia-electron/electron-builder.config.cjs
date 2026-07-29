@@ -9,7 +9,7 @@ const {
 } = require('./package-boundary.cjs');
 const packageMetadata = require('./package.json');
 const { validateRuntimeDirectory } = require('./calculix-runtime-manifest.cjs');
-const { releaseContract } = require('./release-contract.cjs');
+const { metadataFileName, releaseContract } = require('./release-contract.cjs');
 const { readReleaseNotes } = require('./scripts/changelog.cjs');
 
 const platformArch = nativePlatformArch();
@@ -28,6 +28,7 @@ const iconPaths = {
   win32: path.join(__dirname, 'build', 'icon.ico'),
   linux: path.join(__dirname, 'build', 'icons'),
 };
+const tufRootPath = path.join(__dirname, 'build', 'update-trust', 'root.json');
 const adaptiveMacosIconAvailable = contract.platform === 'darwin'
   ? selectAdaptiveMacosIconToolchain()
   : false;
@@ -44,6 +45,9 @@ if (
 if (process.env.FRAIA_REQUIRE_PACKAGED_CALCULIX === '1') {
   validateRuntimeDirectory(calculixSourceDirectory, platformArch);
 }
+if (process.env.FRAIA_REQUIRE_TUF_ROOT === '1' && !fs.statSync(tufRootPath, { throwIfNoEntry: false })?.isFile()) {
+  throw new Error(`A reviewed Fraia TUF trust root is required at ${tufRootPath}.`);
+}
 
 module.exports = {
   appId: contract.appId,
@@ -58,7 +62,9 @@ module.exports = {
     name: contract.packageName,
     productName: contract.productName,
     fraiaReleaseChannel: contract.channel,
+    fraiaTufRepositoryUrl: `${contract.feedUrl}/tuf`,
     fraiaUpdateFeedUrl: contract.feedUrl,
+    fraiaUpdateTargetName: metadataFileName(contract.platform, contract.arch),
   },
   directories: {
     output: process.env.FRAIA_RELEASE_OUTPUT_DIR || 'release',
@@ -72,6 +78,7 @@ module.exports = {
     'application-metadata.cjs',
     'binary-architecture.cjs',
     'package-boundary.cjs',
+    'tuf-update-feed.cjs',
     'update-manager.cjs',
     'scripts/perf-budgets.cjs',
     'package.json',
@@ -84,6 +91,10 @@ module.exports = {
     ...(fs.existsSync(calculixExecutable) ? [{
       from: calculixSourceDirectory,
       to: path.join('runtimes', 'calculix', platformArch),
+    }] : []),
+    ...(fs.existsSync(tufRootPath) ? [{
+      from: tufRootPath,
+      to: path.join('update-trust', 'root.json'),
     }] : []),
   ],
   mac: {

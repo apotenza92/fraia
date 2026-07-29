@@ -969,14 +969,18 @@ app.whenReady().then(async () => {
     await ensureAiRuntime();
     await ensureSidecar();
     createWindow();
-    if (app.isPackaged && process.platform === 'darwin') {
-      const { autoUpdater } = require('electron-updater');
-      updateController = configureAutoUpdates({
-        app,
-        autoUpdater,
-        packageMetadata,
-        showUpdateReady,
-      });
+    if (app.isPackaged) {
+      try {
+        const { autoUpdater } = require('electron-updater');
+        updateController = await configureAutoUpdates({
+          app,
+          autoUpdater,
+          packageMetadata,
+          showUpdateReady,
+        });
+      } catch (error) {
+        safeError(`[updater] secure updater initialization failed: ${error}`);
+      }
     }
     installApplicationMenu();
   } catch (error) {

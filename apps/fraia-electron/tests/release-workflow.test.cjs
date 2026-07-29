@@ -315,10 +315,14 @@ test('native updater menu exposes manual checking and every supported persisted 
   assert.match(mainProcess, /setFrequency/);
 });
 
-test('packaged updater code is shipped and Windows and Linux remain update-disabled', () => {
+test('packaged updater code ships TUF verification for Windows and Linux', () => {
   assert.match(builder, /'update-manager\.cjs'/);
+  assert.match(builder, /'tuf-update-feed\.cjs'/);
+  assert.match(builder, /FRAIA_REQUIRE_TUF_ROOT/);
   const updater = fs.readFileSync(path.join(__dirname, '..', 'update-manager.cjs'), 'utf8');
+  assert.match(updater, /createTufVerifiedUpdateFeed/);
   assert.match(updater, /platform !== 'darwin'/);
+  assert.match(updater, /linux-package-manager/);
   assert.match(updater, /allowPrerelease = false/);
   assert.match(updater, /loopback-only/);
   assert.match(mainProcess, /Restart and Update/);

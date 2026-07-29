@@ -134,7 +134,7 @@ test('stable defaults daily and persisted frequency survives restart', () => {
   fs.rmSync(userData, { recursive: true, force: true });
 });
 
-test('unpackaged and non-macOS runtimes cannot activate production updating', () => {
+test('unpackaged and unsupported runtimes cannot activate production updating', () => {
   const updater = updaterDouble();
   const result = configureAutoUpdates({
     app: { isPackaged: false },
@@ -147,9 +147,75 @@ test('unpackaged and non-macOS runtimes cannot activate production updating', ()
     app: { isPackaged: true },
     autoUpdater: updater,
     packageMetadata: {},
-    platform: 'linux',
+    platform: 'freebsd',
   });
   assert.deepEqual(packaged, { enabled: false });
+});
+
+test('Linux distro packages defer to their package manager while AppImage can self-update', () => {
+  const updater = updaterDouble();
+  const packaged = configureAutoUpdates({
+    app: { isPackaged: true },
+    autoUpdater: updater,
+    env: {},
+    packageMetadata: {},
+    platform: 'linux',
+  });
+  assert.deepEqual(packaged, { enabled: false, reason: 'linux-package-manager' });
+  assert.equal(updater.feed, undefined);
+});
+
+test('Windows uses TUF-authenticated metadata, keeps settings, and requests a silent install', async () => {
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-updater-windows-'));
+  try {
+    fs.writeFileSync(path.join(userData, 'update-frequency.json'), '{"frequency":"weekly"}\n');
+    const updater = updaterDouble();
+    let received;
+    let closed = false;
+    const result = await configureAutoUpdates({
+      app: { isPackaged: true, getPath: () => userData, getVersion: () => '0.0.1' },
+      autoUpdater: updater,
+      createVerifiedFeed: async (options) => {
+        received = options;
+        return {
+          close: async () => { closed = true; },
+          feedUrl: 'http://127.0.0.1:43123',
+        };
+      },
+      packageMetadata: {
+        fraiaReleaseChannel: 'stable',
+        fraiaTufRepositoryUrl: 'https://raw.githubusercontent.com/apotenza92/fraia/updates/stable/win32/x64/tuf',
+        fraiaUpdateFeedUrl: 'https://raw.githubusercontent.com/apotenza92/fraia/updates/stable/win32/x64',
+        fraiaUpdateTargetName: 'latest.yml',
+      },
+      env: {},
+      platform: 'win32',
+      resourcesPath: path.join(userData, 'resources'),
+      schedule: { clearInterval() {}, clearTimeout() {}, setInterval() { return 1; }, setTimeout() { return 2; } },
+      showUpdateReady: async () => ({ response: 0 }),
+    });
+    assert.equal(result.enabled, true);
+    assert.equal(result.trustedMetadata, true);
+    assert.equal(result.frequency, 'weekly');
+    assert.equal(updater.feed.url, 'http://127.0.0.1:43123');
+    assert.equal(received.targetName, 'latest.yml');
+    assert.equal(received.trustDir, path.join(userData, 'update-trust'));
+    assert.equal(
+      received.embeddedRootPath,
+      path.join(userData, 'resources', 'update-trust', 'root.json'),
+    );
+    updater.emit('update-downloaded', { version: '0.0.2', releaseNotes: 'Secure update.' });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(updater.installArgs, [true, true]);
+    result.stop();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(closed, true);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(userData, 'update-frequency.json'))), {
+      frequency: 'weekly',
+    });
+  } finally {
+    fs.rmSync(userData, { recursive: true, force: true });
+  }
 });
 
 test('never and startup frequencies do not create repeating schedules', async () => {

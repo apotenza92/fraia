@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { createTufVerifiedUpdateFeed } = require('./tuf-update-feed.cjs');
 
 const UPDATE_FREQUENCY_MS = Object.freeze({
   hourly: 60 * 60 * 1000,
@@ -69,26 +70,90 @@ function normalizeReleaseNotes(value) {
 function configureAutoUpdates({
   app,
   autoUpdater,
+  createVerifiedFeed = createTufVerifiedUpdateFeed,
   packageMetadata,
   env = process.env,
   log = console,
   platform = process.platform,
+  resourcesPath = process.resourcesPath,
   schedule = { clearInterval, clearTimeout, setInterval, setTimeout },
   showUpdateReady = async () => ({ response: 1 }),
 } = {}) {
-  if (!app?.isPackaged || platform !== 'darwin' || env.FRAIA_DISABLE_UPDATES === '1') {
+  if (
+    !app?.isPackaged
+    || !['darwin', 'win32', 'linux'].includes(platform)
+    || env.FRAIA_DISABLE_UPDATES === '1'
+  ) {
     return { enabled: false };
+  }
+  if (platform === 'linux' && !env.APPIMAGE && env.FRAIA_E2E_UPDATER !== '1') {
+    return { enabled: false, reason: 'linux-package-manager' };
   }
 
   const testMode = env.FRAIA_E2E_UPDATER === '1';
-  const feedUrl = testMode && env.FRAIA_UPDATE_FEED_URL
+  const configuredFeedUrl = testMode && env.FRAIA_UPDATE_FEED_URL
     ? validateTestFeedUrl(env.FRAIA_UPDATE_FEED_URL)
     : packageMetadata.fraiaUpdateFeedUrl;
   const channel = packageMetadata.fraiaReleaseChannel;
-  if (channel !== 'stable' || typeof feedUrl !== 'string' || !feedUrl) {
+  if (channel !== 'stable' || typeof configuredFeedUrl !== 'string' || !configuredFeedUrl) {
     throw new Error('Packaged Fraia updater metadata is invalid.');
   }
 
+  if (platform !== 'darwin' && !testMode) {
+    const targetName = packageMetadata.fraiaUpdateTargetName;
+    const repositoryUrl = packageMetadata.fraiaTufRepositoryUrl;
+    if (typeof targetName !== 'string' || !targetName || typeof repositoryUrl !== 'string' || !repositoryUrl) {
+      throw new Error('Packaged Fraia TUF updater metadata is invalid.');
+    }
+    const userData = app.getPath('userData');
+    return createVerifiedFeed({
+      embeddedRootPath: path.join(resourcesPath, 'update-trust', 'root.json'),
+      repositoryUrl,
+      targetName,
+      trustDir: path.join(userData, 'update-trust'),
+    }).then((verifiedFeed) => activateUpdater({
+      app,
+      autoUpdater,
+      channel,
+      env,
+      feedUrl: verifiedFeed.feedUrl,
+      log,
+      platform,
+      schedule,
+      showUpdateReady,
+      testMode,
+      verifiedFeed,
+    }));
+  }
+
+  return activateUpdater({
+    app,
+    autoUpdater,
+    channel,
+    env,
+    feedUrl: configuredFeedUrl,
+    log,
+    platform,
+    schedule,
+    showUpdateReady,
+    testMode,
+    verifiedFeed: null,
+  });
+}
+
+function activateUpdater({
+  app,
+  autoUpdater,
+  channel,
+  env,
+  feedUrl,
+  log,
+  platform,
+  schedule,
+  showUpdateReady,
+  testMode,
+  verifiedFeed,
+}) {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.allowPrerelease = false;
@@ -121,14 +186,14 @@ function configureAutoUpdates({
     const releaseNotes = normalizeReleaseNotes(info.releaseNotes);
     event('update-downloaded', { version: info.version, releaseNotes });
     if (testMode && env.FRAIA_E2E_INSTALL_UPDATE === '1') {
-      schedule.setTimeout(() => autoUpdater.quitAndInstall(false, true), 100);
+      schedule.setTimeout(() => autoUpdater.quitAndInstall(platform !== 'darwin', true), 100);
       return;
     }
     if (promptedVersion === info.version) return;
     promptedVersion = info.version;
     try {
       const result = await showUpdateReady({ releaseNotes, version: info.version });
-      if (result?.response === 0) autoUpdater.quitAndInstall(false, true);
+      if (result?.response === 0) autoUpdater.quitAndInstall(platform !== 'darwin', true);
     } catch (error) {
       log.error('[updater] could not present downloaded update', error);
     }
@@ -199,7 +264,13 @@ function configureAutoUpdates({
     get frequency() { return frequency; },
     installed: false,
     setFrequency,
-    stop: stopSchedule,
+    stop: () => {
+      stopSchedule();
+      if (verifiedFeed) void verifiedFeed.close().catch((error) => {
+        log.error('[updater] could not close verified local feed', error);
+      });
+    },
+    trustedMetadata: Boolean(verifiedFeed),
   };
 }
 
