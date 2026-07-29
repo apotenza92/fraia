@@ -98,7 +98,14 @@ done
 
 clang_executable="$MINGW_PREFIX/bin/clang.exe"
 flang_executable="$MINGW_PREFIX/bin/flang.exe"
-if [[ ! -f "$clang_executable" || ! -f "$flang_executable" ]]; then
+llvm_ar_executable="$MINGW_PREFIX/bin/llvm-ar.exe"
+llvm_ranlib_executable="$MINGW_PREFIX/bin/llvm-ranlib.exe"
+if [[
+  ! -f "$clang_executable"
+  || ! -f "$flang_executable"
+  || ! -f "$llvm_ar_executable"
+  || ! -f "$llvm_ranlib_executable"
+]]; then
   printf 'The reviewed CLANGARM64 compiler executables are unavailable.\n' >&2
   exit 1
 fi
@@ -109,6 +116,8 @@ if ! grep -Fq 'Machine: IMAGE_FILE_MACHINE_ARM64 (0xAA64)' <<<"$clang_header" ||
   printf 'The reviewed Clang and Flang executables must themselves be native Windows ARM64.\n' >&2
   exit 1
 fi
+llvm_ar_cmake=$(cygpath -m "$llvm_ar_executable")
+llvm_ranlib_cmake=$(cygpath -m "$llvm_ranlib_executable")
 
 output=$(cd "$(dirname "$output")" && pwd)/$(basename "$output")
 evidence=$(cd "$(dirname "$evidence")" && pwd)/$(basename "$evidence")
@@ -319,8 +328,8 @@ build_once() {
     -B "$build_root/spooles-build" \
     -G Ninja \
     -DCMAKE_C_COMPILER=clang \
-    -DCMAKE_AR=llvm-ar \
-    -DCMAKE_RANLIB=llvm-ranlib \
+    "-DCMAKE_AR=$llvm_ar_cmake" \
+    "-DCMAKE_RANLIB=$llvm_ranlib_cmake" \
     -DCMAKE_BUILD_TYPE=Release \
     >"$build_root/spooles-configure.log" 2>&1
   cmake --build "$build_root/spooles-build" --parallel 2 \
@@ -334,10 +343,11 @@ build_once() {
     -G Ninja \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_Fortran_COMPILER=flang \
-    -DCMAKE_AR=llvm-ar \
-    -DCMAKE_RANLIB=llvm-ranlib \
+    "-DCMAKE_AR=$llvm_ar_cmake" \
+    "-DCMAKE_RANLIB=$llvm_ranlib_cmake" \
     -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_SHARED_LIBS=OFF \
+    -DBUILD_TESTING=OFF \
     -DNO_SHARED=ON \
     -DDYNAMIC_ARCH=OFF \
     -DMINGW64=1 \
@@ -367,8 +377,8 @@ build_once() {
     -G Ninja \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_Fortran_COMPILER=flang \
-    -DCMAKE_AR=llvm-ar \
-    -DCMAKE_RANLIB=llvm-ranlib \
+    "-DCMAKE_AR=$llvm_ar_cmake" \
+    "-DCMAKE_RANLIB=$llvm_ranlib_cmake" \
     -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_SHARED_LIBS=OFF \
     -DMPI=OFF \
@@ -409,8 +419,8 @@ build_once() {
     -G Ninja \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_Fortran_COMPILER=flang \
-    -DCMAKE_AR=llvm-ar \
-    -DCMAKE_RANLIB=llvm-ranlib \
+    "-DCMAKE_AR=$llvm_ar_cmake" \
+    "-DCMAKE_RANLIB=$llvm_ranlib_cmake" \
     -DCMAKE_BUILD_TYPE=Release \
     >"$build_root/calculix-configure.log" 2>&1
   cmake --build "$build_root/calculix-build" --parallel 2 \
