@@ -132,5 +132,6 @@ test('native updater workflow performs real TUF-backed Windows and AppImage repl
   assert.doesNotMatch(auditScript, /copyFileSync\(privateKeyPath/);
   assert.match(continuousIntegration, /nonmac_updater_target:/);
   assert.match(continuousIntegration, /- linux-arm64/);
+  assert.match(continuousIntegration, /group:.*inputs\.nonmac_updater_target/);
   assert.match(continuousIntegration, /uses: \.\/\.github\/workflows\/nonmac-updater-audit\.yml/);
 });

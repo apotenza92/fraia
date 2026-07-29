@@ -28,7 +28,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: fraia-ci-${{ github.workflow }}-${{ github.ref }}
+  group: fraia-ci-${{ github.workflow }}-${{ github.ref }}-${{ inputs.nonmac_updater_target }}-${{ inputs.run_native_package_preflight }}
   cancel-in-progress: true
 
 jobs:
