@@ -107,6 +107,8 @@ test('native updater workflow performs real TUF-backed Windows and AppImage repl
   assert.match(workflow, /latest-linux-arm64\.yml/);
   assert.match(workflow, /--linux AppImage --arm64/);
   assert.match(workflow, /Synthetic prior package used only for the native updater migration audit/);
+  assert.match(workflow, /FRAIA_NSIS_ASSISTED_MIGRATION_FIXTURE=1/);
+  assert.match(workflow, /unset FRAIA_E2E_UPDATER FRAIA_NSIS_ASSISTED_MIGRATION_FIXTURE/);
   assert.match(workflow, /latest\.yml/);
   assert.match(workflow, /latest-linux\.yml/);
   assert.match(workflow, /Remove disposable private key and package outputs/);

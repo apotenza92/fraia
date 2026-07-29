@@ -117,7 +117,10 @@ jobs:
           npm pkg set "version=$PREVIOUS_VERSION"
           export FRAIA_RELEASE_OUTPUT_DIR="$PWD/ci-updater/previous"
           if [ '${{ inputs.target }}' = win32-x64 ]; then
+            export FRAIA_E2E_UPDATER=1
+            export FRAIA_NSIS_ASSISTED_MIGRATION_FIXTURE=1
             npx --no-install electron-builder --config electron-builder.config.cjs --win nsis --x64 --publish never
+            unset FRAIA_E2E_UPDATER FRAIA_NSIS_ASSISTED_MIGRATION_FIXTURE
           elif [ '${{ inputs.target }}' = linux-arm64 ]; then
             npx --no-install electron-builder --config electron-builder.config.cjs --linux AppImage --arm64 --publish never
           else

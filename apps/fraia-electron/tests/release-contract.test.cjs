@@ -29,6 +29,45 @@ test('Linux packages retain Fraia canonical architecture tokens across formats',
   }
 });
 
+test('Windows uses one-click NSIS while retaining an isolated assisted-installer migration fixture', () => {
+  const configPath = path.resolve(__dirname, '..', 'electron-builder.config.cjs');
+  const readNsisConfig = (extraEnvironment = {}) => JSON.parse(execFileSync(
+    process.execPath,
+    ['-e', `process.stdout.write(JSON.stringify(require(${JSON.stringify(configPath)}).nsis))`],
+    {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        FRAIA_RELEASE_ARCH: 'x64',
+        FRAIA_RELEASE_CHANNEL: 'stable',
+        FRAIA_RELEASE_PLATFORM: 'win32',
+        ...extraEnvironment,
+      },
+    },
+  ));
+
+  assert.deepEqual(readNsisConfig(), {
+    oneClick: true,
+    perMachine: false,
+    allowElevation: false,
+    allowToChangeInstallationDirectory: false,
+    deleteAppDataOnUninstall: false,
+  });
+  assert.deepEqual(readNsisConfig({
+    FRAIA_E2E_UPDATER: '1',
+    FRAIA_NSIS_ASSISTED_MIGRATION_FIXTURE: '1',
+  }), {
+    oneClick: false,
+    perMachine: false,
+    allowElevation: true,
+    allowToChangeInstallationDirectory: true,
+    deleteAppDataOnUninstall: false,
+  });
+  assert.equal(readNsisConfig({
+    FRAIA_NSIS_ASSISTED_MIGRATION_FIXTURE: '1',
+  }).oneClick, true);
+});
+
 test('Fraia has one stable durable application identity', () => {
   const stable = releaseContract({ channel: 'stable', platform: 'darwin', arch: 'arm64' });
   assert.equal(stable.appId, 'app.fraia.desktop');

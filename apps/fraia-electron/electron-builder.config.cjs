@@ -22,6 +22,8 @@ const releaseNotes = readReleaseNotes({
   version: packageMetadata.version,
 });
 const hasSigningKeychain = Boolean(process.env.CSC_KEYCHAIN);
+const assistedNsisMigrationFixture = process.env.FRAIA_E2E_UPDATER === '1'
+  && process.env.FRAIA_NSIS_ASSISTED_MIGRATION_FIXTURE === '1';
 const iconPaths = {
   darwin: path.join(__dirname, 'build', 'macos', 'Fraia.icon'),
   darwinFallback: path.join(__dirname, 'build', 'icon.icns'),
@@ -124,10 +126,10 @@ module.exports = {
     artifactName: `${contract.artifactPrefix}-Windows-\${arch}-Setup.\${ext}`,
   },
   nsis: {
-    oneClick: false,
+    oneClick: !assistedNsisMigrationFixture,
     perMachine: false,
-    allowElevation: true,
-    allowToChangeInstallationDirectory: true,
+    allowElevation: assistedNsisMigrationFixture,
+    allowToChangeInstallationDirectory: assistedNsisMigrationFixture,
     deleteAppDataOnUninstall: false,
   },
   linux: {
