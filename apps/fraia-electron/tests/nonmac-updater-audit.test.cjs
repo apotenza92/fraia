@@ -95,6 +95,7 @@ test('native updater audit reads the version from an installed ASAR', async () =
 
 test('native updater workflow performs real TUF-backed Windows and AppImage replacements', () => {
   assert.match(workflow, /runs-on:.*windows-2025.*ubuntu-24\.04/);
+  assert.match(workflow, /ubuntu-24\.04-arm/);
   assert.match(workflow, /workflow_call:/);
   assert.match(workflow, /Require the matching native runner/);
   assert.match(workflow, /verify-calculix-runtimes\.cjs --target/);
@@ -102,7 +103,9 @@ test('native updater workflow performs real TUF-backed Windows and AppImage repl
   assert.match(workflow, /test-tuf-repository\.cjs/);
   assert.match(workflow, /test-nonmac-update\.cjs/);
   assert.match(workflow, /Fraia-Windows-x64-Setup\.exe/);
-  assert.match(workflow, /Fraia-Linux-x64\.AppImage/);
+  assert.match(workflow, /Fraia-Linux-\$\{arch\}\.AppImage/);
+  assert.match(workflow, /latest-linux-arm64\.yml/);
+  assert.match(workflow, /--linux AppImage --arm64/);
   assert.match(workflow, /Synthetic prior package used only for the native updater migration audit/);
   assert.match(workflow, /latest\.yml/);
   assert.match(workflow, /latest-linux\.yml/);
@@ -128,5 +131,6 @@ test('native updater workflow performs real TUF-backed Windows and AppImage repl
   assert.match(auditScript, /failure: failure \|\| cleanupFailure/);
   assert.doesNotMatch(auditScript, /copyFileSync\(privateKeyPath/);
   assert.match(continuousIntegration, /nonmac_updater_target:/);
+  assert.match(continuousIntegration, /- linux-arm64/);
   assert.match(continuousIntegration, /uses: \.\/\.github\/workflows\/nonmac-updater-audit\.yml/);
 });

@@ -20,6 +20,7 @@ on:
         default: win32-x64
         options:
           - win32-x64
+          - linux-arm64
           - linux-x64
       previous_version:
         description: Synthetic installed version for the N-1 migration test
@@ -37,7 +38,7 @@ concurrency:
 jobs:
   updater:
     name: Native updater (${{ inputs.target }})
-    runs-on: ${{ inputs.target == 'win32-x64' && 'windows-2025' || 'ubuntu-24.04' }}
+    runs-on: ${{ inputs.target == 'win32-x64' && 'windows-2025' || inputs.target == 'linux-arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     timeout-minutes: 90
     steps:
       - name: Checkout
@@ -55,7 +56,8 @@ jobs:
       - name: Require the matching native runner
         shell: bash
         run: |
-          test "$(node -p 'process.arch')" = x64
+          expected_arch='${{ endsWith(inputs.target, '-arm64') && 'arm64' || 'x64' }}'
+          test "$(node -p 'process.arch')" = "$expected_arch"
           if [ '${{ inputs.target }}' = win32-x64 ]; then
             test "$(node -p 'process.platform')" = win32
           else
@@ -63,7 +65,7 @@ jobs:
           fi
 
       - name: Install Linux AppImage test dependencies
-        if: ${{ inputs.target == 'linux-x64' }}
+        if: ${{ startsWith(inputs.target, 'linux-') }}
         run: sudo apt-get update && sudo apt-get install -y libfuse2t64 xvfb
 
       - name: Install, build, and require the reviewed runtime
@@ -91,7 +93,7 @@ jobs:
         shell: bash
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-          FRAIA_RELEASE_ARCH: x64
+          FRAIA_RELEASE_ARCH: ${{ endsWith(inputs.target, '-arm64') && 'arm64' || 'x64' }}
           FRAIA_RELEASE_CHANNEL: stable
           FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
           FRAIA_REQUIRE_RELEASE_ICON: '1'
@@ -116,6 +118,8 @@ jobs:
           export FRAIA_RELEASE_OUTPUT_DIR="$PWD/ci-updater/previous"
           if [ '${{ inputs.target }}' = win32-x64 ]; then
             npx --no-install electron-builder --config electron-builder.config.cjs --win nsis --x64 --publish never
+          elif [ '${{ inputs.target }}' = linux-arm64 ]; then
+            npx --no-install electron-builder --config electron-builder.config.cjs --linux AppImage --arm64 --publish never
           else
             npx --no-install electron-builder --config electron-builder.config.cjs --linux AppImage --x64 --publish never
           fi
@@ -123,6 +127,8 @@ jobs:
           export FRAIA_RELEASE_OUTPUT_DIR="$PWD/ci-updater/candidate"
           if [ '${{ inputs.target }}' = win32-x64 ]; then
             npx --no-install electron-builder --config electron-builder.config.cjs --win nsis --x64 --publish never
+          elif [ '${{ inputs.target }}' = linux-arm64 ]; then
+            npx --no-install electron-builder --config electron-builder.config.cjs --linux AppImage --arm64 --publish never
           else
             npx --no-install electron-builder --config electron-builder.config.cjs --linux AppImage --x64 --publish never
           fi
@@ -143,11 +149,13 @@ jobs:
               --private-key '${{ runner.temp }}/fraia-updater-trust/private-key.pem' \
               --evidence '${{ runner.temp }}/fraia-updater-evidence'
           else
+            arch='${{ endsWith(inputs.target, '-arm64') && 'arm64' || 'x64' }}'
+            metadata='${{ inputs.target == 'linux-arm64' && 'latest-linux-arm64.yml' || 'latest-linux.yml' }}'
             xvfb-run -a node scripts/test-nonmac-update.cjs \
-              --arch x64 \
-              --previous-artifact ci-updater/previous/Fraia-Linux-x64.AppImage \
+              --arch "$arch" \
+              --previous-artifact "ci-updater/previous/Fraia-Linux-${arch}.AppImage" \
               --candidate-directory ci-updater/candidate \
-              --candidate-metadata ci-updater/candidate/latest-linux.yml \
+              --candidate-metadata "ci-updater/candidate/${metadata}" \
               --root build/update-trust/root.json \
               --private-key '${{ runner.temp }}/fraia-updater-trust/private-key.pem' \
               --evidence '${{ runner.temp }}/fraia-updater-evidence'

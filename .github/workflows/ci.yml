@@ -16,6 +16,7 @@ on:
         options:
           - none
           - win32-x64
+          - linux-arm64
           - linux-x64
       nonmac_updater_previous_version:
         description: Synthetic installed version for the non-macOS updater audit
