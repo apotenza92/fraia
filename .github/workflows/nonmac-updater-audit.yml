@@ -109,6 +109,9 @@ jobs:
             echo 'The native updater audit requires distinct previous and candidate versions.' >&2
             exit 1
           fi
+          if ! grep -Fq "## [$PREVIOUS_VERSION]" ../../CHANGELOG.md; then
+            node -e 'require("node:fs").appendFileSync("../../CHANGELOG.md", "\n## [" + process.argv[1] + "] - 2026-07-29\n\n### Test fixture\n\n- Synthetic prior package used only for the native updater migration audit.\n")' "$PREVIOUS_VERSION"
+          fi
           npm pkg set "version=$PREVIOUS_VERSION"
           export FRAIA_RELEASE_OUTPUT_DIR="$PWD/ci-updater/previous"
           if [ '${{ inputs.target }}' = win32-x64 ]; then

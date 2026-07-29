@@ -78,6 +78,7 @@ test('native updater workflow performs real TUF-backed Windows and AppImage repl
   assert.match(workflow, /test-nonmac-update\.cjs/);
   assert.match(workflow, /Fraia-Windows-x64-Setup\.exe/);
   assert.match(workflow, /Fraia-Linux-x64\.AppImage/);
+  assert.match(workflow, /Synthetic prior package used only for the native updater migration audit/);
   assert.match(workflow, /latest\.yml/);
   assert.match(workflow, /latest-linux\.yml/);
   assert.match(workflow, /Remove disposable private key and package outputs/);
