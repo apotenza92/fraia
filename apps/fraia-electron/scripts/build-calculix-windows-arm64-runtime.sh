@@ -247,8 +247,7 @@ write_calculix_project() {
     printf 'target_compile_options(ccxcore PRIVATE\n'
     printf '  "$<$<COMPILE_LANGUAGE:C>:-O2;-g0;-std=gnu17;-Wno-implicit-function-declaration;-Wno-incompatible-pointer-types;-ffile-prefix-map=%s=/usr/src/fraia-runtime;-fdebug-prefix-map=%s=/usr/src/fraia-runtime>"\n' \
       "$controlled_root" "$controlled_root"
-    printf '  "$<$<COMPILE_LANGUAGE:Fortran>:-O2;-g0;-fopenmp;-cpp;-ffile-prefix-map=%s=/usr/src/fraia-runtime;-fdebug-prefix-map=%s=/usr/src/fraia-runtime>"\n' \
-      "$controlled_root" "$controlled_root"
+    printf '  "$<$<COMPILE_LANGUAGE:Fortran>:-O2;-g0;-fopenmp;-cpp>"\n'
     printf ')\n'
     printf 'add_executable(ccx "%s/ccx_2.23.c")\n' "$source_root_cmake"
     printf 'target_include_directories(ccx PRIVATE "%s")\n' "$spooles_root_cmake"
@@ -348,7 +347,7 @@ build_once() {
     -DUSE_THREAD=ON \
     -DNUM_THREADS=64 \
     "-DCMAKE_C_FLAGS_RELEASE=-O2 -g0 -ffile-prefix-map=$physical_windows_root=/usr/src/fraia-runtime -fdebug-prefix-map=$physical_windows_root=/usr/src/fraia-runtime" \
-    "-DCMAKE_Fortran_FLAGS_RELEASE=-O2 -g0 -ffile-prefix-map=$physical_windows_root=/usr/src/fraia-runtime -fdebug-prefix-map=$physical_windows_root=/usr/src/fraia-runtime" \
+    "-DCMAKE_Fortran_FLAGS_RELEASE=-O2 -g0" \
     -DCMAKE_INSTALL_PREFIX="$prefix" \
     >"$build_root/openblas-configure.log" 2>&1
   if ! grep -Eq '^#define ARCH_ARM64[[:space:]]+1$' "$build_root/openblas-build/config.h"; then
@@ -376,7 +375,7 @@ build_once() {
     -DICB=OFF \
     -DEXAMPLES=OFF \
     "-DCMAKE_C_FLAGS_RELEASE=-O2 -g0 -ffile-prefix-map=$physical_windows_root=/usr/src/fraia-runtime -fdebug-prefix-map=$physical_windows_root=/usr/src/fraia-runtime" \
-    "-DCMAKE_Fortran_FLAGS_RELEASE=-O2 -g0 -ffile-prefix-map=$physical_windows_root=/usr/src/fraia-runtime -fdebug-prefix-map=$physical_windows_root=/usr/src/fraia-runtime" \
+    "-DCMAKE_Fortran_FLAGS_RELEASE=-O2 -g0" \
     -DBLAS_LIBRARIES="$openblas_library" \
     -DLAPACK_LIBRARIES="$openblas_library" \
     -DCMAKE_INSTALL_PREFIX="$prefix" \

@@ -53,6 +53,8 @@ test('Windows ARM64 audit is native, source-built, reproducible, and fail-closed
   assert.match(script, /not byte-identical/);
   assert.match(script, /--no-insert-timestamp/);
   assert.match(script, /-ffile-prefix-map=/);
+  assert.doesNotMatch(script, /COMPILE_LANGUAGE:Fortran>[^\n]*ffile-prefix-map/);
+  assert.doesNotMatch(script, /CMAKE_Fortran_FLAGS_RELEASE=[^\n]*ffile-prefix-map/);
   assert.match(script, /SOURCE_DATE_EPOCH/);
   assert.match(script, /FAILURE\.txt/);
   assert.match(script, /No runtime candidate was emitted/);
