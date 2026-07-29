@@ -117,7 +117,8 @@ test('native updater workflow performs real TUF-backed Windows and AppImage repl
   assert.match(nsisInclude, /!include "getProcessInfo\.nsh"/);
   assert.match(nsisInclude, /ExecutablePath/);
   assert.match(nsisInclude, /OrdinalIgnoreCase/);
-  assert.match(nsisInclude, /ProcessId -ne \$pid/);
+  assert.match(nsisInclude, /Var \/GLOBAL FraiaInstallerPid/);
+  assert.match(nsisInclude, /ProcessId -ne \$FraiaInstallerPid/);
   assert.match(nsisInclude, /FRAIA_NSIS_INSTALL_DIR/);
   assert.match(nsisInclude, /GetFullPath/);
   assert.doesNotMatch(nsisInclude, /StartsWith\('\$INSTDIR/);
