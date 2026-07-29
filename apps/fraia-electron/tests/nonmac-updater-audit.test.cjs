@@ -138,7 +138,8 @@ test('native updater workflow performs real TUF-backed Windows and AppImage repl
   assert.match(workflow, /FRAIA_NSIS_ASSISTED_MIGRATION_FIXTURE=1/);
   assert.match(workflow, /unset FRAIA_E2E_UPDATER FRAIA_NSIS_ASSISTED_MIGRATION_FIXTURE/);
   assert.match(nsisInclude, /customCheckAppRunning/);
-  assert.match(nsisInclude, /!include "getProcessInfo\.nsh"/);
+  assert.doesNotMatch(nsisInclude, /getProcessInfo|GetProcessInfo/);
+  assert.match(nsisInclude, /Kernel32::GetCurrentProcessId\(\) i\.R0/);
   assert.match(nsisInclude, /ExecutablePath/);
   assert.match(nsisInclude, /OrdinalIgnoreCase/);
   assert.match(nsisInclude, /Var \/GLOBAL FraiaInstallerPid/);

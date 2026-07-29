@@ -1,9 +1,13 @@
-!include "getProcessInfo.nsh"
-
 Var /GLOBAL FraiaInstallerPid
 
 !macro customCheckAppRunning
-  ${GetProcessInfo} 0 $FraiaInstallerPid $1 $2 $3 $4
+  System::Call 'Kernel32::GetCurrentProcessId() i.R0'
+  StrCpy $FraiaInstallerPid $R0
+  ${if} $FraiaInstallerPid == 0
+    DetailPrint `Could not identify the "${PRODUCT_NAME}" installer process.`
+    SetErrorLevel 2
+    Quit
+  ${endIf}
   System::Call 'Kernel32::SetEnvironmentVariable(t "FRAIA_NSIS_INSTALL_DIR", t "$INSTDIR") i.R0'
   ${if} $R0 == 0
     DetailPrint `Could not prepare the "${PRODUCT_NAME}" process check.`
