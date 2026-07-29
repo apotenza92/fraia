@@ -192,7 +192,29 @@ function installedPackageVersion(executable) {
   return JSON.parse(packageBytes.toString('utf8')).version;
 }
 
+function installedPackageDigest(executable) {
+  return digest(
+    path.join(path.dirname(executable), 'resources', 'app.asar'),
+    'sha256',
+    'hex',
+  );
+}
+
 function windowsProcessIds(executable) {
+  return windowsProcessIdsMatching(
+    '$_.ExecutablePath -eq $env:FRAIA_AUDIT_EXECUTABLE',
+    { FRAIA_AUDIT_EXECUTABLE: executable },
+  );
+}
+
+function windowsProcessIdsWithin(directory) {
+  return windowsProcessIdsMatching(
+    '$_.ExecutablePath -and $_.ExecutablePath.StartsWith($env:FRAIA_AUDIT_DIRECTORY, [System.StringComparison]::OrdinalIgnoreCase)',
+    { FRAIA_AUDIT_DIRECTORY: `${path.resolve(directory)}${path.sep}` },
+  );
+}
+
+function windowsProcessIdsMatching(predicate, environment) {
   const result = spawnSync(
     'powershell.exe',
     [
@@ -201,14 +223,14 @@ function windowsProcessIds(executable) {
       '-Command',
       [
         '$processes = @(Get-CimInstance Win32_Process |',
-        'Where-Object { $_.ExecutablePath -eq $env:FRAIA_AUDIT_EXECUTABLE } |',
+        `Where-Object { ${predicate} } |`,
         'Select-Object -ExpandProperty ProcessId);',
         'ConvertTo-Json -Compress -InputObject $processes',
       ].join(' '),
     ],
     {
       encoding: 'utf8',
-      env: { ...process.env, FRAIA_AUDIT_EXECUTABLE: executable },
+      env: { ...process.env, ...environment },
     },
   );
   if (result.error) throw result.error;
@@ -221,24 +243,31 @@ function windowsProcessIds(executable) {
     .filter((pid) => Number.isInteger(pid) && pid > 0);
 }
 
-async function waitForInstalledWindowsVersion({
+async function waitForInstalledWindowsPackage({
+  candidateArchive,
   eventPath,
   executable,
   version,
   timeoutMs = 180_000,
 }) {
+  const expectedDigest = digest(candidateArchive, 'sha256', 'hex');
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const error = readEvents(eventPath).find((event) => event.name === 'error');
     if (error) throw new Error(`Native updater failed: ${error.message || '<missing error>'}`);
     try {
-      if (installedPackageVersion(executable) === version) return;
+      if (
+        installedPackageDigest(executable) === expectedDigest
+        && installedPackageVersion(executable) === version
+      ) {
+        return expectedDigest;
+      }
     } catch (error) {
       if (Date.now() >= deadline) throw error;
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  throw new Error(`Timed out waiting for the Windows ${version} package to be installed.`);
+  throw new Error(`Timed out waiting for byte-exact installation of the Windows ${version} package.`);
 }
 
 function isPidAlive(pid) {
@@ -462,7 +491,17 @@ async function main(argv = process.argv.slice(2)) {
       if (event.currentVersion === server.version) {
         throw new Error('Windows updater audit did not start from the previous version.');
       }
-      await waitForInstalledWindowsVersion({
+      const candidateArchive = path.join(
+        candidateDirectory,
+        'win-unpacked',
+        'resources',
+        'app.asar',
+      );
+      if (!fs.existsSync(candidateArchive)) {
+        throw new Error('Candidate Windows ASAR is missing from the package output.');
+      }
+      await waitForInstalledWindowsPackage({
+        candidateArchive,
         eventPath,
         executable: installedExecutable,
         version: server.version,
@@ -508,33 +547,41 @@ async function main(argv = process.argv.slice(2)) {
     failure = error;
     throw error;
   } finally {
-    await stopPid(relaunchedPid);
-    await stopPid(child?.pid);
-    if (server) await server.close();
-    if (process.platform === 'win32' && installedExecutable && fs.existsSync(path.dirname(installedExecutable))) {
-      const sidecar = path.join(
-        path.dirname(installedExecutable),
-        'resources',
-        'sidecar',
-        `win32-${arch}`,
-        'fraia-appd.exe',
-      );
-      for (const executable of [installedExecutable, sidecar]) {
-        if (!fs.existsSync(executable)) continue;
-        for (const pid of windowsProcessIds(executable)) await stopPid(pid);
+    let cleanupFailure;
+    try {
+      await stopPid(relaunchedPid);
+      await stopPid(child?.pid);
+      if (server) await server.close();
+      if (process.platform === 'win32' && installedExecutable && fs.existsSync(path.dirname(installedExecutable))) {
+        const installDirectory = path.dirname(installedExecutable);
+        const sidecar = path.join(
+          installDirectory,
+          'resources',
+          'sidecar',
+          `win32-${arch}`,
+          'fraia-appd.exe',
+        );
+        for (const executable of [installedExecutable, sidecar]) {
+          if (!fs.existsSync(executable)) continue;
+          for (const pid of windowsProcessIds(executable)) await stopPid(pid);
+        }
+        for (const pid of windowsProcessIdsWithin(installDirectory)) await stopPid(pid);
+        const uninstaller = findExactlyOne(
+          installDirectory,
+          (candidate) => /^uninstall.*\.exe$/i.test(path.basename(candidate)),
+          'NSIS uninstaller',
+        );
+        run(uninstaller, ['/S']);
+        fs.rmSync(installDirectory, {
+          recursive: true,
+          force: true,
+          maxRetries: 120,
+          retryDelay: 500,
+        });
       }
-      const uninstaller = findExactlyOne(
-        path.dirname(installedExecutable),
-        (candidate) => /^uninstall.*\.exe$/i.test(path.basename(candidate)),
-        'NSIS uninstaller',
-      );
-      run(uninstaller, ['/S']);
-      fs.rmSync(path.dirname(installedExecutable), {
-        recursive: true,
-        force: true,
-        maxRetries: 20,
-        retryDelay: 250,
-      });
+    } catch (error) {
+      cleanupFailure = error;
+      process.stderr.write(`Native updater cleanup failed: ${error.stack || error}\n`);
     }
     writeEvidence({
       arch,
@@ -544,7 +591,7 @@ async function main(argv = process.argv.slice(2)) {
       credentialPath,
       eventPath,
       evidenceDirectory,
-      failure,
+      failure: failure || cleanupFailure,
       platform: process.platform,
       previousArtifact,
       projectBytes,
@@ -562,6 +609,7 @@ async function main(argv = process.argv.slice(2)) {
         retryDelay: 250,
       });
     }
+    if (!failure && cleanupFailure) throw cleanupFailure;
   }
 }
 
@@ -574,8 +622,10 @@ if (require.main === module) {
 
 module.exports = {
   artifactName,
+  installedPackageDigest,
   installedPackageVersion,
   prepareSignedTarget,
-  waitForInstalledWindowsVersion,
+  waitForInstalledWindowsPackage,
   windowsProcessIds,
+  windowsProcessIdsWithin,
 };

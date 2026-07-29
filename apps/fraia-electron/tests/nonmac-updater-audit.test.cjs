@@ -7,6 +7,7 @@ const asar = require('@electron/asar');
 const YAML = require('yaml');
 const {
   artifactName,
+  installedPackageDigest,
   installedPackageVersion,
   prepareSignedTarget,
 } = require('../scripts/test-nonmac-update.cjs');
@@ -81,10 +82,12 @@ test('native updater audit reads the version from an installed ASAR', async () =
     fs.writeFileSync(executable, '');
     await asar.createPackage(source, path.join(directory, 'resources', 'app.asar'));
     assert.equal(installedPackageVersion(executable), '0.0.2');
+    const firstDigest = installedPackageDigest(executable);
     fs.writeFileSync(path.join(source, 'package.json'), '{"version":"0.0.3"}\n');
     fs.rmSync(path.join(directory, 'resources', 'app.asar'));
     await asar.createPackage(source, path.join(directory, 'resources', 'app.asar'));
     assert.equal(installedPackageVersion(executable), '0.0.3');
+    assert.notEqual(installedPackageDigest(executable), firstDigest);
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
@@ -108,8 +111,11 @@ test('native updater workflow performs real TUF-backed Windows and AppImage repl
   assert.match(auditScript, /updated-runtime-launched/);
   assert.match(auditScript, /update-downloaded/);
   assert.match(auditScript, /installedPackageVersion/);
-  assert.match(auditScript, /waitForInstalledWindowsVersion/);
+  assert.match(auditScript, /waitForInstalledWindowsPackage/);
+  assert.match(auditScript, /installedPackageDigest/);
+  assert.match(auditScript, /candidateDirectory.*win-unpacked.*resources.*app\.asar/s);
   assert.match(auditScript, /Get-CimInstance Win32_Process/);
+  assert.match(auditScript, /StringComparison.*OrdinalIgnoreCase/);
   assert.match(auditScript, /taskkill\.exe/);
   assert.match(auditScript, /normal user launch/);
   assert.match(auditScript, /LOCALAPPDATA.*Programs.*contract\.productName/);
@@ -119,6 +125,7 @@ test('native updater workflow performs real TUF-backed Windows and AppImage repl
   assert.match(auditScript, /update-trust.*metadata.*root\.json/);
   assert.match(auditScript, /AppImage updater did not replace the installed bytes/);
   assert.match(auditScript, /PACKAGE_SHA256SUMS/);
+  assert.match(auditScript, /failure: failure \|\| cleanupFailure/);
   assert.doesNotMatch(auditScript, /copyFileSync\(privateKeyPath/);
   assert.match(continuousIntegration, /nonmac_updater_target:/);
   assert.match(continuousIntegration, /uses: \.\/\.github\/workflows\/nonmac-updater-audit\.yml/);
