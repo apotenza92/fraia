@@ -252,22 +252,32 @@ async function waitForInstalledWindowsPackage({
 }) {
   const expectedDigest = digest(candidateArchive, 'sha256', 'hex');
   const deadline = Date.now() + timeoutMs;
+  let lastDigest = '<unreadable>';
+  let lastVersion = '<unreadable>';
+  let lastReadError = null;
   while (Date.now() < deadline) {
     const error = readEvents(eventPath).find((event) => event.name === 'error');
     if (error) throw new Error(`Native updater failed: ${error.message || '<missing error>'}`);
     try {
+      lastDigest = installedPackageDigest(executable);
+      lastVersion = installedPackageVersion(executable);
       if (
-        installedPackageDigest(executable) === expectedDigest
-        && installedPackageVersion(executable) === version
+        lastDigest === expectedDigest
+        && lastVersion === version
       ) {
         return expectedDigest;
       }
     } catch (error) {
+      lastReadError = String(error?.message || error);
       if (Date.now() >= deadline) throw error;
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  throw new Error(`Timed out waiting for byte-exact installation of the Windows ${version} package.`);
+  throw new Error(
+    `Timed out waiting for byte-exact installation of the Windows ${version} package. `
+    + `Expected app.asar SHA-256 ${expectedDigest}; last installed SHA-256 ${lastDigest}; `
+    + `last installed package version ${lastVersion}; last read error ${lastReadError || 'none'}.`,
+  );
 }
 
 function isPidAlive(pid) {
