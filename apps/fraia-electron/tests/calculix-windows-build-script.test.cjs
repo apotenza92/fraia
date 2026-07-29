@@ -14,6 +14,7 @@ const script = fs.readFileSync(
 
 test('Windows CalculiX recipes preserve repository bytes on Windows checkouts', () => {
   assert.match(gitAttributes, /^\*\.ps1 text eol=lf$/m);
+  assert.match(gitAttributes, /^\*\.sh text eol=lf$/m);
   assert.match(gitAttributes, /^apps\/fraia-electron\/runtimes\/calculix\/\*\* -text$/m);
   assert.match(
     gitAttributes,
