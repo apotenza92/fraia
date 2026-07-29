@@ -82,12 +82,13 @@ test('Fraia has one stable durable application identity', () => {
   );
 });
 
-test('the exact five solver-backed native targets resolve without cross-compilation aliases', () => {
+test('the exact six solver-backed native targets resolve without cross-compilation aliases', () => {
   for (const [platform, arch] of [
     ['darwin', 'arm64'],
     ['darwin', 'x64'],
     ['linux', 'arm64'],
     ['linux', 'x64'],
+    ['win32', 'arm64'],
     ['win32', 'x64'],
   ]) {
     const contract = releaseContract({ channel: 'stable', platform, arch });
@@ -95,14 +96,13 @@ test('the exact five solver-backed native targets resolve without cross-compilat
     assert.equal(contract.arch, arch);
     assert.equal(contract.outputDir.endsWith(`/stable/${platform}/${arch}`), true);
   }
-  assert.throws(() => releaseContract({ platform: 'win32', arch: 'arm64' }), /does not support win32-arm64/);
   assert.throws(() => releaseContract({ platform: 'darwin', arch: 'universal' }), /architecture/);
 });
 
 test('updater metadata names match electron-builder platform conventions', () => {
   assert.equal(metadataFileName('darwin', 'arm64'), 'latest-mac.yml');
+  assert.equal(metadataFileName('win32', 'arm64'), 'latest.yml');
   assert.equal(metadataFileName('win32', 'x64'), 'latest.yml');
   assert.equal(metadataFileName('linux', 'x64'), 'latest-linux.yml');
   assert.equal(metadataFileName('linux', 'arm64'), 'latest-linux-arm64.yml');
-  assert.throws(() => metadataFileName('win32', 'arm64'), /does not support win32-arm64/);
 });

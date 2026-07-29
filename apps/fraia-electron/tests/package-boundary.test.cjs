@@ -145,11 +145,15 @@ test('the package matrix is deliberately limited to native desktop targets', () 
     'darwin-x64',
     'linux-arm64',
     'linux-x64',
+    'win32-arm64',
     'win32-x64',
   ]);
   assert.equal(nativePlatformArch('win32', 'x64'), 'win32-x64');
+  assert.equal(nativePlatformArch('win32', 'arm64'), 'win32-arm64');
   assert.equal(nativePlatformArch('linux', 'arm64'), 'linux-arm64');
   assert.throws(() => nativePlatformArch('freebsd', 'x64'), /does not support/);
-  assert.throws(() => nativePlatformArch('win32', 'arm64'), /does not support win32-arm64/);
-  assert.throws(() => packagedCalculixPath('/resources', 'win32', 'arm64'), /does not support win32-arm64/);
+  assert.equal(
+    packagedCalculixPath('/resources', 'win32', 'arm64'),
+    path.join('/resources', 'runtimes', 'calculix', 'win32-arm64', 'ccx.exe'),
+  );
 });

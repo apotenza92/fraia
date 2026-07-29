@@ -28,7 +28,10 @@ test('corresponding-source contract covers every runtime platform with pinned pu
     correspondingSourceUrl('apotenza92/fraia', 'v0.0.1'),
     'https://github.com/apotenza92/fraia/releases/download/v0.0.1/Fraia-CalculiX-Corresponding-Source.tar',
   );
-  assert.deepEqual(BUILD_RECIPES.map(({ platform }) => platform), ['darwin', 'linux', 'win32']);
+  assert.deepEqual(
+    BUILD_RECIPES.map(({ platform }) => platform),
+    ['darwin', 'linux', 'win32', 'win32-arm64'],
+  );
   assert.equal(new Set(SOURCE_INPUTS.map(({ fileName }) => fileName)).size, SOURCE_INPUTS.length);
   for (const source of SOURCE_INPUTS) {
     assert.match(source.url, /^https:\/\//);

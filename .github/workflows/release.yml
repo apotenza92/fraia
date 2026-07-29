@@ -257,9 +257,13 @@ jobs:
           retention-days: 14
 
   package-windows:
-    name: Windows x64
+    name: Windows ${{ matrix.arch }}
     needs: [prepare, validate]
-    runs-on: windows-2025
+    runs-on: ${{ matrix.arch == 'arm64' && 'windows-11-arm' || 'windows-2025' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -275,7 +279,7 @@ jobs:
 
       - name: Verify native runner
         shell: bash
-        run: test "$(node -p 'process.arch')" = x64
+        run: test "$(node -p 'process.arch')" = "${{ matrix.arch }}"
 
       - name: Install and build
         working-directory: apps/fraia-electron
@@ -285,36 +289,36 @@ jobs:
         working-directory: apps/fraia-electron
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-          FRAIA_RELEASE_ARCH: x64
+          FRAIA_RELEASE_ARCH: ${{ matrix.arch }}
           FRAIA_RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
           FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
           FRAIA_REQUIRE_RELEASE_ICON: '1'
           FRAIA_REQUIRE_TUF_ROOT: '1'
-          FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}\apps\fraia-electron\release\${{ needs.prepare.outputs.channel }}\win32\x64
+          FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}\apps\fraia-electron\release\${{ needs.prepare.outputs.channel }}\win32\${{ matrix.arch }}
           FRAIA_RELEASE_PLATFORM: win32
-        run: npx --no-install electron-builder --config electron-builder.config.cjs --win nsis --x64 --publish never
+        run: npx --no-install electron-builder --config electron-builder.config.cjs --win nsis --${{ matrix.arch }} --publish never
 
       - name: Install, launch, and uninstall Windows package
         working-directory: apps/fraia-electron
         run: >-
           node scripts/verify-native-package.cjs
           --channel "${{ needs.prepare.outputs.channel }}"
-          --arch x64
-          --output-dir "release/${{ needs.prepare.outputs.channel }}/win32/x64"
+          --arch "${{ matrix.arch }}"
+          --output-dir "release/${{ needs.prepare.outputs.channel }}/win32/${{ matrix.arch }}"
 
       - name: Collect exact Windows assets
         working-directory: apps/fraia-electron
         shell: bash
         run: |
           mkdir -p ci-output/assets
-          STEM="Fraia-Windows-x64-Setup.exe"
-          OUTPUT="release/${{ needs.prepare.outputs.channel }}/win32/x64"
+          STEM="Fraia-Windows-${{ matrix.arch }}-Setup.exe"
+          OUTPUT="release/${{ needs.prepare.outputs.channel }}/win32/${{ matrix.arch }}"
           cp "$OUTPUT/$STEM" "$OUTPUT/$STEM.blockmap" ci-output/assets/
 
       - name: Upload Windows candidate
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: fraia-win32-x64
+          name: fraia-win32-${{ matrix.arch }}
           path: apps/fraia-electron/ci-output
           if-no-files-found: error
           retention-days: 14

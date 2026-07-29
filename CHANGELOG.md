@@ -10,7 +10,7 @@ release notes and macOS updater notes.
 ### Added
 
 - Initial public Fraia desktop release for macOS (Apple silicon and Intel),
-  Linux (ARM64 and x64), and Windows (x64).
+  Linux (ARM64 and x64), and Windows (ARM64 and x64).
 - Rust-backed structural modelling workspace with native project state,
   validation, analysis runs, and the Three.js engineering viewport.
 - Reviewed native CalculiX runtimes for every supported package target, with

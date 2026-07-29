@@ -123,12 +123,12 @@ test('Windows ARM64 audit verifies platform contract, closure, and notices', () 
   }
 });
 
-test('Windows ARM64 remains audit-only until native runtime and package proof pass', () => {
+test('Windows ARM64 audit remains native and review-only at build time', () => {
   assert.match(workflow, /- win32-arm64/);
   assert.match(workflow, /runs-on: windows-11-arm/);
   assert.match(workflow, /runner\.arch.*ARM64/);
   assert.match(workflow, /msystem: CLANGARM64/);
   assert.match(workflow, /build-calculix-windows-arm64-runtime\.sh/);
   assert.match(workflow, /calculix-win32-arm64/);
-  assert.doesNotMatch(boundary, /'win32-arm64'/);
+  assert.match(boundary, /'win32-arm64'/);
 });

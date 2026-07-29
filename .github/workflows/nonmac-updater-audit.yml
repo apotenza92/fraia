@@ -19,6 +19,7 @@ on:
         type: choice
         default: win32-x64
         options:
+          - win32-arm64
           - win32-x64
           - linux-arm64
           - linux-x64
@@ -38,8 +39,10 @@ concurrency:
 jobs:
   updater:
     name: Native updater (${{ inputs.target }})
-    runs-on: ${{ inputs.target == 'win32-x64' && 'windows-2025' || inputs.target == 'linux-arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    runs-on: ${{ inputs.target == 'win32-arm64' && 'windows-11-arm' || inputs.target == 'win32-x64' && 'windows-2025' || inputs.target == 'linux-arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     timeout-minutes: 90
+    env:
+      FRAIA_AUDIT_PLATFORM: ${{ startsWith(inputs.target, 'win32-') && 'win32' || 'linux' }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -58,7 +61,7 @@ jobs:
         run: |
           expected_arch='${{ endsWith(inputs.target, '-arm64') && 'arm64' || 'x64' }}'
           test "$(node -p 'process.arch')" = "$expected_arch"
-          if [ '${{ inputs.target }}' = win32-x64 ]; then
+          if [ "$FRAIA_AUDIT_PLATFORM" = win32 ]; then
             test "$(node -p 'process.platform')" = win32
           else
             test "$(node -p 'process.platform')" = linux
@@ -98,7 +101,7 @@ jobs:
           FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
           FRAIA_REQUIRE_RELEASE_ICON: '1'
           FRAIA_REQUIRE_TUF_ROOT: '1'
-          FRAIA_RELEASE_PLATFORM: ${{ inputs.target == 'win32-x64' && 'win32' || 'linux' }}
+          FRAIA_RELEASE_PLATFORM: ${{ startsWith(inputs.target, 'win32-') && 'win32' || 'linux' }}
         run: |
           set -euo pipefail
           CANDIDATE_VERSION=$(node -p 'require("./package.json").version')
@@ -116,10 +119,11 @@ jobs:
           fi
           npm pkg set "version=$PREVIOUS_VERSION"
           export FRAIA_RELEASE_OUTPUT_DIR="$PWD/ci-updater/previous"
-          if [ '${{ inputs.target }}' = win32-x64 ]; then
+          arch='${{ endsWith(inputs.target, '-arm64') && 'arm64' || 'x64' }}'
+          if [ "$FRAIA_AUDIT_PLATFORM" = win32 ]; then
             export FRAIA_E2E_UPDATER=1
             export FRAIA_NSIS_ASSISTED_MIGRATION_FIXTURE=1
-            npx --no-install electron-builder --config electron-builder.config.cjs --win nsis --x64 --publish never
+            npx --no-install electron-builder --config electron-builder.config.cjs --win nsis "--${arch}" --publish never
             unset FRAIA_E2E_UPDATER FRAIA_NSIS_ASSISTED_MIGRATION_FIXTURE
           elif [ '${{ inputs.target }}' = linux-arm64 ]; then
             npx --no-install electron-builder --config electron-builder.config.cjs --linux AppImage --arm64 --publish never
@@ -128,8 +132,8 @@ jobs:
           fi
           npm pkg set "version=$CANDIDATE_VERSION"
           export FRAIA_RELEASE_OUTPUT_DIR="$PWD/ci-updater/candidate"
-          if [ '${{ inputs.target }}' = win32-x64 ]; then
-            npx --no-install electron-builder --config electron-builder.config.cjs --win nsis --x64 --publish never
+          if [ "$FRAIA_AUDIT_PLATFORM" = win32 ]; then
+            npx --no-install electron-builder --config electron-builder.config.cjs --win nsis "--${arch}" --publish never
           elif [ '${{ inputs.target }}' = linux-arm64 ]; then
             npx --no-install electron-builder --config electron-builder.config.cjs --linux AppImage --arm64 --publish never
           else
@@ -142,10 +146,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ '${{ inputs.target }}' = win32-x64 ]; then
+          if [ "$FRAIA_AUDIT_PLATFORM" = win32 ]; then
+            arch='${{ endsWith(inputs.target, '-arm64') && 'arm64' || 'x64' }}'
             node scripts/test-nonmac-update.cjs \
-              --arch x64 \
-              --previous-artifact ci-updater/previous/Fraia-Windows-x64-Setup.exe \
+              --arch "$arch" \
+              --previous-artifact "ci-updater/previous/Fraia-Windows-${arch}-Setup.exe" \
               --candidate-directory ci-updater/candidate \
               --candidate-metadata ci-updater/candidate/latest.yml \
               --root build/update-trust/root.json \

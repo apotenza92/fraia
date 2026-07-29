@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "target": "win32-x64",
+  "target": "win32-arm64",
   "calculixVersion": "2.23",
   "upstream": {
     "sourceUrl": "https://www.dhondt.de/ccx_2.23.src.tar.bz2",
@@ -9,8 +9,8 @@
   },
   "build": {
     "recipe": "BUILD_RECIPE.md",
-    "recipeSha256": "5be18102fb10836e5bb8c18564c4c8b5188c68f96237e85ef4085ac17ac68f05",
-    "revision": "fraia-calculix-windows-v20"
+    "recipeSha256": "b514d426c5cd2725b4d8245d4699d7408559a42aeeac31243e68ec39b597f939",
+    "revision": "fraia-calculix-windows-arm64-v1"
   },
   "redistribution": {
     "sourceUrl": "https://github.com/apotenza92/fraia/releases/download/v0.0.2/Fraia-CalculiX-Corresponding-Source.tar",
@@ -20,18 +20,18 @@
       "GPL-2.0-only",
       "LicenseRef-SPOOLES-Public-Domain",
       "BSD-3-Clause",
-      "MIT",
-      "GPL-3.0-or-later WITH GCC-exception-3.1"
+      "Apache-2.0 WITH LLVM-exception",
+      "MIT"
     ]
   },
   "files": {
     "executable": {
       "path": "ccx.exe",
-      "sha256": "96d6831957dc82f3fd37a845ecbc621b5501c85db66eb80083c4641c8caaf380"
+      "sha256": "4c02a471855e3c850b3b9a2178d98cf4f0fb373ff908944426f321662406d876"
     },
     "notices": {
       "path": "THIRD_PARTY_NOTICES.txt",
-      "sha256": "9d027e2207d405640abedc4b7451f56ab6159c040f217a124e7e504d4e1352b6"
+      "sha256": "7f2a78c2ad02bc4563d8e7d3fa42cea319ab89321d4641a7ab6b6f149a2a1334"
     },
     "dependencies": [
       {
@@ -89,6 +89,18 @@
       {
         "name": "KERNEL32.dll",
         "kind": "system"
+      },
+      {
+        "name": "libomp.dll",
+        "kind": "bundled",
+        "path": "libomp.dll",
+        "sha256": "7287281cc0c7da7ac34ea8eda3e5cba7228d35726e0dc82b4a02bc38013c508b"
+      },
+      {
+        "name": "libwinpthread-1.dll",
+        "kind": "bundled",
+        "path": "libwinpthread-1.dll",
+        "sha256": "4f1cf4078a1de4190428f80add559161d1d02e0a5321c70994b058dac7499e10"
       }
     ]
   }

@@ -115,7 +115,7 @@ test('native updater cleanup waits for confirmed uninstaller removal', () => {
 });
 
 test('native updater workflow performs real TUF-backed Windows and AppImage replacements', () => {
-  assert.match(workflow, /runs-on:.*windows-2025.*ubuntu-24\.04/);
+  assert.match(workflow, /runs-on:.*windows-11-arm.*windows-2025.*ubuntu-24\.04/);
   assert.match(workflow, /ubuntu-24\.04-arm/);
   assert.match(workflow, /workflow_call:/);
   assert.match(workflow, /Require the matching native runner/);
@@ -123,7 +123,7 @@ test('native updater workflow performs real TUF-backed Windows and AppImage repl
   assert.match(workflow, /FRAIA_REQUIRE_TUF_ROOT: '1'/);
   assert.match(workflow, /test-tuf-repository\.cjs/);
   assert.match(workflow, /test-nonmac-update\.cjs/);
-  assert.match(workflow, /Fraia-Windows-x64-Setup\.exe/);
+  assert.match(workflow, /Fraia-Windows-\$\{arch\}-Setup\.exe/);
   assert.match(workflow, /Fraia-Linux-\$\{arch\}\.AppImage/);
   assert.match(workflow, /latest-linux-arm64\.yml/);
   assert.match(workflow, /--linux AppImage --arm64/);

@@ -15,6 +15,7 @@ on:
         default: none
         options:
           - none
+          - win32-arm64
           - win32-x64
           - linux-arm64
           - linux-x64
@@ -101,6 +102,9 @@ jobs:
           - platform: darwin
             arch: x64
             runner: macos-26-intel
+          - platform: win32
+            arch: arm64
+            runner: windows-11-arm
           - platform: win32
             arch: x64
             runner: windows-2025

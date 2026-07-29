@@ -123,13 +123,13 @@ test('first-release updater resolution uses the exact bootstrap tag and later re
   );
 });
 
-test('one stable release is tag-only, native on five solver-backed targets, and uses protected publication boundaries', () => {
+test('one stable release is tag-only, native on six solver-backed targets, and uses protected publication boundaries', () => {
   assert.match(workflow, /tags:\n\s+- 'v\*'/);
   assert.doesNotMatch(workflow, /workflow_dispatch/);
-  for (const runner of ['macos-15', 'macos-15-intel', 'windows-2025', 'ubuntu-24.04', 'ubuntu-24.04-arm']) {
+  for (const runner of ['macos-15', 'macos-15-intel', 'windows-11-arm', 'windows-2025', 'ubuntu-24.04', 'ubuntu-24.04-arm']) {
     assert.match(workflow, new RegExp(runner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
-  assert.doesNotMatch(workflow, /windows-11-arm|win32-arm64|Windows-arm64/);
+  assert.match(workflow, /Fraia-Windows-\$\{\{ matrix\.arch \}\}-Setup\.exe/);
   for (const environment of [
     'release-signing', 'stable-release', 'stable-updater-verification',
   ]) assert.match(workflow, new RegExp(environment));
@@ -248,10 +248,10 @@ test('manual CI keeps deterministic checks default and native package preflight 
   assert.match(continuousIntegration, /run_native_package_preflight:/);
   assert.match(continuousIntegration, /default: false/);
   assert.match(continuousIntegration, /if: \$\{\{ inputs\.run_native_package_preflight \}\}/);
-  for (const runner of ['macos-26', 'macos-26-intel', 'windows-2025', 'ubuntu-24.04', 'ubuntu-24.04-arm']) {
+  for (const runner of ['macos-26', 'macos-26-intel', 'windows-11-arm', 'windows-2025', 'ubuntu-24.04', 'ubuntu-24.04-arm']) {
     assert.match(continuousIntegration, new RegExp(runner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
-  assert.doesNotMatch(continuousIntegration, /windows-11-arm|win32-arm64/);
+  assert.match(continuousIntegration, /platform: win32\n\s+arch: arm64\n\s+runner: windows-11-arm/);
   assert.match(continuousIntegration, /verify-calculix-runtimes\.cjs/);
   assert.match(continuousIntegration, /--target "\$\{\{ matrix\.platform \}\}-\$\{\{ matrix\.arch \}\}"/);
   assert.match(continuousIntegration, /npm run test:package/);
