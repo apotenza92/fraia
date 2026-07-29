@@ -169,6 +169,10 @@ test('Windows uses TUF-authenticated metadata, keeps settings, and requests a si
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-updater-windows-'));
   try {
     fs.writeFileSync(path.join(userData, 'update-frequency.json'), '{"frequency":"weekly"}\n');
+    fs.writeFileSync(path.join(userData, 'main-window-state.json'), '{"width":1180,"height":760}\n');
+    fs.mkdirSync(path.join(userData, 'ai'), { recursive: true });
+    const encryptedCredentialBytes = Buffer.from([0x01, 0x03, 0x03, 0x07]);
+    fs.writeFileSync(path.join(userData, 'ai', 'credentials.bin'), encryptedCredentialBytes);
     const updater = updaterDouble();
     let received;
     let closed = false;
@@ -217,6 +221,14 @@ test('Windows uses TUF-authenticated metadata, keeps settings, and requests a si
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(userData, 'update-frequency.json'))), {
       frequency: 'weekly',
     });
+    assert.equal(
+      fs.readFileSync(path.join(userData, 'main-window-state.json'), 'utf8'),
+      '{"width":1180,"height":760}\n',
+    );
+    assert.deepEqual(
+      fs.readFileSync(path.join(userData, 'ai', 'credentials.bin')),
+      encryptedCredentialBytes,
+    );
   } finally {
     fs.rmSync(userData, { recursive: true, force: true });
   }
