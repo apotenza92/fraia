@@ -1,0 +1,96 @@
+name: macOS signing audit
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fraia-macos-signing-audit
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Signed macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'macos-26' || 'macos-26-intel' }}
+    environment: release-signing
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.1.1.app/Contents/Developer
+      FRAIA_XCODE_VERSION: '26.1.1'
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/fraia-electron/package-lock.json
+
+      - name: Verify native runner and reviewed Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node -p 'process.arch')" = "${{ matrix.arch }}"
+          EXPECTED="${{ matrix.arch }}"
+          if [ "$EXPECTED" = x64 ]; then EXPECTED=x86_64; fi
+          test "$(uname -m)" = "$EXPECTED"
+          test -x "$DEVELOPER_DIR/usr/bin/actool"
+          test "$(xcodebuild -version | sed -n '1p')" = "Xcode $FRAIA_XCODE_VERSION"
+          test "$(xcrun --find actool)" = "$DEVELOPER_DIR/usr/bin/actool"
+
+      - name: Install dependencies
+        working-directory: apps/fraia-electron
+        run: npm ci
+
+      - name: Build renderer and native Rust sidecar without release credentials
+        working-directory: apps/fraia-electron
+        run: npm run build && npm run build:sidecar
+
+      - name: Build, sign, notarize, and staple
+        working-directory: apps/fraia-electron
+        env:
+          APPLE_NOTARYTOOL_ISSUER_ID: ${{ vars.APPLE_NOTARYTOOL_ISSUER_ID }}
+          APPLE_NOTARYTOOL_KEY_ID: ${{ vars.APPLE_NOTARYTOOL_KEY_ID }}
+          APPLE_NOTARYTOOL_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARYTOOL_KEY_P8_BASE64 }}
+          APPLE_SIGNING_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_SIGNING_CERTIFICATE_P12_BASE64 }}
+          APPLE_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_SIGNING_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_CERTIFICATE_SHA256: ${{ vars.APPLE_SIGNING_CERTIFICATE_SHA256 }}
+          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          FRAIA_RELEASE_ARCH: ${{ matrix.arch }}
+          FRAIA_RELEASE_CHANNEL: stable
+          FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
+          FRAIA_REQUIRE_RELEASE_ICON: '1'
+          FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}/apps/fraia-electron/release/stable/darwin/${{ matrix.arch }}
+          FRAIA_RELEASE_PLATFORM: darwin
+        run: npm run package:release:mac -- --channel stable --arch "$FRAIA_RELEASE_ARCH" --output-dir "$FRAIA_RELEASE_OUTPUT_DIR"
+
+      - name: Verify signatures, notarization, Gatekeeper, launch, and solver without credentials
+        working-directory: apps/fraia-electron
+        env:
+          APPLE_SIGNING_CERTIFICATE_SHA256: ${{ vars.APPLE_SIGNING_CERTIFICATE_SHA256 }}
+          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
+        run: >-
+          npm run verify:release:mac --
+          --channel stable
+          --arch "${{ matrix.arch }}"
+          --output-dir "release/stable/darwin/${{ matrix.arch }}"
+
+      - name: Upload independently reviewable signed evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fraia-macos-signing-audit-${{ matrix.arch }}
+          path: apps/fraia-electron/release/stable/darwin/${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 14
