@@ -100,6 +100,7 @@ clang_executable="$MINGW_PREFIX/bin/clang.exe"
 flang_executable="$MINGW_PREFIX/bin/flang.exe"
 llvm_ar_executable="$MINGW_PREFIX/bin/llvm-ar.exe"
 llvm_ranlib_executable="$MINGW_PREFIX/bin/llvm-ranlib.exe"
+omp_fortran_module="$MINGW_PREFIX/include/omp_lib.mod"
 if [[
   ! -f "$clang_executable"
   || ! -f "$flang_executable"
@@ -107,6 +108,11 @@ if [[
   || ! -f "$llvm_ranlib_executable"
 ]]; then
   printf 'The reviewed CLANGARM64 compiler executables are unavailable.\n' >&2
+  exit 1
+fi
+if [[ ! -f "$omp_fortran_module" ]]; then
+  printf 'The reviewed LLVM OpenMP Fortran module is unavailable: %s\n' \
+    "$omp_fortran_module" >&2
   exit 1
 fi
 clang_header=$(llvm-readobj --file-headers "$(cygpath -w "$clang_executable")")
@@ -118,6 +124,7 @@ if ! grep -Fq 'Machine: IMAGE_FILE_MACHINE_ARM64 (0xAA64)' <<<"$clang_header" ||
 fi
 llvm_ar_cmake=$(cygpath -m "$llvm_ar_executable")
 llvm_ranlib_cmake=$(cygpath -m "$llvm_ranlib_executable")
+mingw_include_cmake=$(cygpath -m "$MINGW_PREFIX/include")
 
 output=$(cd "$(dirname "$output")" && pwd)/$(basename "$output")
 evidence=$(cd "$(dirname "$evidence")" && pwd)/$(basename "$evidence")
@@ -256,7 +263,8 @@ write_calculix_project() {
     printf 'target_compile_options(ccxcore PRIVATE\n'
     printf '  "$<$<COMPILE_LANGUAGE:C>:-O2;-g0;-std=gnu17;-Wno-implicit-function-declaration;-Wno-incompatible-pointer-types;-ffile-prefix-map=%s=/usr/src/fraia-runtime;-fdebug-prefix-map=%s=/usr/src/fraia-runtime>"\n' \
       "$controlled_root" "$controlled_root"
-    printf '  "$<$<COMPILE_LANGUAGE:Fortran>:-O2;-g0;-fopenmp;-cpp>"\n'
+    printf '  "$<$<COMPILE_LANGUAGE:Fortran>:-O2;-g0;-fopenmp;-cpp;-I%s>"\n' \
+      "$mingw_include_cmake"
     printf ')\n'
     printf 'add_executable(ccx "%s/ccx_2.23.c")\n' "$source_root_cmake"
     printf 'target_include_directories(ccx PRIVATE "%s")\n' "$spooles_root_cmake"

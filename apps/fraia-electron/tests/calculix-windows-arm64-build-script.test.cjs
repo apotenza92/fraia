@@ -44,6 +44,9 @@ test('Windows ARM64 audit is native, source-built, reproducible, and fail-closed
   assert.match(script, /llvm_ar_cmake=\$\(cygpath -m "\$llvm_ar_executable"\)/);
   assert.match(script, /"-DCMAKE_AR=\$llvm_ar_cmake"/);
   assert.match(script, /"-DCMAKE_RANLIB=\$llvm_ranlib_cmake"/);
+  assert.match(script, /omp_fortran_module="\$MINGW_PREFIX\/include\/omp_lib\.mod"/);
+  assert.match(script, /mingw_include_cmake=\$\(cygpath -m "\$MINGW_PREFIX\/include"\)/);
+  assert.match(script, /COMPILE_LANGUAGE:Fortran>:-O2;-g0;-fopenmp;-cpp;-I%s/);
   assert.match(script, /cygpath -u "\$\{RUNNER_TEMP:/);
   assert.match(script, /source_root_cmake=\$\(cygpath -m "\$source_root"\)/);
   assert.match(script, /spooles_root_cmake=\$\(cygpath -m "\$spooles_root"\)/);
