@@ -20,10 +20,22 @@ const {
 } = require('../package-boundary.cjs');
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
-const PLATFORM_RECIPE = Object.freeze({
-  darwin: 'build-calculix-macos-runtime.sh',
-  linux: 'build-calculix-linux-runtime.sh',
-  win32: 'build-calculix-windows-runtime.ps1',
+const TARGET_RECIPE = Object.freeze({
+  'darwin-arm64': 'build-calculix-macos-runtime.sh',
+  'darwin-x64': 'build-calculix-macos-runtime.sh',
+  'linux-arm64': 'build-calculix-linux-runtime.sh',
+  'linux-x64': 'build-calculix-linux-runtime.sh',
+  'win32-arm64': 'build-calculix-windows-arm64-runtime.sh',
+  'win32-x64': 'build-calculix-windows-runtime.ps1',
+});
+const TARGET_LICENSE_IDENTIFIERS = Object.freeze({
+  'win32-arm64': [
+    'GPL-2.0-only',
+    'LicenseRef-SPOOLES-Public-Domain',
+    'BSD-3-Clause',
+    'Apache-2.0 WITH LLVM-exception',
+    'MIT',
+  ],
 });
 const LICENSE_IDENTIFIERS = Object.freeze({
   darwin: [
@@ -95,9 +107,20 @@ function observedDependencyNames(evidenceDirectory, runtimeDirectory, platform) 
     ));
   }
   if (platform === 'win32') {
-    return unique(parseWindowsDependencies(
-      fs.readFileSync(path.join(evidenceDirectory, 'native', 'ccx.imports.txt'), 'utf8'),
-    ));
+    const directory = path.join(evidenceDirectory, 'native');
+    const legacy = path.join(directory, 'ccx.imports.txt');
+    const evidenceFiles = fs.existsSync(legacy)
+      ? [legacy]
+      : fs.readdirSync(directory)
+        .filter((name) => name.endsWith('.dependencies.txt'))
+        .sort()
+        .map((name) => path.join(directory, name));
+    if (evidenceFiles.length === 0) {
+      throw new Error(`Windows dependency evidence is missing from ${directory}.`);
+    }
+    return unique(evidenceFiles.flatMap((filePath) => (
+      parseWindowsDependencies(fs.readFileSync(filePath, 'utf8'))
+    )));
   }
   throw new Error(`Unsupported promotion platform: ${platform}`);
 }
@@ -161,8 +184,8 @@ function verifyCandidate(candidateDirectory, repositoryRoot, target) {
   if (solverStderr.length !== 0 || !solverStdout.includes(Buffer.from('Job finished'))) {
     throw new Error('The official spring1 solver evidence did not finish cleanly.');
   }
-  const platform = target.split('-')[0];
-  const recipeName = PLATFORM_RECIPE[platform];
+  const recipeName = TARGET_RECIPE[target];
+  if (!recipeName) throw new Error(`Promotion recipe is not declared for ${target}.`);
   const reviewedRecipe = path.join(evidenceDirectory, 'source-inputs', recipeName);
   const repositoryRecipe = path.join(repositoryRoot, 'apps', 'fraia-electron', 'scripts', recipeName);
   if (!fs.readFileSync(reviewedRecipe).equals(fs.readFileSync(repositoryRecipe))) {
@@ -222,7 +245,7 @@ function promoteRuntime({
         sourceUrl: correspondingSourceUrl(repository, tag),
         sourceSha256,
         sourceAsset: CALCULIX_SOURCE_ASSET_NAME,
-        licenseIdentifiers: LICENSE_IDENTIFIERS[platform],
+        licenseIdentifiers: TARGET_LICENSE_IDENTIFIERS[target] || LICENSE_IDENTIFIERS[platform],
       },
       files: {
         executable: {
@@ -309,6 +332,7 @@ module.exports = {
   LICENSE_IDENTIFIERS,
   observedDependencyNames,
   promoteRuntime,
+  TARGET_LICENSE_IDENTIFIERS,
   verifyCandidate,
   verifyChecksumIndex,
 };
