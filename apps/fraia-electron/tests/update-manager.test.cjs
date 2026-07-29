@@ -172,6 +172,7 @@ test('Windows uses TUF-authenticated metadata, keeps settings, and requests a si
     const updater = updaterDouble();
     let received;
     let closed = false;
+    let refreshes = 0;
     const result = await configureAutoUpdates({
       app: { isPackaged: true, getPath: () => userData, getVersion: () => '0.0.1' },
       autoUpdater: updater,
@@ -180,6 +181,7 @@ test('Windows uses TUF-authenticated metadata, keeps settings, and requests a si
         return {
           close: async () => { closed = true; },
           feedUrl: 'http://127.0.0.1:43123',
+          refresh: async () => { refreshes += 1; },
         };
       },
       packageMetadata: {
@@ -204,6 +206,8 @@ test('Windows uses TUF-authenticated metadata, keeps settings, and requests a si
       received.embeddedRootPath,
       path.join(userData, 'resources', 'update-trust', 'root.json'),
     );
+    await result.checkNow();
+    assert.equal(refreshes, 1);
     updater.emit('update-downloaded', { version: '0.0.2', releaseNotes: 'Secure update.' });
     await new Promise((resolve) => setImmediate(resolve));
     assert.deepEqual(updater.installArgs, [true, true]);
@@ -266,6 +270,7 @@ test('concurrent manual checks share one in-flight update request', async () => 
   const first = result.checkNow();
   const second = result.checkNow();
   assert.equal(first, second);
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(checks, 1);
   resolveCheck();
   await first;

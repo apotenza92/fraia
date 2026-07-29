@@ -181,6 +181,8 @@ test('verified local feed serves only target bytes authenticated by TUF', async 
     assert.deepEqual(Buffer.from(await response.arrayBuffer()), fixture.targetBytes);
     assert.equal((await fetch(`${feed.feedUrl}/unexpected.yml`)).status, 404);
     assert.deepEqual(fs.readFileSync(feed.targetPath), fixture.targetBytes);
+    await feed.refresh();
+    assert.deepEqual(fs.readFileSync(feed.targetPath), fixture.targetBytes);
   } finally {
     if (feed) await feed.close();
     await repository.close();

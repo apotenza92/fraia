@@ -84,28 +84,39 @@ async function createTufVerifiedUpdateFeed({
   fs.mkdirSync(targetDir, { recursive: true });
   const trust = initializeTrustedRoot({ embeddedRootPath, metadataDir });
 
-  const updater = new UpdaterClass({
-    metadataBaseUrl: `${normalizedRepositoryUrl}/metadata`,
-    targetBaseUrl: `${normalizedRepositoryUrl}/targets`,
-    metadataDir,
-    targetDir,
-    config: { userAgent: 'Fraia desktop updater' },
-  });
-  await updater.refresh();
-  const targetInfo = await updater.getTargetInfo(normalizedTargetName);
-  if (!targetInfo) {
-    throw new Error(`The signed Fraia update repository has no ${normalizedTargetName} target.`);
-  }
-
   const targetPath = path.join(targetDir, normalizedTargetName);
-  const temporaryTargetPath = `${targetPath}.${process.pid}.tmp`;
-  try {
-    await updater.downloadTarget(targetInfo, temporaryTargetPath);
-    fs.renameSync(temporaryTargetPath, targetPath);
-  } finally {
-    fs.rmSync(temporaryTargetPath, { force: true });
-  }
-  const targetBytes = fs.readFileSync(targetPath);
+  let targetBytes = null;
+  let refreshPromise = null;
+  const refresh = () => {
+    if (refreshPromise) return refreshPromise;
+    refreshPromise = (async () => {
+      const updater = new UpdaterClass({
+        metadataBaseUrl: `${normalizedRepositoryUrl}/metadata`,
+        targetBaseUrl: `${normalizedRepositoryUrl}/targets`,
+        metadataDir,
+        targetDir,
+        config: { userAgent: 'Fraia desktop updater' },
+      });
+      await updater.refresh();
+      const targetInfo = await updater.getTargetInfo(normalizedTargetName);
+      if (!targetInfo) {
+        throw new Error(`The signed Fraia update repository has no ${normalizedTargetName} target.`);
+      }
+      const temporaryTargetPath = `${targetPath}.${process.pid}.tmp`;
+      try {
+        await updater.downloadTarget(targetInfo, temporaryTargetPath);
+        fs.renameSync(temporaryTargetPath, targetPath);
+      } finally {
+        fs.rmSync(temporaryTargetPath, { force: true });
+      }
+      targetBytes = fs.readFileSync(targetPath);
+      return targetPath;
+    })().finally(() => {
+      refreshPromise = null;
+    });
+    return refreshPromise;
+  };
+  await refresh();
 
   const requestPath = `/${encodeURIComponent(normalizedTargetName)}`;
   const server = http.createServer((request, response) => {
@@ -118,6 +129,10 @@ async function createTufVerifiedUpdateFeed({
     }
     if (!['GET', 'HEAD'].includes(request.method) || pathname !== requestPath) {
       response.writeHead(404, { 'Cache-Control': 'no-store' }).end();
+      return;
+    }
+    if (!targetBytes) {
+      response.writeHead(503, { 'Cache-Control': 'no-store' }).end();
       return;
     }
     response.writeHead(200, {
@@ -137,6 +152,7 @@ async function createTufVerifiedUpdateFeed({
   return {
     close: () => close(server),
     feedUrl: `http://127.0.0.1:${address.port}`,
+    refresh,
     targetPath,
     trustInitialized: trust.initialized,
     trustedRootPath: trust.trustedRootPath,

@@ -210,7 +210,8 @@ function activateUpdater({
 
   const check = () => {
     if (checkPromise) return checkPromise;
-    checkPromise = autoUpdater.checkForUpdates()
+    checkPromise = Promise.resolve(verifiedFeed?.refresh?.())
+      .then(() => autoUpdater.checkForUpdates())
       .catch((error) => {
         event('error', { message: String(error?.message || error) });
         log.error('[updater] update check failed', error);
