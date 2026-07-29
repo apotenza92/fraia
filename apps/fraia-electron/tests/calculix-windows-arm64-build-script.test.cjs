@@ -38,6 +38,7 @@ test('Windows ARM64 audit pins source, recipe, repository, and toolchain inputs'
 test('Windows ARM64 audit is native, source-built, reproducible, and fail-closed', () => {
   assert.match(script, /RUNNER_ARCH:-} != 'ARM64'/);
   assert.match(script, /MSYSTEM:-} != 'CLANGARM64'/);
+  assert.match(script, /patch sed sha256sum tar/);
   assert.match(script, /clang\.exe/);
   assert.match(script, /flang\.exe/);
   assert.match(script, /cygpath -w "\$clang_executable"/);
@@ -53,6 +54,16 @@ test('Windows ARM64 audit is native, source-built, reproducible, and fail-closed
   assert.match(script, /-DMINGW64=1/);
   assert.match(script, /-DCMAKE_SYSTEM_PROCESSOR=ARM64/);
   assert.match(script, /-DBUILD_TESTING=OFF/);
+  for (const patchName of [
+    'ccx_mingw.patch',
+    'ccx_ooc.patch',
+    'ccx_numeric_format.patch',
+    'ccx_adapt_main_pastix.patch',
+  ]) {
+    assert.match(script, new RegExp(patchName.replaceAll('.', '\\.')));
+  }
+  assert.match(script, /patch -d "\$ccx_source" -Np1/);
+  assert.match(script, /-fcommon/);
   assert.match(script, /\^#define ARCH_ARM64/);
   assert.match(script, /Machine: IMAGE_FILE_MACHINE_ARM64 \(0xAA64\)/);
   assert.match(script, /build_once "\$work_root\/build-one"/);

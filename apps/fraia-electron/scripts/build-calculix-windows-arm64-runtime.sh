@@ -72,7 +72,7 @@ fi
 
 for command in \
   awk clang cmake curl cygpath file find flang llvm-ar llvm-objdump llvm-ranlib \
-  llvm-readobj llvm-strings ninja pacman sed sha256sum tar; do
+  llvm-readobj llvm-strings ninja pacman patch sed sha256sum tar; do
   command -v "$command" >/dev/null || {
     printf 'Required build command is unavailable: %s\n' "$command" >&2
     exit 1
@@ -261,7 +261,7 @@ write_calculix_project() {
     printf 'target_include_directories(ccxcore PRIVATE "%s")\n' "$spooles_root_cmake"
     printf 'target_compile_definitions(ccxcore PRIVATE ARCH=Linux SPOOLES ARPACK MATRIXSTORAGE NETWORKOUT USE_MT=1)\n'
     printf 'target_compile_options(ccxcore PRIVATE\n'
-    printf '  "$<$<COMPILE_LANGUAGE:C>:-O2;-g0;-std=gnu17;-Wno-implicit-function-declaration;-Wno-incompatible-pointer-types;-ffile-prefix-map=%s=/usr/src/fraia-runtime;-fdebug-prefix-map=%s=/usr/src/fraia-runtime>"\n' \
+    printf '  "$<$<COMPILE_LANGUAGE:C>:-O2;-g0;-std=gnu17;-fcommon;-Wno-implicit-function-declaration;-Wno-incompatible-pointer-types;-ffile-prefix-map=%s=/usr/src/fraia-runtime;-fdebug-prefix-map=%s=/usr/src/fraia-runtime>"\n' \
       "$controlled_root" "$controlled_root"
     printf '  "$<$<COMPILE_LANGUAGE:Fortran>:-O2;-g0;-fopenmp;-cpp;-I%s>"\n' \
       "$mingw_include_cmake"
@@ -269,7 +269,7 @@ write_calculix_project() {
     printf 'add_executable(ccx "%s/ccx_2.23.c")\n' "$source_root_cmake"
     printf 'target_include_directories(ccx PRIVATE "%s")\n' "$spooles_root_cmake"
     printf 'target_compile_definitions(ccx PRIVATE ARCH=Linux SPOOLES ARPACK MATRIXSTORAGE NETWORKOUT USE_MT=1)\n'
-    printf 'target_compile_options(ccx PRIVATE -O2 -g0 -std=gnu17 -Wno-implicit-function-declaration -Wno-incompatible-pointer-types "-ffile-prefix-map=%s=/usr/src/fraia-runtime" "-fdebug-prefix-map=%s=/usr/src/fraia-runtime")\n' \
+    printf 'target_compile_options(ccx PRIVATE -O2 -g0 -std=gnu17 -fcommon -Wno-implicit-function-declaration -Wno-incompatible-pointer-types "-ffile-prefix-map=%s=/usr/src/fraia-runtime" "-fdebug-prefix-map=%s=/usr/src/fraia-runtime")\n' \
       "$controlled_root" "$controlled_root"
     printf 'set_property(TARGET ccx PROPERTY LINKER_LANGUAGE Fortran)\n'
     printf 'target_link_options(ccx PRIVATE\n'
@@ -300,6 +300,7 @@ build_once() {
     "$build_root/correction" \
     "$build_root/arpack" \
     "$build_root/openblas" \
+    "$build_root/msys2-recipe" \
     "$build_root/payload"
   tar -xjf "$work_root/ccx_2.23.src.tar.bz2" -C "$build_root"
   tar -xzf "$work_root/spooles.2.2.tgz" -C "$build_root/spooles"
@@ -308,6 +309,21 @@ build_once() {
     -C "$build_root/arpack" --strip-components=1
   tar -xzf "$work_root/OpenBLAS-0.3.34.tar.gz" \
     -C "$build_root/openblas" --strip-components=1
+  tar -xzf "$work_root/msys2-mingw-packages.tar.gz" \
+    -C "$build_root/msys2-recipe" \
+    --strip-components=2 \
+    "MINGW-packages-${MSYS2_RECIPE_COMMIT}/mingw-w64-calculix-ccx"
+
+  local ccx_source="$build_root/CalculiX/ccx_2.23/src"
+  local patch_name
+  for patch_name in \
+    ccx_mingw.patch \
+    ccx_ooc.patch \
+    ccx_numeric_format.patch \
+    ccx_adapt_main_pastix.patch; do
+    patch -d "$ccx_source" -Np1 \
+      <"$build_root/msys2-recipe/$patch_name"
+  done
 
   cp \
     "$build_root/correction/CalculiX/ccx_2.23/SPOOLES.2.2/I2Ohash/src/util.c" \
@@ -405,10 +421,6 @@ build_once() {
   arpack_library=$(find "$prefix" -type f -name 'libarpack*.a' -print | LC_ALL=C sort | head -n 1)
   [[ -n "$arpack_library" && -f "$arpack_library" ]]
 
-  local ccx_source="$build_root/CalculiX/ccx_2.23/src"
-  for source_file in "$ccx_source/ccx_2.23.c" "$ccx_source/ccx_2.23step.c"; do
-    sed -i '/^#ifdef __WIN32$/{N;N;/_set_output_format(_TWO_DIGIT_EXPONENT);/d;}' "$source_file"
-  done
   sed -i \
     '/^void readnewmesh(/,/^}/{s/^[[:space:]]*return NULL;[[:space:]]*$/  return;/;}' \
     "$ccx_source/readnewmesh.c"
@@ -588,6 +600,7 @@ package_versions=$(
   printf -- '- CLANGARM64 repository database SHA-256: `%s`\n' "$MSYS2_CLANGARM64_DB_SHA256"
   printf -- '- MSYS2 CalculiX 2.23 recipe commit: `%s`\n' "$MSYS2_RECIPE_COMMIT"
   printf -- '- MSYS2 recipe source archive SHA-256: `%s`\n' "$MSYS2_RECIPE_SHA256"
+  printf -- '- Applied MSYS2 patches: `ccx_mingw.patch`, `ccx_ooc.patch`, `ccx_numeric_format.patch`, `ccx_adapt_main_pastix.patch`\n'
   printf -- '- Minimum Windows contract: `%s.%s`\n' "$MINIMUM_WINDOWS_MAJOR" "$MINIMUM_WINDOWS_MINOR"
   printf -- '- Windows console subsystem contract: `%s.%s`\n' "$WINDOWS_SUBSYSTEM_MAJOR" "$WINDOWS_SUBSYSTEM_MINOR"
   printf -- '- CalculiX source SHA-256: `%s`\n' "$CCX_SOURCE_SHA256"
