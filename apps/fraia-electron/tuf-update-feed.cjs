@@ -148,9 +148,15 @@ async function createTufVerifiedUpdateFeed({
     await close(server);
     throw new Error('Fraia could not start its verified local update feed.');
   }
+  let closePromise = null;
+  const closeFeed = () => {
+    if (closePromise) return closePromise;
+    closePromise = server.listening ? close(server) : Promise.resolve();
+    return closePromise;
+  };
 
   return {
-    close: () => close(server),
+    close: closeFeed,
     feedUrl: `http://127.0.0.1:${address.port}`,
     refresh,
     targetPath,

@@ -344,6 +344,56 @@ test('Windows uses TUF-authenticated metadata, keeps settings, and requests a si
   }
 });
 
+test('Windows closes its verified local feed before handing off to the installer', async () => {
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-updater-windows-handoff-'));
+  try {
+    const order = [];
+    let releaseClose;
+    const updater = updaterDouble();
+    updater.quitAndInstall = (...args) => {
+      order.push(['install', args]);
+    };
+    await configureAutoUpdates({
+      app: { isPackaged: true, getPath: () => userData, getVersion: () => '0.0.1' },
+      autoUpdater: updater,
+      createVerifiedFeed: async () => ({
+        close: () => new Promise((resolve) => {
+          order.push(['close-start']);
+          releaseClose = () => {
+            order.push(['close-finished']);
+            resolve();
+          };
+        }),
+        feedUrl: 'http://127.0.0.1:43127',
+        refresh: async () => {},
+      }),
+      packageMetadata: {
+        fraiaReleaseChannel: 'stable',
+        fraiaTufRepositoryUrl: 'https://updates.example/fraia/tuf',
+        fraiaUpdateFeedUrl: 'https://updates.example/fraia',
+        fraiaUpdateTargetName: 'latest.yml',
+      },
+      env: {},
+      platform: 'win32',
+      resourcesPath: path.join(userData, 'resources'),
+      schedule: { clearInterval() {}, clearTimeout() {}, setInterval() { return 1; }, setTimeout() { return 2; } },
+      showUpdateReady: async () => ({ response: 0 }),
+    });
+    updater.emit('update-downloaded', { version: '0.0.2', releaseNotes: 'Secure update.' });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(order, [['close-start']]);
+    releaseClose();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(order, [
+      ['close-start'],
+      ['close-finished'],
+      ['install', [true, true]],
+    ]);
+  } finally {
+    fs.rmSync(userData, { recursive: true, force: true });
+  }
+});
+
 test('never and startup frequencies do not create repeating schedules', async () => {
   const timeouts = [];
   const intervals = [];

@@ -175,6 +175,28 @@ function activateUpdater({
     pid: process.pid,
     ...details,
   });
+  let stopSchedule = () => {};
+  let verifiedFeedClosePromise = null;
+  const closeVerifiedFeed = () => {
+    if (!verifiedFeed) return Promise.resolve();
+    if (!verifiedFeedClosePromise) {
+      verifiedFeedClosePromise = Promise.resolve().then(() => verifiedFeed.close());
+    }
+    return verifiedFeedClosePromise;
+  };
+  let installPromise = null;
+  const installDownloadedUpdate = () => {
+    if (installPromise) return installPromise;
+    stopSchedule();
+    installPromise = closeVerifiedFeed()
+      .then(() => autoUpdater.quitAndInstall(platform !== 'darwin', true))
+      .catch((error) => {
+        event('error', { message: String(error?.message || error) });
+        log.error('[updater] could not prepare the downloaded update for installation', error);
+        throw error;
+      });
+    return installPromise;
+  };
 
   if (testMode && env.FRAIA_E2E_EXPECT_VERSION === app.getVersion()) {
     event('updated-runtime-launched');
@@ -193,14 +215,16 @@ function activateUpdater({
     const releaseNotes = normalizeReleaseNotes(info.releaseNotes);
     event('update-downloaded', { version: info.version, releaseNotes });
     if (testMode && env.FRAIA_E2E_INSTALL_UPDATE === '1') {
-      schedule.setTimeout(() => autoUpdater.quitAndInstall(platform !== 'darwin', true), 100);
+      schedule.setTimeout(() => {
+        void installDownloadedUpdate().catch(() => {});
+      }, 100);
       return;
     }
     if (promptedVersion === info.version) return;
     promptedVersion = info.version;
     try {
       const result = await showUpdateReady({ releaseNotes, version: info.version });
-      if (result?.response === 0) autoUpdater.quitAndInstall(platform !== 'darwin', true);
+      if (result?.response === 0) await installDownloadedUpdate();
     } catch (error) {
       log.error('[updater] could not present downloaded update', error);
     }
@@ -231,7 +255,7 @@ function activateUpdater({
     return checkPromise;
   };
 
-  const stopSchedule = () => {
+  stopSchedule = () => {
     if (initialTimer !== null) schedule.clearTimeout(initialTimer);
     if (intervalTimer !== null) schedule.clearInterval(intervalTimer);
     initialTimer = null;
@@ -274,7 +298,7 @@ function activateUpdater({
     setFrequency,
     stop: () => {
       stopSchedule();
-      if (verifiedFeed) void verifiedFeed.close().catch((error) => {
+      return closeVerifiedFeed().catch((error) => {
         log.error('[updater] could not close verified local feed', error);
       });
     },

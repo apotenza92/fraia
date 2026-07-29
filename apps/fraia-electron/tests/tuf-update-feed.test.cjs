@@ -183,6 +183,9 @@ test('verified local feed serves only target bytes authenticated by TUF', async 
     assert.deepEqual(fs.readFileSync(feed.targetPath), fixture.targetBytes);
     await feed.refresh();
     assert.deepEqual(fs.readFileSync(feed.targetPath), fixture.targetBytes);
+    await feed.close();
+    await feed.close();
+    feed = null;
   } finally {
     if (feed) await feed.close();
     await repository.close();
