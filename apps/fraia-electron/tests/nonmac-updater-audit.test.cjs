@@ -81,6 +81,10 @@ test('native updater audit reads the version from an installed ASAR', async () =
     fs.writeFileSync(executable, '');
     await asar.createPackage(source, path.join(directory, 'resources', 'app.asar'));
     assert.equal(installedPackageVersion(executable), '0.0.2');
+    fs.writeFileSync(path.join(source, 'package.json'), '{"version":"0.0.3"}\n');
+    fs.rmSync(path.join(directory, 'resources', 'app.asar'));
+    await asar.createPackage(source, path.join(directory, 'resources', 'app.asar'));
+    assert.equal(installedPackageVersion(executable), '0.0.3');
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
@@ -108,6 +112,8 @@ test('native updater workflow performs real TUF-backed Windows and AppImage repl
   assert.match(auditScript, /Get-CimInstance Win32_Process/);
   assert.match(auditScript, /taskkill\.exe/);
   assert.match(auditScript, /normal user launch/);
+  assert.match(auditScript, /LOCALAPPDATA.*Programs.*contract\.productName/);
+  assert.doesNotMatch(auditScript, /`\/D=\$\{installDirectory\}`/);
   assert.match(auditScript, /Updater changed existing project data/);
   assert.match(auditScript, /Updater changed existing AI data/);
   assert.match(auditScript, /update-trust.*metadata.*root\.json/);

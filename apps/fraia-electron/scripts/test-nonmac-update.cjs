@@ -183,8 +183,10 @@ async function waitForEvent(eventPath, accepted, timeoutMs = 300_000) {
 }
 
 function installedPackageVersion(executable) {
+  const archivePath = path.join(path.dirname(executable), 'resources', 'app.asar');
+  asar.uncache(archivePath);
   const packageBytes = asar.extractFile(
-    path.join(path.dirname(executable), 'resources', 'app.asar'),
+    archivePath,
     'package.json',
   );
   return JSON.parse(packageBytes.toString('utf8')).version;
@@ -392,7 +394,7 @@ async function main(argv = process.argv.slice(2)) {
   if (process.platform === 'win32' && fs.existsSync(userData)) {
     throw new Error(`Native updater audit requires an unused Windows user-data directory: ${userData}`);
   }
-  const projectPath = path.join(userData, 'projects', 'default', 'fraia.project.json');
+  const projectPath = path.join(userData, 'projects', 'preservation-marker.fraia');
   const credentialPath = path.join(userData, 'ai', 'preservation-marker.bin');
   const eventPath = path.join(temporaryRoot, 'events', 'updater.json');
   const projectBytes = Buffer.from('{"schemaVersion":1,"name":"Preserved updater model"}\n');
@@ -410,8 +412,11 @@ async function main(argv = process.argv.slice(2)) {
   let failure;
   try {
     if (process.platform === 'win32') {
-      const installDirectory = path.join(temporaryRoot, 'installed');
-      run(previousArtifact, ['/S', `/D=${installDirectory}`]);
+      const installDirectory = path.join(process.env.LOCALAPPDATA, 'Programs', contract.productName);
+      if (fs.existsSync(installDirectory)) {
+        throw new Error(`Native updater audit requires an unused Windows install directory: ${installDirectory}`);
+      }
+      run(previousArtifact, ['/S']);
       installedExecutable = path.join(installDirectory, `${contract.productName}.exe`);
       if (!fs.existsSync(installedExecutable)) throw new Error('The previous Windows package did not install Fraia.');
     } else {
@@ -524,6 +529,12 @@ async function main(argv = process.argv.slice(2)) {
         'NSIS uninstaller',
       );
       run(uninstaller, ['/S']);
+      fs.rmSync(path.dirname(installedExecutable), {
+        recursive: true,
+        force: true,
+        maxRetries: 20,
+        retryDelay: 250,
+      });
     }
     writeEvidence({
       arch,
@@ -544,6 +555,12 @@ async function main(argv = process.argv.slice(2)) {
     fs.rmSync(temporaryRoot, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
     if (process.platform === 'win32') {
       fs.rmSync(userData, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+      fs.rmSync(path.join(process.env.LOCALAPPDATA, 'fraia-electron-updater'), {
+        recursive: true,
+        force: true,
+        maxRetries: 20,
+        retryDelay: 250,
+      });
     }
   }
 }
