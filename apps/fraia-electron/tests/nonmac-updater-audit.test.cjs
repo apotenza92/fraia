@@ -11,6 +11,7 @@ const {
   installedPackageVersion,
   prepareSignedTarget,
   waitForPathRemoval,
+  windowsUnpackedDirectoryName,
 } = require('../scripts/test-nonmac-update.cjs');
 const workflow = fs.readFileSync(
   path.resolve(__dirname, '..', '..', '..', '.github', 'workflows', 'nonmac-updater-audit.yml'),
@@ -98,6 +99,12 @@ test('native updater audit reads the version from an installed ASAR', async () =
   }
 });
 
+test('native updater audit resolves electron-builder unpacked directories for both Windows architectures', () => {
+  assert.equal(windowsUnpackedDirectoryName('x64'), 'win-unpacked');
+  assert.equal(windowsUnpackedDirectoryName('arm64'), 'win-arm64-unpacked');
+  assert.throws(() => windowsUnpackedDirectoryName('ia32'), /Unsupported Windows package architecture/);
+});
+
 test('native updater cleanup waits for confirmed uninstaller removal', () => {
   const removedPath = path.join(os.tmpdir(), `fraia-removed-install-${process.pid}`);
   fs.rmSync(removedPath, { recursive: true, force: true });
@@ -151,7 +158,7 @@ test('native updater workflow performs real TUF-backed Windows and AppImage repl
   assert.match(auditScript, /installedPackageVersion/);
   assert.match(auditScript, /waitForInstalledWindowsPackage/);
   assert.match(auditScript, /installedPackageDigest/);
-  assert.match(auditScript, /candidateDirectory.*win-unpacked.*resources.*app\.asar/s);
+  assert.match(auditScript, /candidateDirectory.*windowsUnpackedDirectoryName\(arch\).*resources.*app\.asar/s);
   assert.match(auditScript, /Get-CimInstance Win32_Process/);
   assert.match(auditScript, /StringComparison.*OrdinalIgnoreCase/);
   assert.match(auditScript, /taskkill\.exe/);

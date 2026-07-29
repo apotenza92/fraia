@@ -200,6 +200,13 @@ function installedPackageDigest(executable) {
   );
 }
 
+function windowsUnpackedDirectoryName(arch) {
+  if (!['x64', 'arm64'].includes(arch)) {
+    throw new Error(`Unsupported Windows package architecture: ${arch}`);
+  }
+  return arch === 'x64' ? 'win-unpacked' : `win-${arch}-unpacked`;
+}
+
 function windowsProcessIds(executable) {
   return windowsProcessIdsMatching(
     '$_.ExecutablePath -eq $env:FRAIA_AUDIT_EXECUTABLE',
@@ -521,7 +528,7 @@ async function main(argv = process.argv.slice(2)) {
       }
       const candidateArchive = path.join(
         candidateDirectory,
-        'win-unpacked',
+        windowsUnpackedDirectoryName(arch),
         'resources',
         'app.asar',
       );
@@ -653,6 +660,7 @@ module.exports = {
   prepareSignedTarget,
   waitForPathRemoval,
   waitForInstalledWindowsPackage,
+  windowsUnpackedDirectoryName,
   windowsProcessIds,
   windowsProcessIdsWithin,
 };
