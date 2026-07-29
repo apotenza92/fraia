@@ -289,6 +289,7 @@ jobs:
           FRAIA_RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
           FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
           FRAIA_REQUIRE_RELEASE_ICON: '1'
+          FRAIA_REQUIRE_TUF_ROOT: '1'
           FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}\apps\fraia-electron\release\${{ needs.prepare.outputs.channel }}\win32\x64
           FRAIA_RELEASE_PLATFORM: win32
         run: npx --no-install electron-builder --config electron-builder.config.cjs --win nsis --x64 --publish never
@@ -357,6 +358,7 @@ jobs:
           FRAIA_RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
           FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
           FRAIA_REQUIRE_RELEASE_ICON: '1'
+          FRAIA_REQUIRE_TUF_ROOT: '1'
           FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}/apps/fraia-electron/release/${{ needs.prepare.outputs.channel }}/linux/${{ matrix.arch }}
           FRAIA_RELEASE_PLATFORM: linux
         run: npx --no-install electron-builder --config electron-builder.config.cjs --linux AppImage deb rpm --${{ matrix.arch }} --publish never

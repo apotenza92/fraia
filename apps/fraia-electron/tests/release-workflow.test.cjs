@@ -323,6 +323,11 @@ test('packaged updater code ships TUF verification for Windows and Linux', () =>
   assert.match(builder, /'update-manager\.cjs'/);
   assert.match(builder, /'tuf-update-feed\.cjs'/);
   assert.match(builder, /FRAIA_REQUIRE_TUF_ROOT/);
+  assert.equal(
+    [...workflow.matchAll(/FRAIA_REQUIRE_TUF_ROOT: '1'/g)].length,
+    2,
+    'Windows and Linux release packages must fail closed without production TUF trust',
+  );
   const updater = fs.readFileSync(path.join(__dirname, '..', 'update-manager.cjs'), 'utf8');
   assert.match(updater, /createTufVerifiedUpdateFeed/);
   assert.match(updater, /platform !== 'darwin'/);
