@@ -66,8 +66,13 @@ test('Windows ARM64 audit is native, source-built, reproducible, and fail-closed
   assert.match(script, /-fcommon/);
   assert.match(script, /\^#define ARCH_ARM64/);
   assert.match(script, /Machine: IMAGE_FILE_MACHINE_ARM64 \(0xAA64\)/);
-  assert.match(script, /build_once "\$work_root\/build-one"/);
-  assert.match(script, /build_once "\$work_root\/build-two"/);
+  assert.match(script, /canonical_build_root='\/c\/usr\/src\/fraia-runtime'/);
+  assert.match(script, /build_once "\$canonical_build_root"/);
+  assert.match(script, /mv "\$canonical_build_root" "\$work_root\/build-one"/);
+  assert.match(script, /mv "\$canonical_build_root" "\$work_root\/build-two"/);
+  assert.match(script, /forbidden_machine_paths/);
+  assert.match(script, /GITHUB_WORKSPACE USERPROFILE/);
+  assert.match(script, /llvm-strings "\$payload"\/\*/);
   assert.match(script, /not byte-identical/);
   assert.match(script, /--no-insert-timestamp/);
   assert.match(script, /-ffile-prefix-map=/);

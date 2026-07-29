@@ -136,6 +136,12 @@ case "$evidence/" in
 esac
 
 runner_temp=$(cygpath -u "${RUNNER_TEMP:?RUNNER_TEMP is required}")
+canonical_build_root='/c/usr/src/fraia-runtime'
+if [[ -e "$canonical_build_root" ]]; then
+  printf 'The reviewed canonical Windows ARM64 build root already exists: %s\n' \
+    "$canonical_build_root" >&2
+  exit 1
+fi
 work_root=$(mktemp -d "${runner_temp}/fraia-calculix-windows-arm64.XXXXXX")
 chmod 700 "$work_root"
 cleanup() {
@@ -143,6 +149,9 @@ cleanup() {
     "${runner_temp}"/fraia-calculix-windows-arm64.*) rm -rf -- "$work_root" ;;
     *) printf 'Refusing to remove unexpected work directory: %s\n' "$work_root" >&2 ;;
   esac
+  if [[ -e "$canonical_build_root" ]]; then
+    rm -rf -- "$canonical_build_root"
+  fi
 }
 report_failure() {
   local status=$1
@@ -154,9 +163,9 @@ report_failure() {
     printf '\n===== %s =====\n' "${log_file#"$work_root"/}" >&2
     tail -n 200 "$log_file" >&2 || true
   done < <(
-    find "$work_root" -type f \
+    find "$work_root" "$canonical_build_root" -type f \
       \( -name '*-build.log' -o -name '*-configure.log' \) \
-      -print |
+      -print 2>/dev/null |
       sort
   )
   if [[ ! -e "$evidence" ]]; then
@@ -169,9 +178,9 @@ report_failure() {
     while IFS= read -r log_file; do
       cp "$log_file" "$evidence/logs/$(basename "$(dirname "$log_file")")-$(basename "$log_file")"
     done < <(
-      find "$work_root" -type f \
+      find "$work_root" "$canonical_build_root" -type f \
         \( -name '*-build.log' -o -name '*-configure.log' \) \
-        -print |
+        -print 2>/dev/null |
         sort
     )
   fi
@@ -450,8 +459,11 @@ build_once() {
   cp "$MINGW_PREFIX/bin/libwinpthread-1.dll" "$build_root/payload/libwinpthread-1.dll"
 }
 
-build_once "$work_root/build-one"
-build_once "$work_root/build-two"
+mkdir -p "$(dirname "$canonical_build_root")"
+build_once "$canonical_build_root"
+mv "$canonical_build_root" "$work_root/build-one"
+build_once "$canonical_build_root"
+mv "$canonical_build_root" "$work_root/build-two"
 
 write_intermediate_checksums() {
   local build_root=$1
@@ -562,12 +574,26 @@ write_reproducibility_failure_evidence() {
   mv "$failure_staging" "$evidence"
 }
 
-for payload in "$work_root/build-one/payload" "$work_root/build-two/payload"; do
-  if llvm-strings "$payload"/* | grep -F "$work_root"; then
-    printf 'The reviewed Windows ARM64 runtime contains an absolute build path: %s\n' \
-      "$payload" >&2
-    exit 1
+declare -a forbidden_machine_paths=(
+  "$work_root"
+  "$(cygpath -m "$work_root")"
+  "$runner_temp"
+  "$(cygpath -m "$runner_temp")"
+)
+for environment_name in GITHUB_WORKSPACE USERPROFILE; do
+  if [[ -n ${!environment_name:-} ]]; then
+    forbidden_machine_paths+=("${!environment_name}")
+    forbidden_machine_paths+=("$(cygpath -m "${!environment_name}")")
   fi
+done
+for payload in "$work_root/build-one/payload" "$work_root/build-two/payload"; do
+  for forbidden_path in "${forbidden_machine_paths[@]}"; do
+    if [[ -n "$forbidden_path" ]] && llvm-strings "$payload"/* | grep -F "$forbidden_path"; then
+      printf 'The reviewed Windows ARM64 runtime contains a machine path (%s): %s\n' \
+        "$forbidden_path" "$payload" >&2
+      exit 1
+    fi
+  done
 done
 if ! diff -qr "$work_root/build-one/payload" "$work_root/build-two/payload"; then
   printf 'The independently built Windows ARM64 runtimes are not byte-identical.\n' >&2
