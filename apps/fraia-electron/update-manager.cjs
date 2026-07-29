@@ -195,7 +195,15 @@ function activateUpdater({
     installPromise = Promise.resolve()
       .then(() => prepareForInstall())
       .then(() => closeVerifiedFeed())
-      .then(() => autoUpdater.quitAndInstall(platform !== 'darwin', true))
+      .then(() => {
+        autoUpdater.quitAndInstall(platform !== 'darwin', true);
+        if (platform === 'win32') {
+          schedule.setTimeout(() => {
+            event('update-install-force-exit');
+            app.exit(0);
+          }, 3_000);
+        }
+      })
       .catch((error) => {
         event('error', { message: String(error?.message || error) });
         log.error('[updater] could not prepare the downloaded update for installation', error);

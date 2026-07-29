@@ -349,12 +349,18 @@ test('Windows closes its verified local feed before handing off to the installer
   try {
     const order = [];
     let releaseClose;
+    let forceExitCallback;
     const updater = updaterDouble();
     updater.quitAndInstall = (...args) => {
       order.push(['install', args]);
     };
     await configureAutoUpdates({
-      app: { isPackaged: true, getPath: () => userData, getVersion: () => '0.0.1' },
+      app: {
+        exit: (code) => { order.push(['exit', code]); },
+        isPackaged: true,
+        getPath: () => userData,
+        getVersion: () => '0.0.1',
+      },
       autoUpdater: updater,
       createVerifiedFeed: async () => ({
         close: () => new Promise((resolve) => {
@@ -381,7 +387,15 @@ test('Windows closes its verified local feed before handing off to the installer
         order.push(['prepare-finished']);
       },
       resourcesPath: path.join(userData, 'resources'),
-      schedule: { clearInterval() {}, clearTimeout() {}, setInterval() { return 1; }, setTimeout() { return 2; } },
+      schedule: {
+        clearInterval() {},
+        clearTimeout() {},
+        setInterval() { return 1; },
+        setTimeout(callback, delay) {
+          if (delay === 3_000) forceExitCallback = callback;
+          return 2;
+        },
+      },
       showUpdateReady: async () => ({ response: 0 }),
     });
     updater.emit('update-downloaded', { version: '0.0.2', releaseNotes: 'Secure update.' });
@@ -402,6 +416,9 @@ test('Windows closes its verified local feed before handing off to the installer
       ['close-finished'],
       ['install', [true, true]],
     ]);
+    assert.equal(typeof forceExitCallback, 'function');
+    forceExitCallback();
+    assert.deepEqual(order.at(-1), ['exit', 0]);
   } finally {
     fs.rmSync(userData, { recursive: true, force: true });
   }
