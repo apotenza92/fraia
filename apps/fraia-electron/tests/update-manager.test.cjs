@@ -23,6 +23,8 @@ function updaterDouble() {
 test('updater tests accept only loopback feed overrides', () => {
   assert.match(validateTestFeedUrl('http://127.0.0.1:1234/feed'), /^http:\/\/127\.0\.0\.1/);
   assert.throws(() => validateTestFeedUrl('https://example.com/feed'), /loopback-only/);
+  assert.throws(() => validateTestFeedUrl('https://localhost/feed'), /loopback-only HTTP/);
+  assert.throws(() => validateTestFeedUrl('ftp://127.0.0.1/feed'), /loopback-only HTTP/);
 });
 
 test('macOS stable updater is automatic and configurable', async () => {
@@ -210,6 +212,64 @@ test('Linux AppImage refreshes TUF trust before checking and preserves user data
     result.stop();
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(closes, 1);
+  } finally {
+    fs.rmSync(userData, { recursive: true, force: true });
+  }
+});
+
+test('packaged non-macOS E2E runs can exercise TUF only through loopback HTTP', async () => {
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-updater-tuf-e2e-'));
+  try {
+    let received;
+    const updater = updaterDouble();
+    const result = await configureAutoUpdates({
+      app: { isPackaged: true, getPath: () => userData, getVersion: () => '0.0.1' },
+      autoUpdater: updater,
+      createVerifiedFeed: async (options) => {
+        received = options;
+        return {
+          close: async () => {},
+          feedUrl: 'http://127.0.0.1:43125',
+          refresh: async () => {},
+        };
+      },
+      env: {
+        FRAIA_E2E_TUF_REPOSITORY_URL: 'http://127.0.0.1:43126/tuf',
+        FRAIA_E2E_UPDATER: '1',
+      },
+      packageMetadata: {
+        fraiaReleaseChannel: 'stable',
+        fraiaTufRepositoryUrl: 'https://production.invalid/tuf',
+        fraiaUpdateFeedUrl: 'https://production.invalid',
+        fraiaUpdateTargetName: 'latest.yml',
+      },
+      platform: 'win32',
+      resourcesPath: path.join(userData, 'resources'),
+      schedule: { clearInterval() {}, clearTimeout() {}, setInterval() { return 1; }, setTimeout(fn) { void fn(); return 2; } },
+    });
+    assert.equal(result.enabled, true);
+    assert.equal(result.trustedMetadata, true);
+    assert.equal(received.repositoryUrl, 'http://127.0.0.1:43126/tuf');
+    assert.equal(received.allowLoopbackHttp, true);
+    result.stop();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.throws(
+      () => configureAutoUpdates({
+        app: { isPackaged: true, getPath: () => userData },
+        autoUpdater: updaterDouble(),
+        env: {
+          FRAIA_E2E_TUF_REPOSITORY_URL: 'https://attacker.example/tuf',
+          FRAIA_E2E_UPDATER: '1',
+        },
+        packageMetadata: {
+          fraiaReleaseChannel: 'stable',
+          fraiaUpdateFeedUrl: 'https://production.invalid',
+        },
+        platform: 'win32',
+      }),
+      /loopback-only HTTP/,
+    );
   } finally {
     fs.rmSync(userData, { recursive: true, force: true });
   }

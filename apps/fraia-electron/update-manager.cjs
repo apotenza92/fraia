@@ -23,8 +23,11 @@ function safeWriteEvent(eventPath, event) {
 
 function validateTestFeedUrl(value) {
   const parsed = new URL(value);
-  if (!['127.0.0.1', '::1', 'localhost'].includes(parsed.hostname)) {
-    throw new Error('Fraia updater test feeds must be loopback-only.');
+  if (
+    parsed.protocol !== 'http:'
+    || !['127.0.0.1', '::1', 'localhost'].includes(parsed.hostname)
+  ) {
+    throw new Error('Fraia updater test feeds must use loopback-only HTTP.');
   }
   return parsed.toString().replace(/\/$/, '');
 }
@@ -91,6 +94,9 @@ function configureAutoUpdates({
   }
 
   const testMode = env.FRAIA_E2E_UPDATER === '1';
+  const testTufRepositoryUrl = testMode && env.FRAIA_E2E_TUF_REPOSITORY_URL
+    ? validateTestFeedUrl(env.FRAIA_E2E_TUF_REPOSITORY_URL)
+    : null;
   const configuredFeedUrl = testMode && env.FRAIA_UPDATE_FEED_URL
     ? validateTestFeedUrl(env.FRAIA_UPDATE_FEED_URL)
     : packageMetadata.fraiaUpdateFeedUrl;
@@ -99,9 +105,9 @@ function configureAutoUpdates({
     throw new Error('Packaged Fraia updater metadata is invalid.');
   }
 
-  if (platform !== 'darwin' && !testMode) {
+  if (platform !== 'darwin' && (!testMode || testTufRepositoryUrl)) {
     const targetName = packageMetadata.fraiaUpdateTargetName;
-    const repositoryUrl = packageMetadata.fraiaTufRepositoryUrl;
+    const repositoryUrl = testTufRepositoryUrl || packageMetadata.fraiaTufRepositoryUrl;
     if (typeof targetName !== 'string' || !targetName || typeof repositoryUrl !== 'string' || !repositoryUrl) {
       throw new Error('Packaged Fraia TUF updater metadata is invalid.');
     }
@@ -111,6 +117,7 @@ function configureAutoUpdates({
       repositoryUrl,
       targetName,
       trustDir: path.join(userData, 'update-trust'),
+      allowLoopbackHttp: Boolean(testTufRepositoryUrl),
     }).then((verifiedFeed) => activateUpdater({
       app,
       autoUpdater,
