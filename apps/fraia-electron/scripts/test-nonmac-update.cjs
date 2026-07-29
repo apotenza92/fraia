@@ -6,7 +6,12 @@ const fs = require('node:fs');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
+const asar = require('@electron/asar');
 const YAML = require('yaml');
+const {
+  resolveApplicationMetadata,
+  resolveUserDataDirectory,
+} = require('../application-metadata.cjs');
 const { metadataFileName, releaseContract } = require('../release-contract.cjs');
 const { createTestRepositoryMetadata } = require('./test-tuf-repository.cjs');
 
@@ -177,6 +182,67 @@ async function waitForEvent(eventPath, accepted, timeoutMs = 300_000) {
   throw new Error(`Timed out waiting for updater event: ${[...accepted].join(', ')}.`);
 }
 
+function installedPackageVersion(executable) {
+  const packageBytes = asar.extractFile(
+    path.join(path.dirname(executable), 'resources', 'app.asar'),
+    'package.json',
+  );
+  return JSON.parse(packageBytes.toString('utf8')).version;
+}
+
+function windowsProcessIds(executable) {
+  const result = spawnSync(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      [
+        '$processes = @(Get-CimInstance Win32_Process |',
+        'Where-Object { $_.ExecutablePath -eq $env:FRAIA_AUDIT_EXECUTABLE } |',
+        'Select-Object -ExpandProperty ProcessId);',
+        'ConvertTo-Json -Compress -InputObject $processes',
+      ].join(' '),
+    ],
+    {
+      encoding: 'utf8',
+      env: { ...process.env, FRAIA_AUDIT_EXECUTABLE: executable },
+    },
+  );
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`Could not inspect the relaunched Windows process: ${result.stderr.trim()}`);
+  }
+  const parsed = JSON.parse(result.stdout.trim() || '[]');
+  return (Array.isArray(parsed) ? parsed : [parsed])
+    .map(Number)
+    .filter((pid) => Number.isInteger(pid) && pid > 0);
+}
+
+async function waitForWindowsRelaunch({
+  eventPath,
+  executable,
+  oldPid,
+  version,
+  timeoutMs = 180_000,
+}) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const error = readEvents(eventPath).find((event) => event.name === 'error');
+    if (error) throw new Error(`Native updater failed: ${error.message || '<missing error>'}`);
+    try {
+      if (installedPackageVersion(executable) === version) {
+        const pid = windowsProcessIds(executable).find((candidate) => candidate !== oldPid);
+        if (pid) return pid;
+      }
+    } catch (error) {
+      if (Date.now() >= deadline) throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error(`Timed out waiting for the installed Windows ${version} runtime to relaunch.`);
+}
+
 function isPidAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
@@ -271,8 +337,8 @@ function writeEvidence({
   fs.writeFileSync(path.join(staging, 'MIGRATION.txt'), [
     `Project before: ${createHash('sha256').update(projectBytes).digest('hex')}`,
     `Project after: ${fs.existsSync(projectPath) ? digest(projectPath, 'sha256', 'hex') : '<missing>'}`,
-    `Credentials before: ${createHash('sha256').update(credentialBytes).digest('hex')}`,
-    `Credentials after: ${fs.existsSync(credentialPath) ? digest(credentialPath, 'sha256', 'hex') : '<missing>'}`,
+    `AI data before: ${createHash('sha256').update(credentialBytes).digest('hex')}`,
+    `AI data after: ${fs.existsSync(credentialPath) ? digest(credentialPath, 'sha256', 'hex') : '<missing>'}`,
     '',
   ].join('\n'));
   const artifacts = [previousArtifact, ...fs.readdirSync(candidateDirectory)
@@ -311,9 +377,17 @@ async function main(argv = process.argv.slice(2)) {
   const contract = releaseContract({ channel: 'stable', platform: process.platform, arch });
   const targetName = metadataFileName(process.platform, arch);
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-nonmac-updater-'));
-  const userData = path.join(temporaryRoot, 'user-data');
+  const userData = process.platform === 'win32'
+    ? resolveUserDataDirectory({
+      appDataPath: process.env.APPDATA,
+      metadata: resolveApplicationMetadata(),
+    })
+    : path.join(temporaryRoot, 'user-data');
+  if (process.platform === 'win32' && fs.existsSync(userData)) {
+    throw new Error(`Native updater audit requires an unused Windows user-data directory: ${userData}`);
+  }
   const projectPath = path.join(userData, 'projects', 'default', 'fraia.project.json');
-  const credentialPath = path.join(userData, 'ai', 'credentials.bin');
+  const credentialPath = path.join(userData, 'ai', 'preservation-marker.bin');
   const eventPath = path.join(temporaryRoot, 'events', 'updater.json');
   const projectBytes = Buffer.from('{"schemaVersion":1,"name":"Preserved updater model"}\n');
   const credentialBytes = Buffer.from([0x46, 0x52, 0x41, 0x49, 0x41]);
@@ -359,21 +433,39 @@ async function main(argv = process.argv.slice(2)) {
       FRAIA_E2E_UPDATER: '1',
       FRAIA_FAKE_AI_RUNTIME: '1',
       FRAIA_UPDATER_EVENT_PATH: eventPath,
-      FRAIA_USER_DATA_DIR: userData,
+      ...(process.platform === 'linux' ? { FRAIA_USER_DATA_DIR: userData } : {}),
     });
     for (const [name, value] of Object.entries(environment)) {
       if (value === undefined) delete environment[name];
     }
     child = spawn(installedExecutable, [], { env: environment, stdio: 'inherit' });
-    const event = await waitForEvent(eventPath, new Set(['updated-runtime-launched', 'error']));
+    const event = await waitForEvent(
+      eventPath,
+      new Set([
+        process.platform === 'win32' ? 'update-downloaded' : 'updated-runtime-launched',
+        'error',
+      ]),
+    );
     if (event.name === 'error') throw new Error(`Native updater failed: ${event.message || '<missing error>'}`);
-    if (event.currentVersion !== server.version) throw new Error('Updated runtime reported the wrong version.');
-    relaunchedPid = event.pid;
+    if (process.platform === 'win32') {
+      if (event.currentVersion === server.version) {
+        throw new Error('Windows updater audit did not start from the previous version.');
+      }
+      relaunchedPid = await waitForWindowsRelaunch({
+        eventPath,
+        executable: installedExecutable,
+        oldPid: child.pid,
+        version: server.version,
+      });
+    } else {
+      if (event.currentVersion !== server.version) throw new Error('Updated runtime reported the wrong version.');
+      relaunchedPid = event.pid;
+    }
     if (!Number.isInteger(relaunchedPid) || relaunchedPid <= 0) {
       throw new Error('Updated runtime reported an invalid process ID.');
     }
     if (!fs.readFileSync(projectPath).equals(projectBytes)) throw new Error('Updater changed existing project data.');
-    if (!fs.readFileSync(credentialPath).equals(credentialBytes)) throw new Error('Updater changed encrypted AI credentials.');
+    if (!fs.readFileSync(credentialPath).equals(credentialBytes)) throw new Error('Updater changed existing AI data.');
     const persistedRoot = path.join(userData, 'update-trust', 'metadata', 'root.json');
     if (JSON.parse(fs.readFileSync(persistedRoot, 'utf8')).signed.version !== 1) {
       throw new Error('Updated runtime did not retain its TUF root trust.');
@@ -422,6 +514,9 @@ async function main(argv = process.argv.slice(2)) {
       server,
     });
     fs.rmSync(temporaryRoot, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+    if (process.platform === 'win32') {
+      fs.rmSync(userData, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+    }
   }
 }
 
@@ -434,5 +529,8 @@ if (require.main === module) {
 
 module.exports = {
   artifactName,
+  installedPackageVersion,
   prepareSignedTarget,
+  waitForWindowsRelaunch,
+  windowsProcessIds,
 };

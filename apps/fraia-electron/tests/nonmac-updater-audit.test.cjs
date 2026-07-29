@@ -3,9 +3,11 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const asar = require('@electron/asar');
 const YAML = require('yaml');
 const {
   artifactName,
+  installedPackageVersion,
   prepareSignedTarget,
 } = require('../scripts/test-nonmac-update.cjs');
 const workflow = fs.readFileSync(
@@ -68,6 +70,22 @@ test('native updater audit rejects escaping artifact names', () => {
   assert.throws(() => artifactName('%2F'), /Unsafe/);
 });
 
+test('native updater audit reads the version from an installed ASAR', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-native-installed-version-'));
+  try {
+    const source = path.join(directory, 'source');
+    const executable = path.join(directory, 'Fraia.exe');
+    fs.mkdirSync(path.join(directory, 'resources'), { recursive: true });
+    fs.mkdirSync(source);
+    fs.writeFileSync(path.join(source, 'package.json'), '{"version":"0.0.2"}\n');
+    fs.writeFileSync(executable, '');
+    await asar.createPackage(source, path.join(directory, 'resources', 'app.asar'));
+    assert.equal(installedPackageVersion(executable), '0.0.2');
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('native updater workflow performs real TUF-backed Windows and AppImage replacements', () => {
   assert.match(workflow, /runs-on:.*windows-2025.*ubuntu-24\.04/);
   assert.match(workflow, /workflow_call:/);
@@ -84,8 +102,11 @@ test('native updater workflow performs real TUF-backed Windows and AppImage repl
   assert.match(workflow, /Remove disposable private key and package outputs/);
   assert.doesNotMatch(workflow, /secrets\./);
   assert.match(auditScript, /updated-runtime-launched/);
+  assert.match(auditScript, /update-downloaded/);
+  assert.match(auditScript, /installedPackageVersion/);
+  assert.match(auditScript, /Get-CimInstance Win32_Process/);
   assert.match(auditScript, /Updater changed existing project data/);
-  assert.match(auditScript, /Updater changed encrypted AI credentials/);
+  assert.match(auditScript, /Updater changed existing AI data/);
   assert.match(auditScript, /update-trust.*metadata.*root\.json/);
   assert.match(auditScript, /AppImage updater did not replace the installed bytes/);
   assert.match(auditScript, /PACKAGE_SHA256SUMS/);
