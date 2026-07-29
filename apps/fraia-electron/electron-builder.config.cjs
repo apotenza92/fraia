@@ -131,6 +131,7 @@ module.exports = {
     allowElevation: assistedNsisMigrationFixture,
     allowToChangeInstallationDirectory: assistedNsisMigrationFixture,
     deleteAppDataOnUninstall: false,
+    include: 'build/installer.nsh',
   },
   linux: {
     icon: fs.existsSync(iconPaths.linux) ? iconPaths.linux : undefined,

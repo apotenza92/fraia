@@ -52,6 +52,7 @@ test('Windows uses one-click NSIS while retaining an isolated assisted-installer
     allowElevation: false,
     allowToChangeInstallationDirectory: false,
     deleteAppDataOnUninstall: false,
+    include: 'build/installer.nsh',
   });
   assert.deepEqual(readNsisConfig({
     FRAIA_E2E_UPDATER: '1',
@@ -62,6 +63,7 @@ test('Windows uses one-click NSIS while retaining an isolated assisted-installer
     allowElevation: true,
     allowToChangeInstallationDirectory: true,
     deleteAppDataOnUninstall: false,
+    include: 'build/installer.nsh',
   });
   assert.equal(readNsisConfig({
     FRAIA_NSIS_ASSISTED_MIGRATION_FIXTURE: '1',

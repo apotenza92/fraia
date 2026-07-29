@@ -23,6 +23,10 @@ const auditScript = fs.readFileSync(
   path.resolve(__dirname, '..', 'scripts', 'test-nonmac-update.cjs'),
   'utf8',
 );
+const nsisInclude = fs.readFileSync(
+  path.resolve(__dirname, '..', 'build', 'installer.nsh'),
+  'utf8',
+);
 
 test('native updater audit rewrites only checksum-verified package URLs', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-native-update-target-'));
@@ -109,6 +113,13 @@ test('native updater workflow performs real TUF-backed Windows and AppImage repl
   assert.match(workflow, /Synthetic prior package used only for the native updater migration audit/);
   assert.match(workflow, /FRAIA_NSIS_ASSISTED_MIGRATION_FIXTURE=1/);
   assert.match(workflow, /unset FRAIA_E2E_UPDATER FRAIA_NSIS_ASSISTED_MIGRATION_FIXTURE/);
+  assert.match(nsisInclude, /customCheckAppRunning/);
+  assert.match(nsisInclude, /ExecutablePath/);
+  assert.match(nsisInclude, /OrdinalIgnoreCase/);
+  assert.match(nsisInclude, /ProcessId -ne \$pid/);
+  assert.match(nsisInclude, /AddSeconds\(15\)/);
+  assert.match(nsisInclude, /SetErrorLevel 2/);
+  assert.doesNotMatch(nsisInclude, /\$\$_\.Path/);
   assert.match(workflow, /latest\.yml/);
   assert.match(workflow, /latest-linux\.yml/);
   assert.match(workflow, /Remove disposable private key and package outputs/);
