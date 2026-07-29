@@ -1,0 +1,190 @@
+name: Native Windows and Linux Updater Audit
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: Native updater target to exercise
+        required: true
+        type: string
+      previous_version:
+        description: Synthetic installed version for the N-1 migration test
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Native updater target to exercise
+        required: true
+        type: choice
+        default: win32-x64
+        options:
+          - win32-arm64
+          - win32-x64
+          - linux-arm64
+          - linux-x64
+      previous_version:
+        description: Synthetic installed version for the N-1 migration test
+        required: true
+        type: string
+        default: 0.0.1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fraia-nonmac-updater-audit-${{ inputs.target }}
+  cancel-in-progress: true
+
+jobs:
+  updater:
+    name: Native updater (${{ inputs.target }})
+    runs-on: ${{ inputs.target == 'win32-arm64' && 'windows-11-arm' || inputs.target == 'win32-x64' && 'windows-2025' || inputs.target == 'linux-arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 90
+    env:
+      FRAIA_AUDIT_PLATFORM: ${{ startsWith(inputs.target, 'win32-') && 'win32' || 'linux' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/fraia-electron/package-lock.json
+
+      - name: Require the matching native runner
+        shell: bash
+        run: |
+          expected_arch='${{ endsWith(inputs.target, '-arm64') && 'arm64' || 'x64' }}'
+          test "$(node -p 'process.arch')" = "$expected_arch"
+          if [ "$FRAIA_AUDIT_PLATFORM" = win32 ]; then
+            test "$(node -p 'process.platform')" = win32
+          else
+            test "$(node -p 'process.platform')" = linux
+          fi
+
+      - name: Install Linux AppImage test dependencies
+        if: ${{ startsWith(inputs.target, 'linux-') }}
+        run: sudo apt-get update && sudo apt-get install -y libfuse2t64 xvfb
+
+      - name: Install, build, and require the reviewed runtime
+        working-directory: apps/fraia-electron
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          npm run build:sidecar
+          node scripts/verify-calculix-runtimes.cjs --target '${{ inputs.target }}'
+
+      - name: Create disposable loopback-only TUF trust
+        working-directory: apps/fraia-electron
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/update-trust '${{ runner.temp }}/fraia-updater-trust'
+          test -f build/update-trust/root.json
+          cp build/update-trust/root.json \
+            '${{ runner.temp }}/fraia-updater-trust/production-root.json'
+          rm build/update-trust/root.json
+          node scripts/test-tuf-repository.cjs \
+            --root build/update-trust/root.json \
+            --private-key '${{ runner.temp }}/fraia-updater-trust/private-key.pem'
+
+      - name: Build previous and candidate packages
+        working-directory: apps/fraia-electron
+        shell: bash
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          FRAIA_RELEASE_ARCH: ${{ endsWith(inputs.target, '-arm64') && 'arm64' || 'x64' }}
+          FRAIA_RELEASE_CHANNEL: stable
+          FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
+          FRAIA_REQUIRE_RELEASE_ICON: '1'
+          FRAIA_REQUIRE_TUF_ROOT: '1'
+          FRAIA_RELEASE_PLATFORM: ${{ startsWith(inputs.target, 'win32-') && 'win32' || 'linux' }}
+        run: |
+          set -euo pipefail
+          CANDIDATE_VERSION=$(node -p 'require("./package.json").version')
+          PREVIOUS_VERSION='${{ inputs.previous_version }}'
+          if ! [[ "$PREVIOUS_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo 'previous_version must be an exact stable semantic version.' >&2
+            exit 1
+          fi
+          if [ "$PREVIOUS_VERSION" = "$CANDIDATE_VERSION" ]; then
+            echo 'The native updater audit requires distinct previous and candidate versions.' >&2
+            exit 1
+          fi
+          if ! grep -Fq "## [$PREVIOUS_VERSION]" ../../CHANGELOG.md; then
+            node -e 'require("node:fs").appendFileSync("../../CHANGELOG.md", "\n## [" + process.argv[1] + "] - 2026-07-29\n\n### Test fixture\n\n- Synthetic prior package used only for the native updater migration audit.\n")' "$PREVIOUS_VERSION"
+          fi
+          npm pkg set "version=$PREVIOUS_VERSION"
+          export FRAIA_RELEASE_OUTPUT_DIR="$PWD/ci-updater/previous"
+          arch='${{ endsWith(inputs.target, '-arm64') && 'arm64' || 'x64' }}'
+          if [ "$FRAIA_AUDIT_PLATFORM" = win32 ]; then
+            export FRAIA_E2E_UPDATER=1
+            export FRAIA_NSIS_ASSISTED_MIGRATION_FIXTURE=1
+            npx --no-install electron-builder --config electron-builder.config.cjs --win nsis "--${arch}" --publish never
+            unset FRAIA_E2E_UPDATER FRAIA_NSIS_ASSISTED_MIGRATION_FIXTURE
+          elif [ '${{ inputs.target }}' = linux-arm64 ]; then
+            npx --no-install electron-builder --config electron-builder.config.cjs --linux AppImage --arm64 --publish never
+          else
+            npx --no-install electron-builder --config electron-builder.config.cjs --linux AppImage --x64 --publish never
+          fi
+          npm pkg set "version=$CANDIDATE_VERSION"
+          export FRAIA_RELEASE_OUTPUT_DIR="$PWD/ci-updater/candidate"
+          if [ "$FRAIA_AUDIT_PLATFORM" = win32 ]; then
+            npx --no-install electron-builder --config electron-builder.config.cjs --win nsis "--${arch}" --publish never
+          elif [ '${{ inputs.target }}' = linux-arm64 ]; then
+            npx --no-install electron-builder --config electron-builder.config.cjs --linux AppImage --arm64 --publish never
+          else
+            npx --no-install electron-builder --config electron-builder.config.cjs --linux AppImage --x64 --publish never
+          fi
+          test "$(node -p 'require("./package.json").version')" = "$CANDIDATE_VERSION"
+
+      - name: Exercise authenticated native N-1 replacement
+        working-directory: apps/fraia-electron
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$FRAIA_AUDIT_PLATFORM" = win32 ]; then
+            arch='${{ endsWith(inputs.target, '-arm64') && 'arm64' || 'x64' }}'
+            node scripts/test-nonmac-update.cjs \
+              --arch "$arch" \
+              --previous-artifact "ci-updater/previous/Fraia-Windows-${arch}-Setup.exe" \
+              --candidate-directory ci-updater/candidate \
+              --candidate-metadata ci-updater/candidate/latest.yml \
+              --root build/update-trust/root.json \
+              --private-key '${{ runner.temp }}/fraia-updater-trust/private-key.pem' \
+              --evidence '${{ runner.temp }}/fraia-updater-evidence'
+          else
+            arch='${{ endsWith(inputs.target, '-arm64') && 'arm64' || 'x64' }}'
+            metadata='${{ inputs.target == 'linux-arm64' && 'latest-linux-arm64.yml' || 'latest-linux.yml' }}'
+            xvfb-run -a node scripts/test-nonmac-update.cjs \
+              --arch "$arch" \
+              --previous-artifact "ci-updater/previous/Fraia-Linux-${arch}.AppImage" \
+              --candidate-directory ci-updater/candidate \
+              --candidate-metadata "ci-updater/candidate/${metadata}" \
+              --root build/update-trust/root.json \
+              --private-key '${{ runner.temp }}/fraia-updater-trust/private-key.pem' \
+              --evidence '${{ runner.temp }}/fraia-updater-evidence'
+          fi
+
+      - name: Upload review evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fraia-${{ inputs.target }}-updater-evidence
+          path: ${{ runner.temp }}/fraia-updater-evidence
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Remove disposable private key and package outputs
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          rm -rf '${{ runner.temp }}/fraia-updater-trust'
+          rm -rf apps/fraia-electron/ci-updater apps/fraia-electron/build/update-trust

@@ -6,6 +6,7 @@ const test = require('node:test');
 const {
   LICENSE_IDENTIFIERS,
   observedDependencyNames,
+  TARGET_LICENSE_IDENTIFIERS,
   verifyChecksumIndex,
 } = require('../scripts/promote-calculix-runtime.cjs');
 
@@ -16,6 +17,16 @@ test('promotion declares the reviewed Windows licence set', () => {
     'BSD-3-Clause',
     'MIT',
     'GPL-3.0-or-later WITH GCC-exception-3.1',
+  ]);
+});
+
+test('Windows ARM64 promotion declares LLVM runtime licences', () => {
+  assert.deepEqual(TARGET_LICENSE_IDENTIFIERS['win32-arm64'], [
+    'GPL-2.0-only',
+    'LicenseRef-SPOOLES-Public-Domain',
+    'BSD-3-Clause',
+    'Apache-2.0 WITH LLVM-exception',
+    'MIT',
   ]);
 });
 
@@ -55,6 +66,13 @@ test('promotion dependency evidence normalizes macOS, Linux, and Windows closure
   assert.deepEqual(
     observedDependencyNames(root, root, 'win32').sort(),
     ['KERNEL32.dll', 'api-ms-win-crt-runtime-l1-1-0.dll'],
+  );
+  fs.rmSync(path.join(native, 'ccx.imports.txt'));
+  fs.writeFileSync(path.join(native, 'ccx.exe.dependencies.txt'), 'DLL Name: KERNEL32.dll\n');
+  fs.writeFileSync(path.join(native, 'libomp.dll.dependencies.txt'), 'DLL Name: VCRUNTIME140.dll\n');
+  assert.deepEqual(
+    observedDependencyNames(root, root, 'win32').sort(),
+    ['KERNEL32.dll', 'VCRUNTIME140.dll'],
   );
   fs.rmSync(root, { recursive: true, force: true });
 });

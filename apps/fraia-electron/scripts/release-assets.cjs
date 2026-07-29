@@ -21,10 +21,21 @@ function expectedReleaseAssetNames(channel) {
       `update-beta-darwin-${arch}.yml`,
     );
     const linux = `${prefix}-Linux-${arch}`;
-    names.push(`${linux}.AppImage`, `${linux}.deb`, `${linux}.rpm`);
+    names.push(
+      `${linux}.AppImage`, `${linux}.deb`, `${linux}.rpm`,
+      `update-stable-linux-${arch}.yml`,
+      `update-beta-linux-${arch}.yml`,
+    );
   }
-  const windows = `${prefix}-Windows-x64-Setup.exe`;
-  names.push(windows, `${windows}.blockmap`);
+  for (const arch of ['arm64', 'x64']) {
+    const windows = `${prefix}-Windows-${arch}-Setup.exe`;
+    names.push(
+      windows,
+      `${windows}.blockmap`,
+      `update-stable-win32-${arch}.yml`,
+      `update-beta-win32-${arch}.yml`,
+    );
+  }
   return names.sort();
 }
 

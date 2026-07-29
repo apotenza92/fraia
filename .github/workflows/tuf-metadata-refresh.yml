@@ -1,0 +1,100 @@
+name: TUF metadata refresh
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fraia-updater-publication
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Refresh published Windows and Linux trust metadata
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: update-signing
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout trusted source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: source
+          ref: main
+
+      - name: Checkout updater feed
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          path: update-site
+          ref: updates
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: source/apps/fraia-electron/package-lock.json
+
+      - name: Install signing dependencies
+        working-directory: source/apps/fraia-electron
+        run: npm ci
+
+      - name: Refresh current target metadata without changing update bytes
+        env:
+          FRAIA_TUF_SNAPSHOT_PRIVATE_KEY_PEM: ${{ secrets.FRAIA_TUF_SNAPSHOT_PRIVATE_KEY_PEM }}
+          FRAIA_TUF_TARGETS_PRIVATE_KEY_PEM: ${{ secrets.FRAIA_TUF_TARGETS_PRIVATE_KEY_PEM }}
+          FRAIA_TUF_TIMESTAMP_PRIVATE_KEY_PEM: ${{ secrets.FRAIA_TUF_TIMESTAMP_PRIVATE_KEY_PEM }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export FRAIA_TUF_METADATA_NOW
+          FRAIA_TUF_METADATA_NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          ROOT="$GITHUB_WORKSPACE/source/apps/fraia-electron/build/update-trust/root.json"
+          for CHANNEL in stable beta; do
+            for PLATFORM in win32 linux; do
+              for ARCH in arm64 x64; do
+                FEED="$GITHUB_WORKSPACE/update-site/$CHANNEL/$PLATFORM/$ARCH"
+                TARGET_NAME=$(node -p \
+                  "require('$GITHUB_WORKSPACE/source/apps/fraia-electron/release-contract.cjs').metadataFileName('$PLATFORM', '$ARCH')")
+                test -f "$FEED/$TARGET_NAME"
+                test -d "$FEED/tuf/metadata"
+                OUTPUT="$RUNNER_TEMP/$CHANNEL-$PLATFORM-$ARCH-tuf"
+                node "$GITHUB_WORKSPACE/source/apps/fraia-electron/scripts/sign-tuf-update-repository.cjs" \
+                  --root "$ROOT" \
+                  --target "$FEED/$TARGET_NAME" \
+                  --target-name "$TARGET_NAME" \
+                  --previous-metadata "$FEED/tuf/metadata" \
+                  --output "$OUTPUT"
+                (cd "$OUTPUT" && sha256sum --check --strict SHA256SUMS)
+                rm -rf "$FEED/tuf"
+                mv "$OUTPUT" "$FEED/tuf"
+              done
+            done
+          done
+          for PLATFORM in win32 linux; do
+            for ARCH in arm64 x64; do
+              diff --recursive \
+                "$GITHUB_WORKSPACE/update-site/stable/$PLATFORM/$ARCH" \
+                "$GITHUB_WORKSPACE/update-site/beta/$PLATFORM/$ARCH"
+            done
+          done
+
+      - name: Publish only refreshed trust metadata
+        working-directory: update-site
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -- stable/win32 stable/linux beta/win32 beta/linux
+          if ! git diff --cached --quiet; then
+            git commit -m "Refresh Fraia TUF metadata"
+            git push origin HEAD:updates
+          fi

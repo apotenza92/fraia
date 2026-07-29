@@ -640,6 +640,35 @@ function stopSidecar() {
   }
 }
 
+function waitForChildExit(processRef, timeoutMs = 5_000) {
+  if (!processRef || processRef.exitCode !== null || processRef.signalCode !== null) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const onExit = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      processRef.off('exit', onExit);
+      reject(new Error(`Fraia sidecar process ${processRef.pid} did not stop before update installation.`));
+    }, timeoutMs);
+    processRef.once('exit', onExit);
+  });
+}
+
+async function prepareForUpdateInstall() {
+  const processRef = sidecarProcess;
+  const runtime = aiRuntime;
+  stopSidecar();
+  aiRuntime = null;
+  aiRuntimeReadyPromise = null;
+  await Promise.all([
+    waitForChildExit(processRef),
+    runtime?.stop?.(),
+  ]);
+}
+
 function reloadWindow(window, ignoreCache = false) {
   const target = window ?? mainWindow;
   if (!target || target.isDestroyed()) return;
@@ -969,14 +998,19 @@ app.whenReady().then(async () => {
     await ensureAiRuntime();
     await ensureSidecar();
     createWindow();
-    if (app.isPackaged && process.platform === 'darwin') {
-      const { autoUpdater } = require('electron-updater');
-      updateController = configureAutoUpdates({
-        app,
-        autoUpdater,
-        packageMetadata,
-        showUpdateReady,
-      });
+    if (app.isPackaged) {
+      try {
+        const { autoUpdater } = require('electron-updater');
+        updateController = await configureAutoUpdates({
+          app,
+          autoUpdater,
+          packageMetadata,
+          prepareForInstall: prepareForUpdateInstall,
+          showUpdateReady,
+        });
+      } catch (error) {
+        safeError(`[updater] secure updater initialization failed: ${error}`);
+      }
     }
     installApplicationMenu();
   } catch (error) {

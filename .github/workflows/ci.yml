@@ -8,15 +8,58 @@ on:
         required: true
         type: boolean
         default: false
+      run_macos_signing_audit:
+        description: Build and verify signed and notarized macOS packages without publishing
+        required: true
+        type: boolean
+        default: false
+      run_tuf_signing_audit:
+        description: Match protected online TUF keys to the reviewed root without publishing
+        required: true
+        type: boolean
+        default: false
+      nonmac_updater_target:
+        description: Exercise a real TUF-backed native Windows or Linux update
+        required: true
+        type: choice
+        default: none
+        options:
+          - none
+          - win32-arm64
+          - win32-x64
+          - linux-arm64
+          - linux-x64
+      nonmac_updater_previous_version:
+        description: Synthetic installed version for the non-macOS updater audit
+        required: true
+        type: string
+        default: 0.0.1
 
 permissions:
   contents: read
 
 concurrency:
-  group: fraia-ci-${{ github.workflow }}-${{ github.ref }}
+  group: fraia-ci-${{ github.workflow }}-${{ github.ref }}-${{ inputs.nonmac_updater_target }}-${{ inputs.run_native_package_preflight }}-${{ inputs.run_macos_signing_audit }}-${{ inputs.run_tuf_signing_audit }}
   cancel-in-progress: true
 
 jobs:
+  macos-signing-audit:
+    if: ${{ inputs.run_macos_signing_audit }}
+    uses: ./.github/workflows/macos-signing-audit.yml
+    secrets: inherit
+
+  tuf-signing-audit:
+    if: ${{ inputs.run_tuf_signing_audit }}
+    uses: ./.github/workflows/tuf-signing-audit.yml
+    secrets: inherit
+
+  nonmac-updater-audit:
+    if: ${{ inputs.nonmac_updater_target != 'none' }}
+    uses: ./.github/workflows/nonmac-updater-audit.yml
+    with:
+      target: ${{ inputs.nonmac_updater_target }}
+      previous_version: ${{ inputs.nonmac_updater_previous_version }}
+
   deterministic:
     name: Deterministic repository checks
     runs-on: ubuntu-24.04
@@ -79,6 +122,9 @@ jobs:
           - platform: darwin
             arch: x64
             runner: macos-26-intel
+          - platform: win32
+            arch: arm64
+            runner: windows-11-arm
           - platform: win32
             arch: x64
             runner: windows-2025

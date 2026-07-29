@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { createTufVerifiedUpdateFeed } = require('./tuf-update-feed.cjs');
 
 const UPDATE_FREQUENCY_MS = Object.freeze({
   hourly: 60 * 60 * 1000,
@@ -22,8 +23,11 @@ function safeWriteEvent(eventPath, event) {
 
 function validateTestFeedUrl(value) {
   const parsed = new URL(value);
-  if (!['127.0.0.1', '::1', 'localhost'].includes(parsed.hostname)) {
-    throw new Error('Fraia updater test feeds must be loopback-only.');
+  if (
+    parsed.protocol !== 'http:'
+    || !['127.0.0.1', '::1', 'localhost'].includes(parsed.hostname)
+  ) {
+    throw new Error('Fraia updater test feeds must use loopback-only HTTP.');
   }
   return parsed.toString().replace(/\/$/, '');
 }
@@ -69,29 +73,102 @@ function normalizeReleaseNotes(value) {
 function configureAutoUpdates({
   app,
   autoUpdater,
+  createVerifiedFeed = createTufVerifiedUpdateFeed,
   packageMetadata,
   env = process.env,
   log = console,
   platform = process.platform,
+  prepareForInstall = async () => {},
+  resourcesPath = process.resourcesPath,
   schedule = { clearInterval, clearTimeout, setInterval, setTimeout },
   showUpdateReady = async () => ({ response: 1 }),
 } = {}) {
-  if (!app?.isPackaged || platform !== 'darwin' || env.FRAIA_DISABLE_UPDATES === '1') {
+  if (
+    !app?.isPackaged
+    || !['darwin', 'win32', 'linux'].includes(platform)
+    || env.FRAIA_DISABLE_UPDATES === '1'
+  ) {
     return { enabled: false };
+  }
+  if (platform === 'linux' && !env.APPIMAGE && env.FRAIA_E2E_UPDATER !== '1') {
+    return { enabled: false, reason: 'linux-package-manager' };
   }
 
   const testMode = env.FRAIA_E2E_UPDATER === '1';
-  const feedUrl = testMode && env.FRAIA_UPDATE_FEED_URL
+  const testTufRepositoryUrl = testMode && env.FRAIA_E2E_TUF_REPOSITORY_URL
+    ? validateTestFeedUrl(env.FRAIA_E2E_TUF_REPOSITORY_URL)
+    : null;
+  const configuredFeedUrl = testMode && env.FRAIA_UPDATE_FEED_URL
     ? validateTestFeedUrl(env.FRAIA_UPDATE_FEED_URL)
     : packageMetadata.fraiaUpdateFeedUrl;
   const channel = packageMetadata.fraiaReleaseChannel;
-  if (channel !== 'stable' || typeof feedUrl !== 'string' || !feedUrl) {
+  if (channel !== 'stable' || typeof configuredFeedUrl !== 'string' || !configuredFeedUrl) {
     throw new Error('Packaged Fraia updater metadata is invalid.');
   }
 
+  if (platform !== 'darwin' && (!testMode || testTufRepositoryUrl)) {
+    const targetName = packageMetadata.fraiaUpdateTargetName;
+    const repositoryUrl = testTufRepositoryUrl || packageMetadata.fraiaTufRepositoryUrl;
+    if (typeof targetName !== 'string' || !targetName || typeof repositoryUrl !== 'string' || !repositoryUrl) {
+      throw new Error('Packaged Fraia TUF updater metadata is invalid.');
+    }
+    const userData = app.getPath('userData');
+    return createVerifiedFeed({
+      embeddedRootPath: path.join(resourcesPath, 'update-trust', 'root.json'),
+      repositoryUrl,
+      targetName,
+      trustDir: path.join(userData, 'update-trust'),
+      allowLoopbackHttp: Boolean(testTufRepositoryUrl),
+    }).then((verifiedFeed) => activateUpdater({
+      app,
+      autoUpdater,
+      channel,
+      env,
+      feedUrl: verifiedFeed.feedUrl,
+      log,
+      platform,
+      prepareForInstall,
+      schedule,
+      showUpdateReady,
+      testMode,
+      verifiedFeed,
+    }));
+  }
+
+  return activateUpdater({
+    app,
+    autoUpdater,
+    channel,
+    env,
+    feedUrl: configuredFeedUrl,
+    log,
+    platform,
+    prepareForInstall,
+    schedule,
+    showUpdateReady,
+    testMode,
+    verifiedFeed: null,
+  });
+}
+
+function activateUpdater({
+  app,
+  autoUpdater,
+  channel,
+  env,
+  feedUrl,
+  log,
+  platform,
+  prepareForInstall,
+  schedule,
+  showUpdateReady,
+  testMode,
+  verifiedFeed,
+}) {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.allowPrerelease = false;
+  if (platform === 'win32') autoUpdater.disableWebInstaller = true;
   autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl, channel: 'latest' });
 
   const eventPath = testMode ? env.FRAIA_UPDATER_EVENT_PATH : null;
@@ -103,6 +180,38 @@ function configureAutoUpdates({
     pid: process.pid,
     ...details,
   });
+  let stopSchedule = () => {};
+  let verifiedFeedClosePromise = null;
+  const closeVerifiedFeed = () => {
+    if (!verifiedFeed) return Promise.resolve();
+    if (!verifiedFeedClosePromise) {
+      verifiedFeedClosePromise = Promise.resolve().then(() => verifiedFeed.close());
+    }
+    return verifiedFeedClosePromise;
+  };
+  let installPromise = null;
+  const installDownloadedUpdate = () => {
+    if (installPromise) return installPromise;
+    stopSchedule();
+    installPromise = Promise.resolve()
+      .then(() => prepareForInstall())
+      .then(() => closeVerifiedFeed())
+      .then(() => {
+        autoUpdater.quitAndInstall(platform !== 'darwin', true);
+        if (platform === 'win32') {
+          schedule.setTimeout(() => {
+            event('update-install-force-exit');
+            app.exit(0);
+          }, 3_000);
+        }
+      })
+      .catch((error) => {
+        event('error', { message: String(error?.message || error) });
+        log.error('[updater] could not prepare the downloaded update for installation', error);
+        throw error;
+      });
+    return installPromise;
+  };
 
   if (testMode && env.FRAIA_E2E_EXPECT_VERSION === app.getVersion()) {
     event('updated-runtime-launched');
@@ -121,14 +230,16 @@ function configureAutoUpdates({
     const releaseNotes = normalizeReleaseNotes(info.releaseNotes);
     event('update-downloaded', { version: info.version, releaseNotes });
     if (testMode && env.FRAIA_E2E_INSTALL_UPDATE === '1') {
-      schedule.setTimeout(() => autoUpdater.quitAndInstall(false, true), 100);
+      schedule.setTimeout(() => {
+        void installDownloadedUpdate().catch(() => {});
+      }, 100);
       return;
     }
     if (promptedVersion === info.version) return;
     promptedVersion = info.version;
     try {
       const result = await showUpdateReady({ releaseNotes, version: info.version });
-      if (result?.response === 0) autoUpdater.quitAndInstall(false, true);
+      if (result?.response === 0) await installDownloadedUpdate();
     } catch (error) {
       log.error('[updater] could not present downloaded update', error);
     }
@@ -145,7 +256,8 @@ function configureAutoUpdates({
 
   const check = () => {
     if (checkPromise) return checkPromise;
-    checkPromise = autoUpdater.checkForUpdates()
+    checkPromise = Promise.resolve(verifiedFeed?.refresh?.())
+      .then(() => autoUpdater.checkForUpdates())
       .catch((error) => {
         event('error', { message: String(error?.message || error) });
         log.error('[updater] update check failed', error);
@@ -158,7 +270,7 @@ function configureAutoUpdates({
     return checkPromise;
   };
 
-  const stopSchedule = () => {
+  stopSchedule = () => {
     if (initialTimer !== null) schedule.clearTimeout(initialTimer);
     if (intervalTimer !== null) schedule.clearInterval(intervalTimer);
     initialTimer = null;
@@ -199,7 +311,13 @@ function configureAutoUpdates({
     get frequency() { return frequency; },
     installed: false,
     setFrequency,
-    stop: stopSchedule,
+    stop: () => {
+      stopSchedule();
+      return closeVerifiedFeed().catch((error) => {
+        log.error('[updater] could not close verified local feed', error);
+      });
+    },
+    trustedMetadata: Boolean(verifiedFeed),
   };
 }
 

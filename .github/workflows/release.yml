@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: fraia-desktop-release
+  group: fraia-updater-publication
   cancel-in-progress: false
 
 jobs:
@@ -257,9 +257,13 @@ jobs:
           retention-days: 14
 
   package-windows:
-    name: Windows x64
+    name: Windows ${{ matrix.arch }}
     needs: [prepare, validate]
-    runs-on: windows-2025
+    runs-on: ${{ matrix.arch == 'arm64' && 'windows-11-arm' || 'windows-2025' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -275,7 +279,7 @@ jobs:
 
       - name: Verify native runner
         shell: bash
-        run: test "$(node -p 'process.arch')" = x64
+        run: test "$(node -p 'process.arch')" = "${{ matrix.arch }}"
 
       - name: Install and build
         working-directory: apps/fraia-electron
@@ -285,35 +289,52 @@ jobs:
         working-directory: apps/fraia-electron
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-          FRAIA_RELEASE_ARCH: x64
+          FRAIA_RELEASE_ARCH: ${{ matrix.arch }}
           FRAIA_RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
           FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
           FRAIA_REQUIRE_RELEASE_ICON: '1'
-          FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}\apps\fraia-electron\release\${{ needs.prepare.outputs.channel }}\win32\x64
+          FRAIA_REQUIRE_TUF_ROOT: '1'
+          FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}\apps\fraia-electron\release\${{ needs.prepare.outputs.channel }}\win32\${{ matrix.arch }}
           FRAIA_RELEASE_PLATFORM: win32
-        run: npx --no-install electron-builder --config electron-builder.config.cjs --win nsis --x64 --publish never
+        run: npx --no-install electron-builder --config electron-builder.config.cjs --win nsis --${{ matrix.arch }} --publish never
 
       - name: Install, launch, and uninstall Windows package
         working-directory: apps/fraia-electron
         run: >-
           node scripts/verify-native-package.cjs
           --channel "${{ needs.prepare.outputs.channel }}"
-          --arch x64
-          --output-dir "release/${{ needs.prepare.outputs.channel }}/win32/x64"
+          --arch "${{ matrix.arch }}"
+          --output-dir "release/${{ needs.prepare.outputs.channel }}/win32/${{ matrix.arch }}"
 
-      - name: Collect exact Windows assets
+      - name: Assemble authenticated Windows update target
         working-directory: apps/fraia-electron
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p ci-output/assets
-          STEM="Fraia-Windows-x64-Setup.exe"
-          OUTPUT="release/${{ needs.prepare.outputs.channel }}/win32/x64"
+          STEM="Fraia-Windows-${{ matrix.arch }}-Setup.exe"
+          OUTPUT="release/${{ needs.prepare.outputs.channel }}/win32/${{ matrix.arch }}"
+          for FEED_CHANNEL in stable beta; do
+            node scripts/assemble-update-metadata.mjs \
+              --input "$OUTPUT/latest.yml" \
+              --artifact-dir "$OUTPUT" \
+              --output-root ci-output/feed \
+              --audit-output "ci-output/assets/update-$FEED_CHANNEL-win32-${{ matrix.arch }}.yml" \
+              --channel "$FEED_CHANNEL" \
+              --platform win32 \
+              --arch "${{ matrix.arch }}" \
+              --tag "${{ github.ref_name }}" \
+              --repository "${{ github.repository }}"
+          done
+          cmp \
+            "ci-output/feed/stable/win32/${{ matrix.arch }}/latest.yml" \
+            "ci-output/feed/beta/win32/${{ matrix.arch }}/latest.yml"
           cp "$OUTPUT/$STEM" "$OUTPUT/$STEM.blockmap" ci-output/assets/
 
       - name: Upload Windows candidate
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: fraia-win32-x64
+          name: fraia-win32-${{ matrix.arch }}
           path: apps/fraia-electron/ci-output
           if-no-files-found: error
           retention-days: 14
@@ -357,6 +378,7 @@ jobs:
           FRAIA_RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
           FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
           FRAIA_REQUIRE_RELEASE_ICON: '1'
+          FRAIA_REQUIRE_TUF_ROOT: '1'
           FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}/apps/fraia-electron/release/${{ needs.prepare.outputs.channel }}/linux/${{ matrix.arch }}
           FRAIA_RELEASE_PLATFORM: linux
         run: npx --no-install electron-builder --config electron-builder.config.cjs --linux AppImage deb rpm --${{ matrix.arch }} --publish never
@@ -369,13 +391,30 @@ jobs:
           --arch "${{ matrix.arch }}"
           --output-dir "release/${{ needs.prepare.outputs.channel }}/linux/${{ matrix.arch }}"
 
-      - name: Collect exact Linux assets
+      - name: Assemble authenticated AppImage update target
         working-directory: apps/fraia-electron
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p ci-output/assets
           STEM="Fraia-Linux-${{ matrix.arch }}"
           OUTPUT="release/${{ needs.prepare.outputs.channel }}/linux/${{ matrix.arch }}"
+          METADATA_NAME=$(node -p "require('./release-contract.cjs').metadataFileName('linux', '${{ matrix.arch }}')")
+          for FEED_CHANNEL in stable beta; do
+            node scripts/assemble-update-metadata.mjs \
+              --input "$OUTPUT/$METADATA_NAME" \
+              --artifact-dir "$OUTPUT" \
+              --output-root ci-output/feed \
+              --audit-output "ci-output/assets/update-$FEED_CHANNEL-linux-${{ matrix.arch }}.yml" \
+              --channel "$FEED_CHANNEL" \
+              --platform linux \
+              --arch "${{ matrix.arch }}" \
+              --tag "${{ github.ref_name }}" \
+              --repository "${{ github.repository }}"
+          done
+          cmp \
+            "ci-output/feed/stable/linux/${{ matrix.arch }}/$METADATA_NAME" \
+            "ci-output/feed/beta/linux/${{ matrix.arch }}/$METADATA_NAME"
           cp "$OUTPUT/$STEM.AppImage" "$OUTPUT/$STEM.deb" "$OUTPUT/$STEM.rpm" ci-output/assets/
 
       - name: Upload Linux candidate
@@ -532,11 +571,13 @@ jobs:
             "${ARGS[@]}" > expected-assets.txt
           mkdir -p publish/feed
           while IFS= read -r feed_root; do cp -R "$feed_root/." publish/feed/; done < <(find candidates -type d -name feed | LC_ALL=C sort)
-          test "$(find publish/feed -type f | wc -l | tr -d ' ')" = 4
-          for ARCH in arm64 x64; do
-            cmp \
-              "publish/feed/stable/darwin/$ARCH/latest-mac.yml" \
-              "publish/feed/beta/darwin/$ARCH/latest-mac.yml"
+          test "$(find publish/feed -type f | wc -l | tr -d ' ')" = 12
+          for PLATFORM in darwin win32 linux; do
+            for ARCH in arm64 x64; do
+              diff --recursive \
+                "publish/feed/stable/$PLATFORM/$ARCH" \
+                "publish/feed/beta/$PLATFORM/$ARCH"
+            done
           done
 
       - name: Upload verified release bundle
@@ -568,9 +609,96 @@ jobs:
         with:
           subject-path: publish/assets/*
 
+  seal-tuf:
+    name: Sign Windows and Linux update repositories
+    needs: [prepare, assemble]
+    runs-on: ubuntu-24.04
+    environment: update-signing
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: source
+
+      - name: Checkout prior updater metadata
+        continue-on-error: true
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: previous-feed
+          ref: updates
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: source/apps/fraia-electron/package-lock.json
+
+      - name: Install signing dependencies
+        working-directory: source/apps/fraia-electron
+        run: npm ci
+
+      - name: Download verified release bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fraia-release-bundle
+          path: publish
+
+      - name: Sign exact Windows and AppImage metadata
+        env:
+          FRAIA_TUF_SNAPSHOT_PRIVATE_KEY_PEM: ${{ secrets.FRAIA_TUF_SNAPSHOT_PRIVATE_KEY_PEM }}
+          FRAIA_TUF_TARGETS_PRIVATE_KEY_PEM: ${{ secrets.FRAIA_TUF_TARGETS_PRIVATE_KEY_PEM }}
+          FRAIA_TUF_TIMESTAMP_PRIVATE_KEY_PEM: ${{ secrets.FRAIA_TUF_TIMESTAMP_PRIVATE_KEY_PEM }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export FRAIA_TUF_METADATA_NOW
+          FRAIA_TUF_METADATA_NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          ROOT="$GITHUB_WORKSPACE/source/apps/fraia-electron/build/update-trust/root.json"
+          for CHANNEL in stable beta; do
+            for PLATFORM in win32 linux; do
+              for ARCH in arm64 x64; do
+                FEED="$GITHUB_WORKSPACE/publish/feed/$CHANNEL/$PLATFORM/$ARCH"
+                TARGET_NAME=$(node -p \
+                  "require('$GITHUB_WORKSPACE/source/apps/fraia-electron/release-contract.cjs').metadataFileName('$PLATFORM', '$ARCH')")
+                PREVIOUS="$GITHUB_WORKSPACE/previous-feed/$CHANNEL/$PLATFORM/$ARCH/tuf/metadata"
+                PREVIOUS_ARGS=()
+                if [ -d "$PREVIOUS" ]; then
+                  PREVIOUS_ARGS=(--previous-metadata "$PREVIOUS")
+                fi
+                node "$GITHUB_WORKSPACE/source/apps/fraia-electron/scripts/sign-tuf-update-repository.cjs" \
+                  --root "$ROOT" \
+                  --target "$FEED/$TARGET_NAME" \
+                  --target-name "$TARGET_NAME" \
+                  --output "$FEED/tuf" \
+                  "${PREVIOUS_ARGS[@]}"
+                (cd "$FEED/tuf" && sha256sum --check --strict SHA256SUMS)
+              done
+            done
+          done
+          for PLATFORM in win32 linux; do
+            for ARCH in arm64 x64; do
+              diff --recursive \
+                "$GITHUB_WORKSPACE/publish/feed/stable/$PLATFORM/$ARCH" \
+                "$GITHUB_WORKSPACE/publish/feed/beta/$PLATFORM/$ARCH"
+            done
+          done
+
+      - name: Upload sealed release and updater bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fraia-release-bundle-sealed
+          path: publish
+          if-no-files-found: error
+          retention-days: 30
+
   publish:
     name: Publish ${{ needs.prepare.outputs.channel }} release
-    needs: [prepare, assemble, attest]
+    needs: [prepare, seal-tuf, attest]
     runs-on: ubuntu-24.04
     environment:
       name: ${{ needs.prepare.outputs.environment }}
@@ -587,7 +715,7 @@ jobs:
       - name: Download release bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: fraia-release-bundle
+          name: fraia-release-bundle-sealed
           path: publish
 
       - name: Create or byte-verify exact draft assets
@@ -694,10 +822,12 @@ jobs:
           mkdir -p feed-publication/feed/stable feed-publication/feed/beta
           cp -R publish/feed/stable/. feed-publication/feed/stable/
           cp -R publish/feed/beta/. feed-publication/feed/beta/
-          for ARCH in arm64 x64; do
-            cmp \
-              "feed-publication/feed/stable/darwin/$ARCH/latest-mac.yml" \
-              "feed-publication/feed/beta/darwin/$ARCH/latest-mac.yml"
+          for PLATFORM in darwin win32 linux; do
+            for ARCH in arm64 x64; do
+              diff --recursive \
+                "feed-publication/feed/stable/$PLATFORM/$ARCH" \
+                "feed-publication/feed/beta/$PLATFORM/$ARCH"
+            done
           done
           touch feed-publication/.nojekyll
           cat > feed-publication/PUBLICATION.txt <<EOF
@@ -743,11 +873,13 @@ jobs:
           cp -R feed-publication/feed/stable/. update-site/stable/
           cp -R feed-publication/feed/beta/. update-site/beta/
           cp feed-publication/.nojekyll feed-publication/PUBLICATION.txt update-site/
-          test "$(find update-site/stable update-site/beta -type f | wc -l | tr -d ' ')" = 4
-          for ARCH in arm64 x64; do
-            cmp \
-              "update-site/stable/darwin/$ARCH/latest-mac.yml" \
-              "update-site/beta/darwin/$ARCH/latest-mac.yml"
+          test "$(find update-site/stable update-site/beta -type f | wc -l | tr -d ' ')" = 76
+          for PLATFORM in darwin win32 linux; do
+            for ARCH in arm64 x64; do
+              diff --recursive \
+                "update-site/stable/$PLATFORM/$ARCH" \
+                "update-site/beta/$PLATFORM/$ARCH"
+            done
           done
           (
             cd update-site
@@ -768,7 +900,7 @@ jobs:
       - name: Download expected bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: fraia-release-bundle
+          name: fraia-release-bundle-sealed
           path: expected
 
       - name: Download sealed updater-feed publication bundle
@@ -795,24 +927,21 @@ jobs:
           RAW_BASE="https://raw.githubusercontent.com/${{ github.repository }}/updates"
           for attempt in {1..12}; do
             complete=true
-            for CHANNEL in stable beta; do
-              for ARCH in arm64 x64; do
-                path="$CHANNEL/darwin/$ARCH/latest-mac.yml"
-                if ! curl --fail --location --silent --show-error "$RAW_BASE/$path" -o "public-$CHANNEL-$ARCH.yml" \
-                  || ! cmp "expected/feed/$path" "public-$CHANNEL-$ARCH.yml"; then
-                  complete=false
-                fi
-              done
-            done
+            while IFS= read -r expected_feed; do
+              relative="${expected_feed#expected/feed/}"
+              destination="public-feed/${relative}"
+              mkdir -p "$(dirname "$destination")"
+              if ! curl --fail --location --silent --show-error "$RAW_BASE/$relative" -o "$destination" \
+                || ! cmp "$expected_feed" "$destination"; then
+                complete=false
+              fi
+            done < <(find expected/feed -type f | LC_ALL=C sort)
             if [ "$complete" = true ]; then break; fi
             if [ "$attempt" = 12 ]; then
               echo 'Public updater feeds did not converge to the exact stable and beta projections.' >&2
               exit 1
             fi
             sleep 5
-          done
-          for ARCH in arm64 x64; do
-            cmp "public-stable-$ARCH.yml" "public-beta-$ARCH.yml"
           done
           while IFS= read -r expected_feed; do
             relative="${expected_feed#expected/feed/}"
