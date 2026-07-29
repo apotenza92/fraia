@@ -98,6 +98,10 @@ test('Windows ARM64 audit verifies platform contract, closure, and notices', () 
   assert.match(script, /MINIMUM_WINDOWS_MAJOR='10'/);
   assert.match(script, /WINDOWS_SUBSYSTEM_MAJOR='6'/);
   assert.match(script, /--major-os-version/);
+  assert.match(script, /expected_pe_versions/);
+  assert.match(script, /\$1 == header_name/);
+  assert.match(script, /header_value.*expected_pe_versions/s);
+  assert.doesNotMatch(script, /MajorOSystemVersion {2,}/);
   assert.match(script, /allowed_system_dependencies/);
   assert.match(script, /bundled_dependencies/);
   assert.match(script, /libomp\.dll/);

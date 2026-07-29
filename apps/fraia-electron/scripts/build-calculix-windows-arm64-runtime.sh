@@ -641,15 +641,39 @@ for native_file in "$work_root/build-one/payload/"*; do
   done < <(llvm-objdump -p "$native_file" | awk '/DLL Name:/{ print $3 }' | LC_ALL=C sort -fu)
 done
 pe_header=$(llvm-objdump -p "$candidate")
-for contract in \
-  "MajorOSystemVersion      ${MINIMUM_WINDOWS_MAJOR}" \
-  "MinorOSystemVersion      ${MINIMUM_WINDOWS_MINOR}" \
-  "MajorSubsystemVersion   ${WINDOWS_SUBSYSTEM_MAJOR}" \
-  "MinorSubsystemVersion   ${WINDOWS_SUBSYSTEM_MINOR}"; do
-  grep -Fq "$contract" <<<"$pe_header" || {
-    printf 'The reviewed Windows version contract is missing: %s\n' "$contract" >&2
+declare -A expected_pe_versions=(
+  [MajorOSystemVersion]="$MINIMUM_WINDOWS_MAJOR"
+  [MinorOSystemVersion]="$MINIMUM_WINDOWS_MINOR"
+  [MajorSubsystemVersion]="$WINDOWS_SUBSYSTEM_MAJOR"
+  [MinorSubsystemVersion]="$WINDOWS_SUBSYSTEM_MINOR"
+)
+for header_name in \
+  MajorOSystemVersion \
+  MinorOSystemVersion \
+  MajorSubsystemVersion \
+  MinorSubsystemVersion; do
+  header_value=$(
+    awk -v header_name="$header_name" '
+      $1 == header_name {
+        print $2
+        found = 1
+        exit
+      }
+      END {
+        if (!found) {
+          exit 1
+        }
+      }
+    ' <<<"$pe_header"
+  ) || {
+    printf 'The reviewed Windows PE header field is missing: %s\n' "$header_name" >&2
     exit 1
   }
+  if [[ "$header_value" != "${expected_pe_versions[$header_name]}" ]]; then
+    printf 'The reviewed Windows PE header field %s must be %s, received %s.\n' \
+      "$header_name" "${expected_pe_versions[$header_name]}" "$header_value" >&2
+    exit 1
+  fi
 done
 
 mkdir -p "$work_root/runtime-test/case"
