@@ -1,0 +1,66 @@
+name: Production TUF signing audit
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fraia-tuf-signing-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: Match protected online keys to the reviewed root
+    runs-on: ubuntu-24.04
+    environment: update-signing
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/fraia-electron/package-lock.json
+
+      - name: Install signing dependencies
+        working-directory: apps/fraia-electron
+        run: npm ci
+
+      - name: Sign and verify a disposable public target
+        working-directory: apps/fraia-electron
+        env:
+          FRAIA_TUF_SNAPSHOT_PRIVATE_KEY_PEM: ${{ secrets.FRAIA_TUF_SNAPSHOT_PRIVATE_KEY_PEM }}
+          FRAIA_TUF_TARGETS_PRIVATE_KEY_PEM: ${{ secrets.FRAIA_TUF_TARGETS_PRIVATE_KEY_PEM }}
+          FRAIA_TUF_TIMESTAMP_PRIVATE_KEY_PEM: ${{ secrets.FRAIA_TUF_TIMESTAMP_PRIVATE_KEY_PEM }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export FRAIA_TUF_METADATA_NOW
+          FRAIA_TUF_METADATA_NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          TARGET="$RUNNER_TEMP/latest.yml"
+          OUTPUT="$RUNNER_TEMP/fraia-production-tuf-audit"
+          printf '%s\n' \
+            'version: 0.0.0' \
+            'audit: protected Fraia production signing keys' > "$TARGET"
+          node scripts/sign-tuf-update-repository.cjs \
+            --root build/update-trust/root.json \
+            --target "$TARGET" \
+            --target-name latest.yml \
+            --output "$OUTPUT"
+          (cd "$OUTPUT" && sha256sum --check --strict SHA256SUMS)
+          test "$(sha256sum build/update-trust/root.json | cut -d ' ' -f 1)" = \
+            db88d4445135c02065824de9d035803bfc0b2b7a6eb0e5bb2fc57556e39d478e
+
+      - name: Upload independently reviewable public evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fraia-production-tuf-signing-audit
+          path: ${{ runner.temp }}/fraia-production-tuf-audit
+          if-no-files-found: error
+          retention-days: 14

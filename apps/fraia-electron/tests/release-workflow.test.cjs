@@ -35,6 +35,14 @@ const nonmacUpdaterAudit = fs.readFileSync(
   path.join(repositoryRoot, '.github', 'workflows', 'nonmac-updater-audit.yml'),
   'utf8',
 );
+const tufMetadataRefresh = fs.readFileSync(
+  path.join(repositoryRoot, '.github', 'workflows', 'tuf-metadata-refresh.yml'),
+  'utf8',
+);
+const tufSigningAudit = fs.readFileSync(
+  path.join(repositoryRoot, '.github', 'workflows', 'tuf-signing-audit.yml'),
+  'utf8',
+);
 const mainProcess = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
 const changelog = fs.readFileSync(path.join(repositoryRoot, 'CHANGELOG.md'), 'utf8');
 
@@ -203,7 +211,13 @@ test('one stable publication atomically advances byte-identical stable and beta 
   assert.match(workflow, /MACOS_UPDATER_BOOTSTRAP_TAG !== process\.env\.GITHUB_REF_NAME/);
   assert.match(workflow, /APPLE_PRIOR_SIGNING_CERTIFICATE_SHA256/);
   assert.match(updaterTest, /priorExpectations/);
-  assert.match(workflow, /needs: \[prepare, assemble, attest\]/);
+  assert.match(workflow, /needs: \[prepare, seal-tuf, attest\]/);
+  assert.match(workflow, /environment: update-signing/);
+  assert.match(workflow, /sign-tuf-update-repository\.cjs/);
+  for (const role of ['TARGETS', 'SNAPSHOT', 'TIMESTAMP']) {
+    assert.match(workflow, new RegExp(`secrets\\.FRAIA_TUF_${role}_PRIVATE_KEY_PEM`));
+  }
+  assert.doesNotMatch(workflow, /FRAIA_TUF_ROOT_PRIVATE_KEY/);
   assert.match(workflow, /comm -23 existing-assets\.txt expected-assets\.txt/);
   assert.match(workflow, /cmp "publish\/assets\/\$name" "existing-release\/\$name"/);
   assert.doesNotMatch(workflow, /gh release (?:delete|upload)[^\n]*(?:--clobber|-R)/);
@@ -227,7 +241,7 @@ test('one stable publication atomically advances byte-identical stable and beta 
   );
   assert.match(workflow, /Publication: tag workflow, after explicit stable-release approval/);
   assert.match(workflow, /for FEED_CHANNEL in stable beta/);
-  assert.match(workflow, /cmp \\\n\s+"publish\/feed\/stable\/darwin\/\$ARCH\/latest-mac\.yml"/);
+  assert.match(workflow, /diff --recursive \\\n\s+"publish\/feed\/stable\/\$PLATFORM\/\$ARCH"/);
   assert.match(workflow, /git add -- \.nojekyll PUBLICATION\.txt stable beta/);
   assert.match(workflow, /git push origin HEAD:updates/);
   assert.doesNotMatch(workflow, /git add -A/);
@@ -239,6 +253,31 @@ test('one stable publication atomically advances byte-identical stable and beta 
   assert.match(builder, /releaseInfo/);
   assert.match(builder, /releaseNotes/);
   assert.match(changelog, /^# Changelog/m);
+});
+
+test('published TUF metadata refreshes on a trusted schedule without changing targets', () => {
+  assert.match(workflow, /group: fraia-updater-publication/);
+  assert.match(tufMetadataRefresh, /schedule:/);
+  assert.match(tufMetadataRefresh, /cron: '17 3 \* \* 1'/);
+  assert.match(tufMetadataRefresh, /if: github\.ref == 'refs\/heads\/main'/);
+  assert.match(tufMetadataRefresh, /environment: update-signing/);
+  assert.match(tufMetadataRefresh, /group: fraia-updater-publication/);
+  assert.match(tufMetadataRefresh, /--previous-metadata "\$FEED\/tuf\/metadata"/);
+  assert.match(tufMetadataRefresh, /--target "\$FEED\/\$TARGET_NAME"/);
+  assert.match(tufMetadataRefresh, /git add -- stable\/win32 stable\/linux beta\/win32 beta\/linux/);
+  assert.doesNotMatch(tufMetadataRefresh, /git add -A|gh release|APPLE_/);
+});
+
+test('protected production TUF keys are auditable without exposing private material', () => {
+  assert.match(tufSigningAudit, /workflow_dispatch:/);
+  assert.match(tufSigningAudit, /environment: update-signing/);
+  assert.match(tufSigningAudit, /sign-tuf-update-repository\.cjs/);
+  assert.match(tufSigningAudit, /sha256sum --check --strict SHA256SUMS/);
+  assert.match(tufSigningAudit, /db88d4445135c02065824de9d035803bfc0b2b7a6eb0e5bb2fc57556e39d478e/);
+  for (const role of ['TARGETS', 'SNAPSHOT', 'TIMESTAMP']) {
+    assert.match(tufSigningAudit, new RegExp(`secrets\\.FRAIA_TUF_${role}_PRIVATE_KEY_PEM`));
+  }
+  assert.doesNotMatch(tufSigningAudit, /FRAIA_TUF_ROOT_PRIVATE_KEY|gh release|contents: write/);
 });
 
 test('manual CI keeps deterministic checks default and native package preflight explicitly opt-in', () => {
@@ -343,7 +382,7 @@ test('packaged updater code ships TUF verification for Windows and Linux', () =>
 
 test('all third-party workflow actions are pinned to full commit SHAs', () => {
   const uses = [
-    ...`${workflow}\n${continuousIntegration}\n${runtimeAudit}\n${nonmacUpdaterAudit}`
+    ...`${workflow}\n${continuousIntegration}\n${runtimeAudit}\n${nonmacUpdaterAudit}\n${tufMetadataRefresh}\n${tufSigningAudit}`
       .matchAll(/^\s*uses:\s*([^\s#]+)/gm),
   ].map((match) => match[1]);
   assert.ok(uses.length > 0);

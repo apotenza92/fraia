@@ -20,6 +20,9 @@ release notes and macOS updater notes.
   test credentials or exposing provider secrets to the renderer.
 - Native stable, beta, light, and dark application icon variants for macOS,
   Windows, and Linux.
+- Authenticated automatic updates for Windows and Linux using an embedded,
+  reviewed TUF root and separately protected targets, snapshot, and timestamp
+  signing roles.
 
 ### Changed
 
@@ -34,13 +37,16 @@ release notes and macOS updater notes.
   authentication remains in each user's platform-protected application data.
 - macOS packages and updates require Developer ID signing, hardened runtime,
   notarisation, stapling, and public checksum and provenance verification.
+- Windows and Linux update metadata is TUF-signed and rejects corrupt,
+  expired, or incorrectly signed targets. Their initial installers remain
+  unsigned and must be accompanied by a clear disclosure, public checksums,
+  and provenance.
 
 ### Updating
 
-- Signed and notarised macOS packages check the public stable feed
-  automatically each day by default. Users can change the frequency from the
-  Fraia menu.
+- Fraia packages check the public stable feed automatically each day by
+  default. macOS retains Developer ID and notarisation verification; Windows
+  and Linux require the embedded TUF trust root. Users can change the
+  frequency from the Fraia menu.
 - A downloaded update presents these release notes and lets the user restart
   immediately or install safely when Fraia next quits.
-- Windows and Linux automatic updating remains disabled until those platforms
-  have an equivalent trusted signing and installation boundary.

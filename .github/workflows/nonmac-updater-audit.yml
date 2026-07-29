@@ -87,6 +87,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build/update-trust '${{ runner.temp }}/fraia-updater-trust'
+          test -f build/update-trust/root.json
+          cp build/update-trust/root.json \
+            '${{ runner.temp }}/fraia-updater-trust/production-root.json'
+          rm build/update-trust/root.json
           node scripts/test-tuf-repository.cjs \
             --root build/update-trust/root.json \
             --private-key '${{ runner.temp }}/fraia-updater-trust/private-key.pem'
@@ -182,5 +186,5 @@ jobs:
         if: ${{ always() }}
         shell: bash
         run: |
-          rm -f '${{ runner.temp }}/fraia-updater-trust/private-key.pem'
+          rm -rf '${{ runner.temp }}/fraia-updater-trust'
           rm -rf apps/fraia-electron/ci-updater apps/fraia-electron/build/update-trust
