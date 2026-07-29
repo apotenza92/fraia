@@ -118,6 +118,9 @@ test('native updater workflow performs real TUF-backed Windows and AppImage repl
   assert.match(nsisInclude, /ExecutablePath/);
   assert.match(nsisInclude, /OrdinalIgnoreCase/);
   assert.match(nsisInclude, /ProcessId -ne \$pid/);
+  assert.match(nsisInclude, /FRAIA_NSIS_INSTALL_DIR/);
+  assert.match(nsisInclude, /GetFullPath/);
+  assert.doesNotMatch(nsisInclude, /StartsWith\('\$INSTDIR/);
   assert.match(nsisInclude, /AddSeconds\(15\)/);
   assert.match(nsisInclude, /SetErrorLevel 2/);
   assert.doesNotMatch(nsisInclude, /\$\$_\.Path/);
