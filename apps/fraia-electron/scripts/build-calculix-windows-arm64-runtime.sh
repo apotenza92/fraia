@@ -453,6 +453,115 @@ build_once() {
 build_once "$work_root/build-one"
 build_once "$work_root/build-two"
 
+write_intermediate_checksums() {
+  local build_root=$1
+  local destination=$2
+  local file_path
+  local file_sha256
+  (
+    cd "$build_root"
+    find \
+      spooles-build \
+      openblas-build \
+      arpack-build \
+      calculix-build \
+      prefix \
+      -type f \
+      \( \
+        -name '*.a' \
+        -o -name '*.mod' \
+        -o -name '*.o' \
+        -o -name '*.obj' \
+      \) \
+      -print |
+      LC_ALL=C sort |
+      while IFS= read -r file_path; do
+        file_sha256=$(sha256sum "$file_path" | awk '{ print $1 }')
+        printf '%s  %s\n' "$file_sha256" "$file_path"
+      done
+  ) >"$destination"
+}
+
+write_reproducibility_failure_evidence() {
+  local first_payload="$work_root/build-one/payload"
+  local second_payload="$work_root/build-two/payload"
+  local failure_staging="$work_root/reproducibility-failure"
+  local native_name
+  local native_file
+
+  mkdir -p \
+    "$failure_staging/binaries" \
+    "$failure_staging/intermediates" \
+    "$failure_staging/native"
+  {
+    printf 'The two controlled native Windows ARM64 builds were not byte-identical.\n'
+    printf 'No runtime candidate was emitted or promoted.\n'
+    printf 'The files in this directory are diagnostic review evidence only.\n'
+  } >"$failure_staging/FAILURE.txt"
+  (
+    cd "$first_payload"
+    sha256sum ./* >"$failure_staging/build-one-SHA256SUMS"
+  )
+  (
+    cd "$second_payload"
+    sha256sum ./* >"$failure_staging/build-two-SHA256SUMS"
+  )
+  diff -u \
+    "$failure_staging/build-one-SHA256SUMS" \
+    "$failure_staging/build-two-SHA256SUMS" \
+    >"$failure_staging/PAYLOAD-DIFF.txt" || true
+
+  cp "$first_payload/ccx.exe" "$failure_staging/binaries/build-one-ccx.exe"
+  cp "$second_payload/ccx.exe" "$failure_staging/binaries/build-two-ccx.exe"
+  cmp -l "$first_payload/ccx.exe" "$second_payload/ccx.exe" |
+    awk '
+      NR <= 10000 { print }
+      END {
+        printf "Total differing bytes: %d\n", NR;
+        if (NR > 10000) {
+          printf "Only the first 10000 differing byte positions are listed.\n";
+        }
+      }
+    ' >"$failure_staging/CCX-BYTE-DIFFERENCES.txt" || true
+
+  for build_name in build-one build-two; do
+    native_file="$work_root/$build_name/payload/ccx.exe"
+    llvm-readobj --file-headers --sections --coff-imports "$native_file" \
+      >"$failure_staging/native/${build_name}-ccx.readobj.txt"
+    llvm-objdump -h -p "$native_file" \
+      >"$failure_staging/native/${build_name}-ccx.objdump.txt"
+    llvm-strings "$native_file" \
+      >"$failure_staging/native/${build_name}-ccx.strings.txt"
+    write_intermediate_checksums \
+      "$work_root/$build_name" \
+      "$failure_staging/intermediates/${build_name}-SHA256SUMS"
+  done
+  diff -u \
+    "$failure_staging/intermediates/build-one-SHA256SUMS" \
+    "$failure_staging/intermediates/build-two-SHA256SUMS" \
+    >"$failure_staging/intermediates/DIFF.txt" || true
+  {
+    printf 'Native host: GitHub windows-11-arm\n'
+    printf 'Runner architecture: %s\n' "$RUNNER_ARCH"
+    printf 'MSYS2 environment: %s\n' "$MSYSTEM"
+    printf 'SOURCE_DATE_EPOCH: %s\n' "$SOURCE_DATE_EPOCH"
+    clang --version
+    flang --version
+    cmake --version
+    ninja --version
+  } >"$failure_staging/TOOLCHAIN.txt"
+  cp "$0" "$failure_staging/build-calculix-windows-arm64-runtime.sh"
+  (
+    cd "$failure_staging"
+    find . -type f ! -name EVIDENCE_SHA256SUMS -print |
+      LC_ALL=C sort |
+      while IFS= read -r file_path; do
+        sha256sum "$file_path"
+      done >EVIDENCE_SHA256SUMS
+  )
+  mv "$failure_staging" "$evidence"
+}
+
 for payload in "$work_root/build-one/payload" "$work_root/build-two/payload"; do
   if llvm-strings "$payload"/* | grep -F "$work_root"; then
     printf 'The reviewed Windows ARM64 runtime contains an absolute build path: %s\n' \
@@ -464,6 +573,7 @@ if ! diff -qr "$work_root/build-one/payload" "$work_root/build-two/payload"; the
   printf 'The independently built Windows ARM64 runtimes are not byte-identical.\n' >&2
   sha256sum "$work_root/build-one/payload/"* >&2
   sha256sum "$work_root/build-two/payload/"* >&2
+  write_reproducibility_failure_evidence
   exit 1
 fi
 

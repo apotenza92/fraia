@@ -76,6 +76,15 @@ test('Windows ARM64 audit is native, source-built, reproducible, and fail-closed
   assert.match(script, /SOURCE_DATE_EPOCH/);
   assert.match(script, /FAILURE\.txt/);
   assert.match(script, /No runtime candidate was emitted/);
+  assert.match(script, /write_reproducibility_failure_evidence/);
+  assert.match(script, /CCX-BYTE-DIFFERENCES\.txt/);
+  assert.match(script, /PAYLOAD-DIFF\.txt/);
+  assert.match(script, /intermediates\/DIFF\.txt/);
+  assert.match(script, /build-one-ccx\.exe/);
+  assert.match(script, /build-two-ccx\.exe/);
+  assert.match(script, /llvm-readobj --file-headers --sections --coff-imports/);
+  assert.match(script, /llvm-objdump -h -p/);
+  assert.match(script, /EVIDENCE_SHA256SUMS/);
   assert.match(script, /spring1\.inp/);
   assert.match(script, /Job finished/);
 });
