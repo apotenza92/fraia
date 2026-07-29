@@ -310,7 +310,8 @@ test('Windows uses TUF-authenticated metadata, keeps settings, and requests a si
       schedule: { clearInterval() {}, clearTimeout() {}, setInterval() { return 1; }, setTimeout() { return 2; } },
       showUpdateReady: async () => ({ response: 0 }),
     });
-    assert.equal(result.enabled, true);
+  assert.equal(result.enabled, true);
+  assert.equal(updater.disableWebInstaller, true);
     assert.equal(result.trustedMetadata, true);
     assert.equal(result.frequency, 'weekly');
     assert.equal(updater.feed.url, 'http://127.0.0.1:43123');

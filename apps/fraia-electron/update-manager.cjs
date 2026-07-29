@@ -168,6 +168,7 @@ function activateUpdater({
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.allowPrerelease = false;
+  if (platform === 'win32') autoUpdater.disableWebInstaller = true;
   autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl, channel: 'latest' });
 
   const eventPath = testMode ? env.FRAIA_UPDATER_EVENT_PATH : null;
