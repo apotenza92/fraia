@@ -78,6 +78,7 @@ function configureAutoUpdates({
   env = process.env,
   log = console,
   platform = process.platform,
+  prepareForInstall = async () => {},
   resourcesPath = process.resourcesPath,
   schedule = { clearInterval, clearTimeout, setInterval, setTimeout },
   showUpdateReady = async () => ({ response: 1 }),
@@ -126,6 +127,7 @@ function configureAutoUpdates({
       feedUrl: verifiedFeed.feedUrl,
       log,
       platform,
+      prepareForInstall,
       schedule,
       showUpdateReady,
       testMode,
@@ -141,6 +143,7 @@ function configureAutoUpdates({
     feedUrl: configuredFeedUrl,
     log,
     platform,
+    prepareForInstall,
     schedule,
     showUpdateReady,
     testMode,
@@ -156,6 +159,7 @@ function activateUpdater({
   feedUrl,
   log,
   platform,
+  prepareForInstall,
   schedule,
   showUpdateReady,
   testMode,
@@ -188,7 +192,9 @@ function activateUpdater({
   const installDownloadedUpdate = () => {
     if (installPromise) return installPromise;
     stopSchedule();
-    installPromise = closeVerifiedFeed()
+    installPromise = Promise.resolve()
+      .then(() => prepareForInstall())
+      .then(() => closeVerifiedFeed())
       .then(() => autoUpdater.quitAndInstall(platform !== 'darwin', true))
       .catch((error) => {
         event('error', { message: String(error?.message || error) });

@@ -375,16 +375,29 @@ test('Windows closes its verified local feed before handing off to the installer
       },
       env: {},
       platform: 'win32',
+      prepareForInstall: async () => {
+        order.push(['prepare-start']);
+        await new Promise((resolve) => setImmediate(resolve));
+        order.push(['prepare-finished']);
+      },
       resourcesPath: path.join(userData, 'resources'),
       schedule: { clearInterval() {}, clearTimeout() {}, setInterval() { return 1; }, setTimeout() { return 2; } },
       showUpdateReady: async () => ({ response: 0 }),
     });
     updater.emit('update-downloaded', { version: '0.0.2', releaseNotes: 'Secure update.' });
     await new Promise((resolve) => setImmediate(resolve));
-    assert.deepEqual(order, [['close-start']]);
+    assert.deepEqual(order, [['prepare-start']]);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(order, [
+      ['prepare-start'],
+      ['prepare-finished'],
+      ['close-start'],
+    ]);
     releaseClose();
     await new Promise((resolve) => setImmediate(resolve));
     assert.deepEqual(order, [
+      ['prepare-start'],
+      ['prepare-finished'],
       ['close-start'],
       ['close-finished'],
       ['install', [true, true]],
