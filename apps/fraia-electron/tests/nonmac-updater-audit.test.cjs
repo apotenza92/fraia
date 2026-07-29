@@ -104,7 +104,10 @@ test('native updater workflow performs real TUF-backed Windows and AppImage repl
   assert.match(auditScript, /updated-runtime-launched/);
   assert.match(auditScript, /update-downloaded/);
   assert.match(auditScript, /installedPackageVersion/);
+  assert.match(auditScript, /waitForInstalledWindowsVersion/);
   assert.match(auditScript, /Get-CimInstance Win32_Process/);
+  assert.match(auditScript, /taskkill\.exe/);
+  assert.match(auditScript, /normal user launch/);
   assert.match(auditScript, /Updater changed existing project data/);
   assert.match(auditScript, /Updater changed existing AI data/);
   assert.match(auditScript, /update-trust.*metadata.*root\.json/);

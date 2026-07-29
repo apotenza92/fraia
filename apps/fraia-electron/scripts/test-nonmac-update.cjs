@@ -219,10 +219,9 @@ function windowsProcessIds(executable) {
     .filter((pid) => Number.isInteger(pid) && pid > 0);
 }
 
-async function waitForWindowsRelaunch({
+async function waitForInstalledWindowsVersion({
   eventPath,
   executable,
-  oldPid,
   version,
   timeoutMs = 180_000,
 }) {
@@ -231,16 +230,13 @@ async function waitForWindowsRelaunch({
     const error = readEvents(eventPath).find((event) => event.name === 'error');
     if (error) throw new Error(`Native updater failed: ${error.message || '<missing error>'}`);
     try {
-      if (installedPackageVersion(executable) === version) {
-        const pid = windowsProcessIds(executable).find((candidate) => candidate !== oldPid);
-        if (pid) return pid;
-      }
+      if (installedPackageVersion(executable) === version) return;
     } catch (error) {
       if (Date.now() >= deadline) throw error;
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  throw new Error(`Timed out waiting for the installed Windows ${version} runtime to relaunch.`);
+  throw new Error(`Timed out waiting for the Windows ${version} package to be installed.`);
 }
 
 function isPidAlive(pid) {
@@ -255,7 +251,17 @@ function isPidAlive(pid) {
 
 async function stopPid(pid) {
   if (!isPidAlive(pid)) return;
-  process.kill(pid);
+  if (process.platform === 'win32') {
+    const result = spawnSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], {
+      encoding: 'utf8',
+    });
+    if (result.error) throw result.error;
+    if (result.status !== 0 && isPidAlive(pid)) {
+      throw new Error(`Could not stop updater process ${pid}: ${result.stderr.trim()}`);
+    }
+  } else {
+    process.kill(pid);
+  }
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline && isPidAlive(pid)) {
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -451,12 +457,23 @@ async function main(argv = process.argv.slice(2)) {
       if (event.currentVersion === server.version) {
         throw new Error('Windows updater audit did not start from the previous version.');
       }
-      relaunchedPid = await waitForWindowsRelaunch({
+      await waitForInstalledWindowsVersion({
         eventPath,
         executable: installedExecutable,
-        oldPid: child.pid,
         version: server.version,
       });
+      for (const pid of windowsProcessIds(installedExecutable)) await stopPid(pid);
+      await stopPid(child.pid);
+      child = spawn(
+        installedExecutable,
+        [],
+        { env: restrictedEnvironment({}), stdio: 'inherit' },
+      );
+      await new Promise((resolve) => setTimeout(resolve, 3_000));
+      relaunchedPid = child.pid;
+      if (!isPidAlive(relaunchedPid)) {
+        throw new Error('The installed Windows candidate did not remain running after a normal user launch.');
+      }
     } else {
       if (event.currentVersion !== server.version) throw new Error('Updated runtime reported the wrong version.');
       relaunchedPid = event.pid;
@@ -490,6 +507,17 @@ async function main(argv = process.argv.slice(2)) {
     await stopPid(child?.pid);
     if (server) await server.close();
     if (process.platform === 'win32' && installedExecutable && fs.existsSync(path.dirname(installedExecutable))) {
+      const sidecar = path.join(
+        path.dirname(installedExecutable),
+        'resources',
+        'sidecar',
+        `win32-${arch}`,
+        'fraia-appd.exe',
+      );
+      for (const executable of [installedExecutable, sidecar]) {
+        if (!fs.existsSync(executable)) continue;
+        for (const pid of windowsProcessIds(executable)) await stopPid(pid);
+      }
       const uninstaller = findExactlyOne(
         path.dirname(installedExecutable),
         (candidate) => /^uninstall.*\.exe$/i.test(path.basename(candidate)),
@@ -531,6 +559,6 @@ module.exports = {
   artifactName,
   installedPackageVersion,
   prepareSignedTarget,
-  waitForWindowsRelaunch,
+  waitForInstalledWindowsVersion,
   windowsProcessIds,
 };
