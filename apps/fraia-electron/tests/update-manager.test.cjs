@@ -165,6 +165,56 @@ test('Linux distro packages defer to their package manager while AppImage can se
   assert.equal(updater.feed, undefined);
 });
 
+test('Linux AppImage refreshes TUF trust before checking and preserves user data', async () => {
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-updater-appimage-'));
+  try {
+    const projectState = '{"schemaVersion":1,"name":"Existing model"}\n';
+    fs.mkdirSync(path.join(userData, 'projects', 'default'), { recursive: true });
+    fs.writeFileSync(path.join(userData, 'projects', 'default', 'fraia.project.json'), projectState);
+    const updater = updaterDouble();
+    let refreshes = 0;
+    let closes = 0;
+    const result = await configureAutoUpdates({
+      app: { isPackaged: true, getPath: () => userData, getVersion: () => '0.0.1' },
+      autoUpdater: updater,
+      createVerifiedFeed: async (options) => ({
+        close: async () => { closes += 1; },
+        feedUrl: 'http://127.0.0.1:43124',
+        refresh: async () => { refreshes += 1; },
+        options,
+      }),
+      env: { APPIMAGE: '/opt/Fraia-Linux-x64.AppImage' },
+      packageMetadata: {
+        fraiaReleaseChannel: 'stable',
+        fraiaTufRepositoryUrl: 'https://raw.githubusercontent.com/apotenza92/fraia/updates/stable/linux/x64/tuf',
+        fraiaUpdateFeedUrl: 'https://raw.githubusercontent.com/apotenza92/fraia/updates/stable/linux/x64',
+        fraiaUpdateTargetName: 'latest-linux.yml',
+      },
+      platform: 'linux',
+      resourcesPath: path.join(userData, 'resources'),
+      schedule: { clearInterval() {}, clearTimeout() {}, setInterval() { return 1; }, setTimeout() { return 2; } },
+      showUpdateReady: async () => ({ response: 0 }),
+    });
+    assert.equal(result.enabled, true);
+    assert.equal(result.trustedMetadata, true);
+    assert.equal(updater.feed.url, 'http://127.0.0.1:43124');
+    await result.checkNow();
+    assert.equal(refreshes, 1);
+    updater.emit('update-downloaded', { version: '0.0.2', releaseNotes: 'Secure AppImage update.' });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(updater.installArgs, [true, true]);
+    assert.equal(
+      fs.readFileSync(path.join(userData, 'projects', 'default', 'fraia.project.json'), 'utf8'),
+      projectState,
+    );
+    result.stop();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(closes, 1);
+  } finally {
+    fs.rmSync(userData, { recursive: true, force: true });
+  }
+});
+
 test('Windows uses TUF-authenticated metadata, keeps settings, and requests a silent install', async () => {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-updater-windows-'));
   try {
