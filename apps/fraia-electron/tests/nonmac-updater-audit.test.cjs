@@ -10,6 +10,7 @@ const {
   installedPackageDigest,
   installedPackageVersion,
   prepareSignedTarget,
+  waitForPathRemoval,
 } = require('../scripts/test-nonmac-update.cjs');
 const workflow = fs.readFileSync(
   path.resolve(__dirname, '..', '..', '..', '.github', 'workflows', 'nonmac-updater-audit.yml'),
@@ -97,6 +98,22 @@ test('native updater audit reads the version from an installed ASAR', async () =
   }
 });
 
+test('native updater cleanup waits for confirmed uninstaller removal', () => {
+  const removedPath = path.join(os.tmpdir(), `fraia-removed-install-${process.pid}`);
+  fs.rmSync(removedPath, { recursive: true, force: true });
+  assert.doesNotThrow(() => waitForPathRemoval(removedPath, { timeoutMs: 10 }));
+
+  const retainedPath = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-retained-install-'));
+  try {
+    assert.throws(
+      () => waitForPathRemoval(retainedPath, { timeoutMs: 10, intervalMs: 1 }),
+      /Timed out waiting for the native uninstaller/,
+    );
+  } finally {
+    fs.rmSync(retainedPath, { recursive: true, force: true });
+  }
+});
+
 test('native updater workflow performs real TUF-backed Windows and AppImage replacements', () => {
   assert.match(workflow, /runs-on:.*windows-2025.*ubuntu-24\.04/);
   assert.match(workflow, /ubuntu-24\.04-arm/);
@@ -139,6 +156,8 @@ test('native updater workflow performs real TUF-backed Windows and AppImage repl
   assert.match(auditScript, /StringComparison.*OrdinalIgnoreCase/);
   assert.match(auditScript, /taskkill\.exe/);
   assert.match(auditScript, /normal user launch/);
+  assert.match(auditScript, /waitForPathRemoval\(installDirectory\)/);
+  assert.match(auditScript, /Installed candidate app\.asar SHA-256/);
   assert.match(auditScript, /LOCALAPPDATA.*Programs.*contract\.productName/);
   assert.doesNotMatch(auditScript, /`\/D=\$\{installDirectory\}`/);
   assert.match(auditScript, /Updater changed existing project data/);

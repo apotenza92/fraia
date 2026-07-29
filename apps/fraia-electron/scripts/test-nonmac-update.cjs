@@ -324,6 +324,18 @@ function findExactlyOne(root, predicate, label) {
   return matches[0];
 }
 
+function waitForPathRemoval(target, { timeoutMs = 60_000, intervalMs = 250 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  const waitBuffer = new Int32Array(new SharedArrayBuffer(4));
+  while (fs.existsSync(target)) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      throw new Error(`Timed out waiting for the native uninstaller to remove ${target}.`);
+    }
+    Atomics.wait(waitBuffer, 0, 0, Math.min(intervalMs, remaining));
+  }
+}
+
 function restrictedEnvironment(overrides) {
   const allowed = process.platform === 'win32'
     ? [
@@ -347,6 +359,8 @@ function writeEvidence({
   eventPath,
   evidenceDirectory,
   failure,
+  installedCandidateDigest,
+  installedCandidateVersion,
   platform,
   previousArtifact,
   projectBytes,
@@ -382,6 +396,8 @@ function writeEvidence({
     fs.writeFileSync(path.join(staging, 'signed-update-target.yml'), server.targetBytes);
   }
   fs.writeFileSync(path.join(staging, 'MIGRATION.txt'), [
+    `Installed candidate version: ${installedCandidateVersion || '<not verified>'}`,
+    `Installed candidate app.asar SHA-256: ${installedCandidateDigest || '<not verified>'}`,
     `Project before: ${createHash('sha256').update(projectBytes).digest('hex')}`,
     `Project after: ${fs.existsSync(projectPath) ? digest(projectPath, 'sha256', 'hex') : '<missing>'}`,
     `AI data before: ${createHash('sha256').update(credentialBytes).digest('hex')}`,
@@ -448,6 +464,8 @@ async function main(argv = process.argv.slice(2)) {
   let server;
   let installedExecutable;
   let installedAppImage;
+  let installedCandidateDigest;
+  let installedCandidateVersion;
   let failure;
   try {
     if (process.platform === 'win32') {
@@ -510,12 +528,13 @@ async function main(argv = process.argv.slice(2)) {
       if (!fs.existsSync(candidateArchive)) {
         throw new Error('Candidate Windows ASAR is missing from the package output.');
       }
-      await waitForInstalledWindowsPackage({
+      installedCandidateDigest = await waitForInstalledWindowsPackage({
         candidateArchive,
         eventPath,
         executable: installedExecutable,
         version: server.version,
       });
+      installedCandidateVersion = installedPackageVersion(installedExecutable);
       for (const pid of windowsProcessIds(installedExecutable)) await stopPid(pid);
       await stopPid(child.pid);
       child = spawn(
@@ -582,12 +601,7 @@ async function main(argv = process.argv.slice(2)) {
           'NSIS uninstaller',
         );
         run(uninstaller, ['/S']);
-        fs.rmSync(installDirectory, {
-          recursive: true,
-          force: true,
-          maxRetries: 120,
-          retryDelay: 500,
-        });
+        waitForPathRemoval(installDirectory);
       }
     } catch (error) {
       cleanupFailure = error;
@@ -602,6 +616,8 @@ async function main(argv = process.argv.slice(2)) {
       eventPath,
       evidenceDirectory,
       failure: failure || cleanupFailure,
+      installedCandidateDigest,
+      installedCandidateVersion,
       platform: process.platform,
       previousArtifact,
       projectBytes,
@@ -635,6 +651,7 @@ module.exports = {
   installedPackageDigest,
   installedPackageVersion,
   prepareSignedTarget,
+  waitForPathRemoval,
   waitForInstalledWindowsPackage,
   windowsProcessIds,
   windowsProcessIdsWithin,
