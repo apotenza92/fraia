@@ -31,6 +31,10 @@ const runtimeAudit = fs.readFileSync(
   path.join(repositoryRoot, '.github', 'workflows', 'calculix-runtime-audit.yml'),
   'utf8',
 );
+const nonmacUpdaterAudit = fs.readFileSync(
+  path.join(repositoryRoot, '.github', 'workflows', 'nonmac-updater-audit.yml'),
+  'utf8',
+);
 const mainProcess = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
 const changelog = fs.readFileSync(path.join(repositoryRoot, 'CHANGELOG.md'), 'utf8');
 
@@ -333,7 +337,16 @@ test('packaged updater code ships TUF verification for Windows and Linux', () =>
 });
 
 test('all third-party workflow actions are pinned to full commit SHAs', () => {
-  const uses = [...`${workflow}\n${continuousIntegration}`.matchAll(/^\s*uses:\s*([^\s#]+)/gm)].map((match) => match[1]);
+  const uses = [
+    ...`${workflow}\n${continuousIntegration}\n${runtimeAudit}\n${nonmacUpdaterAudit}`
+      .matchAll(/^\s*uses:\s*([^\s#]+)/gm),
+  ].map((match) => match[1]);
   assert.ok(uses.length > 0);
-  for (const action of uses) assert.match(action, /^[^@]+@[a-f0-9]{40}$/);
+  for (const action of uses) {
+    if (action.startsWith('./')) {
+      assert.match(action, /^\.\/\.github\/workflows\/[A-Za-z0-9_.-]+\.yml$/);
+    } else {
+      assert.match(action, /^[^@]+@[a-f0-9]{40}$/);
+    }
+  }
 });

@@ -12,6 +12,10 @@ const workflow = fs.readFileSync(
   path.resolve(__dirname, '..', '..', '..', '.github', 'workflows', 'nonmac-updater-audit.yml'),
   'utf8',
 );
+const continuousIntegration = fs.readFileSync(
+  path.resolve(__dirname, '..', '..', '..', '.github', 'workflows', 'ci.yml'),
+  'utf8',
+);
 const auditScript = fs.readFileSync(
   path.resolve(__dirname, '..', 'scripts', 'test-nonmac-update.cjs'),
   'utf8',
@@ -66,6 +70,7 @@ test('native updater audit rejects escaping artifact names', () => {
 
 test('native updater workflow performs real TUF-backed Windows and AppImage replacements', () => {
   assert.match(workflow, /runs-on:.*windows-2025.*ubuntu-24\.04/);
+  assert.match(workflow, /workflow_call:/);
   assert.match(workflow, /Require the matching native runner/);
   assert.match(workflow, /verify-calculix-runtimes\.cjs --target/);
   assert.match(workflow, /FRAIA_REQUIRE_TUF_ROOT: '1'/);
@@ -84,4 +89,6 @@ test('native updater workflow performs real TUF-backed Windows and AppImage repl
   assert.match(auditScript, /AppImage updater did not replace the installed bytes/);
   assert.match(auditScript, /PACKAGE_SHA256SUMS/);
   assert.doesNotMatch(auditScript, /copyFileSync\(privateKeyPath/);
+  assert.match(continuousIntegration, /nonmac_updater_target:/);
+  assert.match(continuousIntegration, /uses: \.\/\.github\/workflows\/nonmac-updater-audit\.yml/);
 });

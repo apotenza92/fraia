@@ -8,6 +8,20 @@ on:
         required: true
         type: boolean
         default: false
+      nonmac_updater_target:
+        description: Exercise a real TUF-backed native Windows or Linux update
+        required: true
+        type: choice
+        default: none
+        options:
+          - none
+          - win32-x64
+          - linux-x64
+      nonmac_updater_previous_version:
+        description: Synthetic installed version for the non-macOS updater audit
+        required: true
+        type: string
+        default: 0.0.1
 
 permissions:
   contents: read
@@ -17,6 +31,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  nonmac-updater-audit:
+    if: ${{ inputs.nonmac_updater_target != 'none' }}
+    uses: ./.github/workflows/nonmac-updater-audit.yml
+    with:
+      target: ${{ inputs.nonmac_updater_target }}
+      previous_version: ${{ inputs.nonmac_updater_previous_version }}
+
   deterministic:
     name: Deterministic repository checks
     runs-on: ubuntu-24.04

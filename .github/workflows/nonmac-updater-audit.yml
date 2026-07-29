@@ -1,6 +1,16 @@
 name: Native Windows and Linux Updater Audit
 
 on:
+  workflow_call:
+    inputs:
+      target:
+        description: Native updater target to exercise
+        required: true
+        type: string
+      previous_version:
+        description: Synthetic installed version for the N-1 migration test
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       target:
