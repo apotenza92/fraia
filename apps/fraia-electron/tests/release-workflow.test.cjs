@@ -102,8 +102,8 @@ test('first-release updater resolution uses the exact bootstrap tag and later re
 
   assert.equal(
     runResolver([], {
-      GITHUB_REF_NAME: 'v0.0.2',
-      MACOS_UPDATER_BOOTSTRAP_TAG: 'v0.0.2',
+      GITHUB_REF_NAME: 'v0.0.3',
+      MACOS_UPDATER_BOOTSTRAP_TAG: 'v0.0.3',
     }),
     'bootstrap=true\n',
   );
