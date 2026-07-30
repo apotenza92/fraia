@@ -5,23 +5,29 @@ const path = require('node:path');
 const test = require('node:test');
 const { assembleReleaseAssets, expectedReleaseAssetNames } = require('../scripts/release-assets.cjs');
 
-test('one stable release carries audit metadata for both update-feed projections', () => {
+test('stable and beta releases carry only their own isolated assets and audit metadata', () => {
   const stable = expectedReleaseAssetNames('stable');
-  assert.equal(stable.length, 38);
+  const beta = expectedReleaseAssetNames('beta');
+  assert.equal(stable.length, 32);
+  assert.equal(beta.length, 32);
   assert.ok(stable.includes('Fraia-CalculiX-Corresponding-Source.tar'));
   assert.ok(stable.includes('Fraia-Windows-arm64-Setup.exe'));
   assert.ok(stable.includes('Fraia-Windows-x64-Setup.exe'));
   assert.ok(!stable.some((name) => name.endsWith('.AppImage.blockmap')));
   assert.ok(stable.every((name) => !name.includes('Beta')));
+  assert.ok(beta.includes('Fraia-Beta-Windows-arm64-Setup.exe'));
+  assert.ok(beta.includes('Fraia-Beta-Windows-x64-Setup.exe'));
+  assert.ok(beta.filter((name) => /\.(?:dmg|zip|exe|AppImage|deb|rpm)(?:\.blockmap|\.sha256)?$/.test(name))
+    .every((name) => name.startsWith('Fraia-Beta-')));
   for (const arch of ['arm64', 'x64']) {
     assert.ok(stable.includes(`update-stable-darwin-${arch}.yml`));
-    assert.ok(stable.includes(`update-beta-darwin-${arch}.yml`));
     assert.ok(stable.includes(`update-stable-win32-${arch}.yml`));
-    assert.ok(stable.includes(`update-beta-win32-${arch}.yml`));
     assert.ok(stable.includes(`update-stable-linux-${arch}.yml`));
-    assert.ok(stable.includes(`update-beta-linux-${arch}.yml`));
+    assert.ok(beta.includes(`update-beta-darwin-${arch}.yml`));
+    assert.ok(beta.includes(`update-beta-win32-${arch}.yml`));
+    assert.ok(beta.includes(`update-beta-linux-${arch}.yml`));
   }
-  assert.throws(() => expectedReleaseAssetNames('beta'), /stable releases only/);
+  assert.throws(() => expectedReleaseAssetNames('nightly'), /stable or beta/);
 });
 
 test('release assembly rejects collisions and unexpected or missing assets', () => {
@@ -32,7 +38,7 @@ test('release assembly rejects collisions and unexpected or missing assets', () 
   for (const name of expectedReleaseAssetNames('stable').filter((name) => name !== 'SHA256SUMS')) {
     fs.writeFileSync(path.join(input, name), name);
   }
-  assert.equal(assembleReleaseAssets('stable', [input], output).length, 38);
+  assert.equal(assembleReleaseAssets('stable', [input], output).length, 32);
   assert.match(fs.readFileSync(path.join(output, 'SHA256SUMS'), 'utf8'), /Fraia-macOS-arm64\.dmg/);
   assert.throws(() => assembleReleaseAssets('stable', [input, input], output), /collision/);
   fs.writeFileSync(path.join(input, 'unexpected.txt'), 'no');

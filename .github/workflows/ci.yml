@@ -18,6 +18,14 @@ on:
         required: true
         type: boolean
         default: false
+      release_channel:
+        description: Stable or beta package identity for optional native audits
+        required: true
+        type: choice
+        default: beta
+        options:
+          - stable
+          - beta
       nonmac_updater_target:
         description: Exercise a real TUF-backed native Windows or Linux update
         required: true
@@ -33,19 +41,21 @@ on:
         description: Synthetic installed version for the non-macOS updater audit
         required: true
         type: string
-        default: 0.0.1
+        default: 0.0.4-beta.0
 
 permissions:
   contents: read
 
 concurrency:
-  group: fraia-ci-${{ github.workflow }}-${{ github.ref }}-${{ inputs.nonmac_updater_target }}-${{ inputs.run_native_package_preflight }}-${{ inputs.run_macos_signing_audit }}-${{ inputs.run_tuf_signing_audit }}
+  group: fraia-ci-${{ github.workflow }}-${{ github.ref }}-${{ inputs.release_channel }}-${{ inputs.nonmac_updater_target }}-${{ inputs.run_native_package_preflight }}-${{ inputs.run_macos_signing_audit }}-${{ inputs.run_tuf_signing_audit }}
   cancel-in-progress: true
 
 jobs:
   macos-signing-audit:
     if: ${{ inputs.run_macos_signing_audit }}
     uses: ./.github/workflows/macos-signing-audit.yml
+    with:
+      channel: ${{ inputs.release_channel }}
     secrets: inherit
 
   tuf-signing-audit:
@@ -57,6 +67,7 @@ jobs:
     if: ${{ inputs.nonmac_updater_target != 'none' }}
     uses: ./.github/workflows/nonmac-updater-audit.yml
     with:
+      channel: ${{ inputs.release_channel }}
       target: ${{ inputs.nonmac_updater_target }}
       previous_version: ${{ inputs.nonmac_updater_previous_version }}
 
@@ -205,17 +216,17 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           FRAIA_RELEASE_ARCH: ${{ matrix.arch }}
-          FRAIA_RELEASE_CHANNEL: stable
+          FRAIA_RELEASE_CHANNEL: ${{ inputs.release_channel }}
           FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
           FRAIA_REQUIRE_RELEASE_ICON: '1'
-          FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}/apps/fraia-electron/ci-release/stable/linux/${{ matrix.arch }}
+          FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}/apps/fraia-electron/ci-release/${{ inputs.release_channel }}/linux/${{ matrix.arch }}
           FRAIA_RELEASE_PLATFORM: linux
         run: |
           npx --no-install electron-builder --config electron-builder.config.cjs --linux AppImage deb rpm --${{ matrix.arch }} --publish never
           xvfb-run -a node scripts/verify-native-package.cjs \
-            --channel stable \
+            --channel "${{ inputs.release_channel }}" \
             --arch "${{ matrix.arch }}" \
-            --output-dir "ci-release/stable/linux/${{ matrix.arch }}"
+            --output-dir "ci-release/${{ inputs.release_channel }}/linux/${{ matrix.arch }}"
 
       - name: Build and exercise Windows installer
         if: ${{ matrix.platform == 'win32' }}
@@ -224,14 +235,14 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           FRAIA_RELEASE_ARCH: ${{ matrix.arch }}
-          FRAIA_RELEASE_CHANNEL: stable
+          FRAIA_RELEASE_CHANNEL: ${{ inputs.release_channel }}
           FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
           FRAIA_REQUIRE_RELEASE_ICON: '1'
-          FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}/apps/fraia-electron/ci-release/stable/win32/${{ matrix.arch }}
+          FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}/apps/fraia-electron/ci-release/${{ inputs.release_channel }}/win32/${{ matrix.arch }}
           FRAIA_RELEASE_PLATFORM: win32
         run: |
           npx --no-install electron-builder --config electron-builder.config.cjs --win nsis --${{ matrix.arch }} --publish never
           node scripts/verify-native-package.cjs \
-            --channel stable \
+            --channel "${{ inputs.release_channel }}" \
             --arch "${{ matrix.arch }}" \
-            --output-dir "ci-release/stable/win32/${{ matrix.arch }}"
+            --output-dir "ci-release/${{ inputs.release_channel }}/win32/${{ matrix.arch }}"

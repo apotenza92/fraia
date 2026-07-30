@@ -45,6 +45,28 @@ test('release-note extraction is version-bounded and rejects missing or duplicat
   );
 });
 
+test('release-note extraction supports numbered beta prereleases', () => {
+  const source = [
+    '# Changelog',
+    '',
+    '## [1.2.0-beta.2] - 2026-07-30',
+    '',
+    '### Changed',
+    '',
+    '- Separate beta identity.',
+    '',
+    '## [1.1.0] - 2026-07-01',
+    '',
+    '### Fixed',
+    '',
+    '- Previous.',
+    '',
+  ].join('\n');
+  const notes = releaseNotesFromText(source, '1.2.0-beta.2');
+  assert.equal(notes.version, '1.2.0-beta.2');
+  assert.match(notes.body, /Separate beta identity/);
+});
+
 test('electron-builder embeds the same current-version notes used by releases', () => {
   const packageMetadata = require('../package.json');
   const expected = readReleaseNotes({
@@ -52,6 +74,7 @@ test('electron-builder embeds the same current-version notes used by releases', 
     version: packageMetadata.version,
   });
   const config = require('../electron-builder.config.cjs');
-  assert.equal(config.releaseInfo.releaseName, `Fraia ${packageMetadata.version}`);
+  const expectedProductName = packageMetadata.version.includes('-beta.') ? 'Fraia Beta' : 'Fraia';
+  assert.equal(config.releaseInfo.releaseName, `${expectedProductName} ${packageMetadata.version}`);
   assert.equal(config.releaseInfo.releaseNotes, expected.body);
 });

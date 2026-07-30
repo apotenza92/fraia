@@ -9,9 +9,17 @@ const {
   packagedCalculixPath,
   sidecarExecutableName,
 } = require('../package-boundary.cjs');
+const packageMetadata = require('../package.json');
+const { releaseContract } = require('../release-contract.cjs');
 
 const appRoot = path.resolve(__dirname, '..');
 const releaseRoot = path.join(appRoot, 'release');
+const defaultChannel = packageMetadata.version.includes('-beta.') ? 'beta' : 'stable';
+const contract = releaseContract({
+  channel: process.env.FRAIA_RELEASE_CHANNEL || defaultChannel,
+  platform: process.platform,
+  arch: process.arch,
+});
 
 function packagedLayout() {
   const explicitExecutable = process.env.FRAIA_PACKAGED_EXECUTABLE?.trim();
@@ -24,20 +32,26 @@ function packagedLayout() {
   }
   if (process.platform === 'darwin') {
     const directory = process.arch === 'x64' ? 'mac' : `mac-${process.arch}`;
-    const appRoot = path.join(releaseRoot, directory, 'Fraia.app');
+    const packagedAppRoot = path.join(releaseRoot, directory, contract.appName);
     return {
-      executable: path.join(appRoot, 'Contents', 'MacOS', 'Fraia'),
-      resources: path.join(appRoot, 'Contents', 'Resources'),
+      executable: path.join(packagedAppRoot, 'Contents', 'MacOS', contract.productName),
+      resources: path.join(packagedAppRoot, 'Contents', 'Resources'),
     };
   }
   if (process.platform === 'win32') {
     const directory = process.arch === 'x64' ? 'win-unpacked' : `win-${process.arch}-unpacked`;
-    const appRoot = path.join(releaseRoot, directory);
-    return { executable: path.join(appRoot, 'Fraia.exe'), resources: path.join(appRoot, 'resources') };
+    const packagedAppRoot = path.join(releaseRoot, directory);
+    return {
+      executable: path.join(packagedAppRoot, `${contract.productName}.exe`),
+      resources: path.join(packagedAppRoot, 'resources'),
+    };
   }
   const directory = process.arch === 'x64' ? 'linux-unpacked' : `linux-${process.arch}-unpacked`;
-  const appRoot = path.join(releaseRoot, directory);
-  return { executable: path.join(appRoot, 'fraia-electron'), resources: path.join(appRoot, 'resources') };
+  const packagedAppRoot = path.join(releaseRoot, directory);
+  return {
+    executable: path.join(packagedAppRoot, contract.packageName),
+    resources: path.join(packagedAppRoot, 'resources'),
+  };
 }
 
 function isMachO(filePath) {

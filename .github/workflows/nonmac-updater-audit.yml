@@ -3,6 +3,11 @@ name: Native Windows and Linux Updater Audit
 on:
   workflow_call:
     inputs:
+      channel:
+        description: Stable or beta application identity to exercise
+        required: false
+        type: string
+        default: stable
       target:
         description: Native updater target to exercise
         required: true
@@ -13,6 +18,14 @@ on:
         type: string
   workflow_dispatch:
     inputs:
+      channel:
+        description: Application identity to exercise
+        required: true
+        type: choice
+        default: stable
+        options:
+          - stable
+          - beta
       target:
         description: Native updater target to exercise
         required: true
@@ -33,7 +46,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: fraia-nonmac-updater-audit-${{ inputs.target }}
+  group: fraia-nonmac-updater-audit-${{ inputs.channel }}-${{ inputs.target }}
   cancel-in-progress: true
 
 jobs:
@@ -101,7 +114,7 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           FRAIA_RELEASE_ARCH: ${{ endsWith(inputs.target, '-arm64') && 'arm64' || 'x64' }}
-          FRAIA_RELEASE_CHANNEL: stable
+          FRAIA_RELEASE_CHANNEL: ${{ inputs.channel }}
           FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
           FRAIA_REQUIRE_RELEASE_ICON: '1'
           FRAIA_REQUIRE_TUF_ROOT: '1'
@@ -110,8 +123,13 @@ jobs:
           set -euo pipefail
           CANDIDATE_VERSION=$(node -p 'require("./package.json").version')
           PREVIOUS_VERSION='${{ inputs.previous_version }}'
-          if ! [[ "$PREVIOUS_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo 'previous_version must be an exact stable semantic version.' >&2
+          if [ "$FRAIA_RELEASE_CHANNEL" = stable ]; then
+            VERSION_PATTERN='^[0-9]+\.[0-9]+\.[0-9]+$'
+          else
+            VERSION_PATTERN='^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$'
+          fi
+          if ! [[ "$PREVIOUS_VERSION" =~ $VERSION_PATTERN ]] || ! [[ "$CANDIDATE_VERSION" =~ $VERSION_PATTERN ]]; then
+            echo "previous and candidate versions must match the exact $FRAIA_RELEASE_CHANNEL semantic-version contract." >&2
             exit 1
           fi
           if [ "$PREVIOUS_VERSION" = "$CANDIDATE_VERSION" ]; then
@@ -150,22 +168,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          channel='${{ inputs.channel }}'
+          platform='${{ startsWith(inputs.target, 'win32-') && 'win32' || 'linux' }}'
+          arch='${{ endsWith(inputs.target, '-arm64') && 'arm64' || 'x64' }}'
+          prefix=$(node -p "require('./release-contract.cjs').releaseContract({channel: '$channel', platform: '$platform', arch: '$arch'}).artifactPrefix")
           if [ "$FRAIA_AUDIT_PLATFORM" = win32 ]; then
-            arch='${{ endsWith(inputs.target, '-arm64') && 'arm64' || 'x64' }}'
             node scripts/test-nonmac-update.cjs \
+              --channel "$channel" \
               --arch "$arch" \
-              --previous-artifact "ci-updater/previous/Fraia-Windows-${arch}-Setup.exe" \
+              --previous-artifact "ci-updater/previous/$prefix-Windows-${arch}-Setup.exe" \
               --candidate-directory ci-updater/candidate \
               --candidate-metadata ci-updater/candidate/latest.yml \
               --root build/update-trust/root.json \
               --private-key '${{ runner.temp }}/fraia-updater-trust/private-key.pem' \
               --evidence '${{ runner.temp }}/fraia-updater-evidence'
           else
-            arch='${{ endsWith(inputs.target, '-arm64') && 'arm64' || 'x64' }}'
             metadata='${{ inputs.target == 'linux-arm64' && 'latest-linux-arm64.yml' || 'latest-linux.yml' }}'
             xvfb-run -a node scripts/test-nonmac-update.cjs \
+              --channel "$channel" \
               --arch "$arch" \
-              --previous-artifact "ci-updater/previous/Fraia-Linux-${arch}.AppImage" \
+              --previous-artifact "ci-updater/previous/$prefix-Linux-${arch}.AppImage" \
               --candidate-directory ci-updater/candidate \
               --candidate-metadata "ci-updater/candidate/${metadata}" \
               --root build/update-trust/root.json \
@@ -177,7 +199,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: fraia-${{ inputs.target }}-updater-evidence
+          name: fraia-${{ inputs.channel }}-${{ inputs.target }}-updater-evidence
           path: ${{ runner.temp }}/fraia-updater-evidence
           if-no-files-found: warn
           retention-days: 14

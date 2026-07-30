@@ -33,19 +33,36 @@ test('stable releases retain the canonical persistent data directory', () => {
   );
 });
 
-test('rejects an unknown release channel', () => {
-  assert.throws(
-    () => resolveApplicationMetadata({ fraiaReleaseChannel: 'nightly' }),
-    /release channel must be stable/,
+test('beta releases use an isolated product and persistent data directory', () => {
+  const beta = resolveApplicationMetadata({
+    fraiaReleaseChannel: 'beta',
+    productName: 'Fraia Beta',
+  });
+  assert.deepEqual(beta, {
+    channel: 'beta',
+    productName: 'Fraia Beta',
+    userDataDirectoryName: 'Fraia Beta',
+  });
+  const appDataPath = path.resolve('fixture-app-data');
+  assert.equal(
+    resolveUserDataDirectory({ appDataPath, metadata: beta }),
+    path.join(appDataPath, 'Fraia Beta'),
   );
 });
 
-test('rejects a separate beta application identity', () => {
+test('rejects an unknown release channel', () => {
+  assert.throws(
+    () => resolveApplicationMetadata({ fraiaReleaseChannel: 'nightly' }),
+    /release channel must be stable or beta/,
+  );
+});
+
+test('rejects a product name that does not match its channel identity', () => {
   assert.throws(
     () => resolveApplicationMetadata({
       fraiaReleaseChannel: 'beta',
-      productName: 'Fraia Beta',
+      productName: 'Fraia',
     }),
-    /release channel must be stable/,
+    /requires productName Fraia Beta/,
   );
 });

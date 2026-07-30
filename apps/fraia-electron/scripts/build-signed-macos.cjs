@@ -175,6 +175,7 @@ function main(argv = process.argv.slice(2)) {
       '--metadata', path.join(outputDir, 'latest-mac.yml'),
       '--artifact-dir', outputDir,
       '--arch', arch,
+      '--channel', channel,
     ], { env: releaseEnvironment });
     for (const artifact of [dmg, zip]) fs.writeFileSync(`${artifact}.sha256`, `${sha256(artifact)}  ${path.basename(artifact)}\n`);
     run(process.execPath, ['scripts/verify-macos-package.cjs', '--channel', channel, '--arch', arch, '--output-dir', outputDir, '--skip-launch'], { env: releaseEnvironment });

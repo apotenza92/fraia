@@ -48,7 +48,7 @@ test('macOS icon bundles select explicit light and dark artwork', () => {
   }
 });
 
-test('electron-builder uses the stable adaptive macOS icon without enabling a beta identity', () => {
+test('electron-builder selects the maintained adaptive icon for each channel identity', () => {
   const builderConfig = readFileSync(
     path.join(applicationDirectory, 'electron-builder.config.cjs'),
     'utf8',
@@ -58,12 +58,13 @@ test('electron-builder uses the stable adaptive macOS icon without enabling a be
     'utf8',
   );
 
-  assert.match(builderConfig, /build', 'macos', 'Fraia\.icon'/);
+  assert.match(builderConfig, /contract\.iconVariant === 'beta'/);
+  assert.match(builderConfig, /'Fraia Beta\.icon' : 'Fraia\.icon'/);
   assert.match(builderConfig, /darwinFallback/);
   assert.match(builderConfig, /xcrun', \['actool', '--version'\]/);
   assert.match(builderConfig, /Xcode 26 or newer with actool is required/);
-  assert.doesNotMatch(builderConfig, /Fraia Beta\.icon/);
-  assert.match(releaseContract, /const CHANNELS = new Set\(\['stable'\]\)/);
+  assert.match(releaseContract, /const CHANNELS = new Set\(\['stable', 'beta'\]\)/);
+  assert.match(releaseContract, /appId: 'app\.fraia\.desktop\.beta'/);
 });
 
 function geometryFingerprint(svg) {

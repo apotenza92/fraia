@@ -20,16 +20,23 @@ function artifactName(value) {
   return decoded;
 }
 
-export async function finalizeMacosUpdateArtifacts({ metadataPath, artifactDir, arch }) {
+export async function finalizeMacosUpdateArtifacts({
+  metadataPath,
+  artifactDir,
+  arch,
+  channel = 'stable',
+}) {
   if (!['arm64', 'x64'].includes(arch)) throw new Error(`Unsupported macOS release architecture: ${arch}`);
+  if (!['stable', 'beta'].includes(channel)) throw new Error(`Unsupported macOS release channel: ${channel}`);
   const metadata = YAML.parse(await readFile(metadataPath, 'utf8'));
   if (!metadata || typeof metadata !== 'object' || !Array.isArray(metadata.files)) {
     throw new Error('macOS update metadata must contain a files array.');
   }
 
+  const artifactPrefix = channel === 'beta' ? 'Fraia-Beta' : 'Fraia';
   const expectedNames = new Set([
-    `Fraia-macOS-${arch}.dmg`,
-    `Fraia-macOS-${arch}.zip`,
+    `${artifactPrefix}-macOS-${arch}.dmg`,
+    `${artifactPrefix}-macOS-${arch}.zip`,
   ]);
   const finalizedFiles = [];
   for (const file of metadata.files) {
@@ -86,6 +93,7 @@ async function main(argv = process.argv.slice(2)) {
     metadataPath: path.resolve(args.metadata),
     artifactDir: path.resolve(args['artifact-dir']),
     arch: args.arch,
+    channel: args.channel || 'stable',
   });
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }

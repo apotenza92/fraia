@@ -1,9 +1,27 @@
 const path = require('node:path');
 const { SUPPORTED_TARGETS } = require('./package-boundary.cjs');
 
-const CHANNELS = new Set(['stable']);
+const CHANNELS = new Set(['stable', 'beta']);
 const PLATFORMS = new Set(['darwin', 'win32', 'linux']);
 const ARCHITECTURES = new Set(['arm64', 'x64']);
+const CHANNEL_IDENTITIES = Object.freeze({
+  stable: Object.freeze({
+    appId: 'app.fraia.desktop',
+    artifactPrefix: 'Fraia',
+    iconVariant: 'stable',
+    packageName: 'fraia-electron',
+    productName: 'Fraia',
+    userDataDirectoryName: 'Fraia',
+  }),
+  beta: Object.freeze({
+    appId: 'app.fraia.desktop.beta',
+    artifactPrefix: 'Fraia-Beta',
+    iconVariant: 'beta',
+    packageName: 'fraia-electron-beta',
+    productName: 'Fraia Beta',
+    userDataDirectoryName: 'Fraia Beta',
+  }),
+});
 
 function requireChoice(label, value, choices) {
   if (!choices.has(value)) {
@@ -31,25 +49,33 @@ function releaseContract({
   requireChoice('architecture', arch, ARCHITECTURES);
   requireTarget(platform, arch);
 
-  const productName = 'Fraia';
-  const packageName = 'fraia-electron';
-  const artifactPrefix = 'Fraia';
+  const identity = CHANNEL_IDENTITIES[channel];
+  const {
+    appId,
+    artifactPrefix,
+    iconVariant,
+    packageName,
+    productName,
+    userDataDirectoryName,
+  } = identity;
   const normalizedFeedBaseUrl = feedBaseUrl.replace(/\/$/, '');
 
   return {
-    appId: 'app.fraia.desktop',
+    appId,
     appName: `${productName}.app`,
     arch,
     artifactPrefix,
     channel,
     executableName: platform === 'linux' ? packageName : productName,
     feedUrl: `${normalizedFeedBaseUrl}/${channel}/${platform}/${arch}`,
+    iconVariant,
     outputDir: outputDir
       ? path.resolve(outputDir)
       : path.resolve(__dirname, 'release', channel, platform, arch),
     packageName,
     platform,
     productName,
+    userDataDirectoryName,
   };
 }
 
@@ -64,6 +90,7 @@ function metadataFileName(platform, arch) {
 
 module.exports = {
   ARCHITECTURES,
+  CHANNEL_IDENTITIES,
   CHANNELS,
   PLATFORMS,
   metadataFileName,

@@ -3,28 +3,30 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { CALCULIX_SOURCE_ASSET_NAME } = require('../calculix-source-contract.cjs');
 
+const CHANNELS = new Set(['stable', 'beta']);
+
 function requireChannel(channel) {
-  if (channel !== 'stable') throw new Error(`Fraia publishes stable releases only; received channel: ${channel}`);
+  if (!CHANNELS.has(channel)) {
+    throw new Error(`Fraia release channel must be stable or beta; received channel: ${channel}`);
+  }
 }
 
 function expectedReleaseAssetNames(channel) {
   requireChannel(channel);
-  const prefix = 'Fraia';
+  const prefix = channel === 'beta' ? 'Fraia-Beta' : 'Fraia';
   const names = ['SHA256SUMS', CALCULIX_SOURCE_ASSET_NAME];
   for (const arch of ['arm64', 'x64']) {
     const mac = `${prefix}-macOS-${arch}`;
     names.push(
       `${mac}.dmg`, `${mac}.dmg.blockmap`, `${mac}.dmg.sha256`,
       `${mac}.zip`, `${mac}.zip.blockmap`, `${mac}.zip.sha256`,
-      `notarization-stable-${arch}.json`,
-      `update-stable-darwin-${arch}.yml`,
-      `update-beta-darwin-${arch}.yml`,
+      `notarization-${channel}-${arch}.json`,
+      `update-${channel}-darwin-${arch}.yml`,
     );
     const linux = `${prefix}-Linux-${arch}`;
     names.push(
       `${linux}.AppImage`, `${linux}.deb`, `${linux}.rpm`,
-      `update-stable-linux-${arch}.yml`,
-      `update-beta-linux-${arch}.yml`,
+      `update-${channel}-linux-${arch}.yml`,
     );
   }
   for (const arch of ['arm64', 'x64']) {
@@ -32,8 +34,7 @@ function expectedReleaseAssetNames(channel) {
     names.push(
       windows,
       `${windows}.blockmap`,
-      `update-stable-win32-${arch}.yml`,
-      `update-beta-win32-${arch}.yml`,
+      `update-${channel}-win32-${arch}.yml`,
     );
   }
   return names.sort();
@@ -88,7 +89,7 @@ function main(argv = process.argv.slice(2)) {
   const outputIndex = argv.indexOf('--output');
   const inputIndices = argv.flatMap((value, index) => value === '--input' ? [index] : []);
   if (channelIndex < 0 || outputIndex < 0 || inputIndices.length === 0) {
-    throw new Error('Usage: release-assets.cjs --channel stable --output DIR --input DIR [--input DIR]');
+    throw new Error('Usage: release-assets.cjs --channel stable|beta --output DIR --input DIR [--input DIR]');
   }
   const names = assembleReleaseAssets(
     argv[channelIndex + 1],

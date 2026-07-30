@@ -107,7 +107,9 @@ function correspondingSourceUrl(repository, tag) {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) {
     throw new Error(`Invalid GitHub repository: ${repository}`);
   }
-  if (!/^v\d+\.\d+\.\d+$/.test(tag)) throw new Error(`Invalid stable release tag: ${tag}`);
+  if (!/^v\d+\.\d+\.\d+(?:-beta\.\d+)?$/.test(tag)) {
+    throw new Error(`Invalid Fraia release tag: ${tag}`);
+  }
   return `https://github.com/${repository}/releases/download/${tag}/${CALCULIX_SOURCE_ASSET_NAME}`;
 }
 

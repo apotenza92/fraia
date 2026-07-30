@@ -78,14 +78,6 @@ jobs:
               done
             done
           done
-          for PLATFORM in win32 linux; do
-            for ARCH in arm64 x64; do
-              diff --recursive \
-                "$GITHUB_WORKSPACE/update-site/stable/$PLATFORM/$ARCH" \
-                "$GITHUB_WORKSPACE/update-site/beta/$PLATFORM/$ARCH"
-            done
-          done
-
       - name: Publish only refreshed trust metadata
         working-directory: update-site
         shell: bash

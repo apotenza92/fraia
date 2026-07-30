@@ -125,13 +125,16 @@ test('native updater workflow performs real TUF-backed Windows and AppImage repl
   assert.match(workflow, /runs-on:.*windows-11-arm.*windows-2025.*ubuntu-24\.04/);
   assert.match(workflow, /ubuntu-24\.04-arm/);
   assert.match(workflow, /workflow_call:/);
+  assert.match(workflow, /channel:[\s\S]*?options:\n\s+- stable\n\s+- beta/);
   assert.match(workflow, /Require the matching native runner/);
   assert.match(workflow, /verify-calculix-runtimes\.cjs --target/);
   assert.match(workflow, /FRAIA_REQUIRE_TUF_ROOT: '1'/);
   assert.match(workflow, /test-tuf-repository\.cjs/);
   assert.match(workflow, /test-nonmac-update\.cjs/);
-  assert.match(workflow, /Fraia-Windows-\$\{arch\}-Setup\.exe/);
-  assert.match(workflow, /Fraia-Linux-\$\{arch\}\.AppImage/);
+  assert.match(workflow, /releaseContract\(\{channel: '\$channel', platform: '\$platform', arch: '\$arch'\}\)\.artifactPrefix/);
+  assert.match(workflow, /\$prefix-Windows-\$\{arch\}-Setup\.exe/);
+  assert.match(workflow, /\$prefix-Linux-\$\{arch\}\.AppImage/);
+  assert.match(workflow, /FRAIA_RELEASE_CHANNEL: \$\{\{ inputs\.channel \}\}/);
   assert.match(workflow, /latest-linux-arm64\.yml/);
   assert.match(workflow, /--linux AppImage --arm64/);
   assert.match(workflow, /Synthetic prior package used only for the native updater migration audit/);

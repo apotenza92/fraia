@@ -28,6 +28,10 @@ test('corresponding-source contract covers every runtime platform with pinned pu
     correspondingSourceUrl('apotenza92/fraia', 'v0.0.1'),
     'https://github.com/apotenza92/fraia/releases/download/v0.0.1/Fraia-CalculiX-Corresponding-Source.tar',
   );
+  assert.equal(
+    correspondingSourceUrl('apotenza92/fraia', 'v0.0.4-beta.1'),
+    'https://github.com/apotenza92/fraia/releases/download/v0.0.4-beta.1/Fraia-CalculiX-Corresponding-Source.tar',
+  );
   assert.deepEqual(
     BUILD_RECIPES.map(({ platform }) => platform),
     ['darwin', 'linux', 'win32', 'win32-arm64'],
@@ -45,7 +49,7 @@ test('corresponding-source contract covers every runtime platform with pinned pu
   }
 });
 
-test('reviewed runtime manifests target the current stable release source asset', () => {
+test('reviewed runtime manifests target the current channel release source asset', () => {
   const releaseTag = `v${packageMetadata.version}`;
   const expectedSourceUrl = correspondingSourceUrl('apotenza92/fraia', releaseTag);
   const sourceDigests = new Set();
