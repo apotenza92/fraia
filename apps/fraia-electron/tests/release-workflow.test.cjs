@@ -218,6 +218,11 @@ test('one stable publication atomically advances byte-identical stable and beta 
     assert.match(workflow, new RegExp(`secrets\\.FRAIA_TUF_${role}_PRIVATE_KEY_PEM`));
   }
   assert.doesNotMatch(workflow, /FRAIA_TUF_ROOT_PRIVATE_KEY/);
+  assert.match(
+    workflow,
+    /gh release view "\$TAG" --repo "\$REPOSITORY" --json assets --jq '\.assets\[\]\.name'/,
+  );
+  assert.doesNotMatch(workflow, /gh api "repos\/\$REPOSITORY\/releases\/tags\/\$TAG"/);
   assert.match(workflow, /comm -23 existing-assets\.txt expected-assets\.txt/);
   assert.match(workflow, /cmp "publish\/assets\/\$name" "existing-release\/\$name"/);
   assert.doesNotMatch(workflow, /gh release (?:delete|upload)[^\n]*(?:--clobber|-R)/);
