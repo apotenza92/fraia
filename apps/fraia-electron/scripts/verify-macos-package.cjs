@@ -132,6 +132,7 @@ function validateSignature(target, expectations, certificateRoot, index, validat
 function extractPackageMetadata(appPath) {
   const archive = path.join(appPath, 'Contents', 'Resources', 'app.asar');
   if (!fs.existsSync(archive)) throw new Error(`Packaged asar is missing: ${archive}`);
+  asar.uncache(archive);
   return JSON.parse(asar.extractFile(archive, 'package.json').toString('utf8'));
 }
 
@@ -286,6 +287,7 @@ function main(argv = process.argv.slice(2)) {
 if (require.main === module) main();
 
 module.exports = {
+  extractPackageMetadata,
   extractedZip,
   normalizeFingerprint,
   verifyApp,

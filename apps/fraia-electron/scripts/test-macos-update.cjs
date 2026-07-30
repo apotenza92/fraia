@@ -229,12 +229,18 @@ async function waitForVerifiedApp(appPath, contract, expectations, expectedVersi
 }
 
 function executablePids(executable) {
+  const aliases = new Set([path.resolve(executable)]);
+  try {
+    aliases.add(fs.realpathSync.native(executable));
+  } catch {
+    // The caller may be cleaning up after a partial installation.
+  }
   const result = run('ps', ['-axo', 'pid=,command='], { capture: true });
   return result.stdout.split('\n').flatMap((line) => {
     const match = line.match(/^\s*(\d+)\s+(.+)$/);
     if (!match) return [];
     const command = match[2];
-    return command === executable || command.startsWith(`${executable} `)
+    return [...aliases].some((alias) => command === alias || command.startsWith(`${alias} `))
       ? [Number(match[1])]
       : [];
   });
@@ -242,8 +248,22 @@ function executablePids(executable) {
 
 async function stopExecutableProcesses(executable) {
   if (!executable) return;
-  for (const pid of executablePids(executable)) {
-    if (pid !== process.pid) await stopPid(pid);
+  const deadline = Date.now() + 5_000;
+  let quietSince;
+  while (Date.now() < deadline) {
+    const pids = executablePids(executable).filter((pid) => pid !== process.pid);
+    if (pids.length > 0) {
+      quietSince = undefined;
+      for (const pid of pids) await stopPid(pid);
+    } else {
+      quietSince ??= Date.now();
+      if (Date.now() - quietSince >= 2_000) return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  const remaining = executablePids(executable).filter((pid) => pid !== process.pid);
+  if (remaining.length > 0) {
+    throw new Error(`Updater cleanup could not stop executable PIDs: ${remaining.join(', ')}`);
   }
 }
 
@@ -331,7 +351,12 @@ async function main(argv = process.argv.slice(2)) {
         (candidate) => candidate.pid === child.pid,
       );
       if (event.currentVersion !== prepared.version) throw new Error('Relaunched runtime reported the wrong version.');
-      if (path.resolve(event.executablePath) !== path.resolve(executable)) throw new Error('Updated runtime launched from an unexpected executable path.');
+      if (
+        typeof event.executablePath !== 'string'
+        || fs.realpathSync.native(event.executablePath) !== fs.realpathSync.native(executable)
+      ) {
+        throw new Error('Updated runtime launched from an unexpected executable path.');
+      }
       if (!Number.isInteger(event.pid) || event.pid <= 0) throw new Error('Updated runtime did not report a valid process ID.');
       relaunchedPid = event.pid;
     } else {
