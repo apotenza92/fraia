@@ -791,7 +791,7 @@ jobs:
           API_URL="https://api.github.com/repos/$REPOSITORY/releases/tags/$TAG"
           EXPECTED_PRERELEASE="${{ needs.prepare.outputs.prerelease }}"
           for attempt in {1..12}; do
-            if curl --fail --location --silent --show-error "$API_URL" -o public-release.json \
+            if curl --fail --location --silent --show-error --retry 10 --retry-all-errors --retry-delay 2 "$API_URL" -o public-release.json \
               && [ "$(jq -r '.draft' public-release.json)" = false ] \
               && [ "$(jq -r '.prerelease' public-release.json)" = "$EXPECTED_PRERELEASE" ] \
               && [ "$(jq -r '.body' public-release.json)" = "$(cat release-notes.md)" ]; then
@@ -804,12 +804,12 @@ jobs:
             fi
             sleep 5
           done
-          curl --fail --location --silent --show-error "$RELEASE_BASE/SHA256SUMS" -o public-SHA256SUMS
+          curl --fail --location --silent --show-error --retry 10 --retry-all-errors --retry-delay 2 "$RELEASE_BASE/SHA256SUMS" -o public-SHA256SUMS
           mapfile -t public_checksums < public-SHA256SUMS
           for checksum_line in "${public_checksums[@]}"; do
             checksum="${checksum_line%% *}"
             filename="${checksum_line#*  }"
-            curl --fail --location --silent --show-error "$RELEASE_BASE/$filename" -o "public-$filename"
+            curl --fail --location --silent --show-error --retry 10 --retry-all-errors --retry-delay 2 "$RELEASE_BASE/$filename" -o "public-$filename"
             printf '%s  %s\n' "$checksum" "public-$filename" | sha256sum --check --strict -
           done
 
@@ -854,6 +854,7 @@ jobs:
         with:
           name: fraia-update-feed-publication-${{ github.ref_name }}
           path: feed-publication
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
 
@@ -915,12 +916,12 @@ jobs:
           set -euo pipefail
           RELEASE_BASE="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}"
           mkdir -p public
-          curl --fail --location --silent --show-error "$RELEASE_BASE/SHA256SUMS" -o public/SHA256SUMS
+          curl --fail --location --silent --show-error --retry 10 --retry-all-errors --retry-delay 2 "$RELEASE_BASE/SHA256SUMS" -o public/SHA256SUMS
           mapfile -t public_checksums < public/SHA256SUMS
           for checksum_line in "${public_checksums[@]}"; do
             checksum="${checksum_line%% *}"
             filename="${checksum_line#*  }"
-            curl --fail --location --silent --show-error "$RELEASE_BASE/$filename" -o "public/$filename"
+            curl --fail --location --silent --show-error --retry 10 --retry-all-errors --retry-delay 2 "$RELEASE_BASE/$filename" -o "public/$filename"
             printf '%s  %s\n' "$checksum" "public/$filename" | sha256sum --check --strict -
           done
           (cd feed-publication && sha256sum --check --strict SHA256SUMS)
@@ -931,7 +932,7 @@ jobs:
               relative="${expected_feed#expected/feed/}"
               destination="public-feed/${relative}"
               mkdir -p "$(dirname "$destination")"
-              if ! curl --fail --location --silent --show-error "$RAW_BASE/$relative" -o "$destination" \
+              if ! curl --fail --location --silent --show-error --retry 10 --retry-all-errors --retry-delay 2 "$RAW_BASE/$relative" -o "$destination" \
                 || ! cmp "$expected_feed" "$destination"; then
                 complete=false
               fi

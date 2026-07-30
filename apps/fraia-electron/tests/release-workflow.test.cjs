@@ -226,6 +226,14 @@ test('one stable publication atomically advances byte-identical stable and beta 
   assert.match(workflow, /comm -23 existing-assets\.txt expected-assets\.txt/);
   assert.match(workflow, /cmp "publish\/assets\/\$name" "existing-release\/\$name"/);
   assert.doesNotMatch(workflow, /gh release (?:delete|upload)[^\n]*(?:--clobber|-R)/);
+  assert.match(
+    workflow,
+    /name: fraia-update-feed-publication-\$\{\{ github\.ref_name \}\}[\s\S]{0,200}include-hidden-files: true/,
+  );
+  assert.ok(
+    (workflow.match(/--retry 10 --retry-all-errors --retry-delay 2 "\$RELEASE_BASE\/\$filename"/g) || []).length >= 2,
+    'both public release download passes must retry transient network failures',
+  );
   assert.match(updaterTest, /updated-runtime-launched/);
   assert.match(updaterTest, /'gh', \['attestation', 'verify'/);
   assert.match(updaterTest, /sha512\|checksum\|digest\|integrity/);
