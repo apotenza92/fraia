@@ -1,0 +1,6 @@
+Fraia updater-feed publication bundle
+Channel: beta
+Tag: v0.0.4-beta.1
+Commit: 6eafe82e5ec5b5ee62bb16136043c41f6ed2f80a
+Destination: updates branch / beta
+Publication: tag workflow, after explicit beta-release approval
