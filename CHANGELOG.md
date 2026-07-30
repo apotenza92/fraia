@@ -13,6 +13,8 @@ release notes and macOS updater notes.
   application ids, package names, user-data directories, artifacts, update
   feeds, and release tags. Stable uses `vX.Y.Z`; beta uses
   `vX.Y.Z-beta.N` and is published as a GitHub prerelease.
+- CalculiX corresponding source now uses GNU's canonical GCC archive endpoint
+  while retaining the reviewed GCC 16.1.0 SHA-256.
 
 ### Updating
 
