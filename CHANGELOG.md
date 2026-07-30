@@ -5,6 +5,21 @@ All notable user-facing changes to Fraia are documented here. Fraia follows
 workflow uses the matching version section below as the authoritative GitHub
 release notes and macOS updater notes.
 
+## [0.0.4] - 2026-07-30
+
+### Changed
+
+- Stable and beta are now separate, side-by-side applications with isolated
+  application ids, package names, user-data directories, artifacts, update
+  feeds, and release tags.
+- CalculiX corresponding source now uses GNU's canonical GCC archive endpoint
+  while retaining the reviewed GCC 16.1.0 SHA-256.
+
+### Updating
+
+- Stable `0.0.4` updates only the `Fraia` application and stable feed. The
+  separately installed `Fraia Beta` application remains on its beta-only feed.
+
 ## [0.0.4-beta.1] - 2026-07-30
 
 ### Changed
