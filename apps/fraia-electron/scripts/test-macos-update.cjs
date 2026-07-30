@@ -148,11 +148,11 @@ function readEventHistory(eventPath) {
   return fs.readFileSync(historyPath, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line));
 }
 
-async function waitForEvent(eventPath, accepted, timeoutMs = 180_000) {
+async function waitForEvent(eventPath, accepted, timeoutMs = 180_000, predicate = () => true) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     for (const event of readEventHistory(eventPath)) {
-      if (accepted.has(event.name)) return event;
+      if (accepted.has(event.name) && predicate(event)) return event;
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
@@ -177,6 +177,57 @@ async function stopPid(pid) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   if (isPidAlive(pid)) throw new Error(`Updater process ${pid} did not exit after SIGTERM.`);
+}
+
+async function waitForPidExit(pid, timeoutMs = 180_000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    if (!isPidAlive(pid)) return;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`Updater process ${pid} did not exit for installation.`);
+}
+
+function bundleVersion(appPath) {
+  const result = run('/usr/bin/plutil', [
+    '-extract',
+    'CFBundleShortVersionString',
+    'raw',
+    '-o',
+    '-',
+    path.join(appPath, 'Contents', 'Info.plist'),
+  ], { capture: true });
+  return result.stdout.trim();
+}
+
+async function waitForBundleVersion(appPath, expectedVersion, timeoutMs = 180_000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    try {
+      if (bundleVersion(appPath) === expectedVersion) return;
+    } catch { /* Squirrel may be atomically replacing the bundle */ }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`Timed out waiting for Squirrel.Mac to install ${expectedVersion}.`);
+}
+
+function executablePids(executable) {
+  const result = run('ps', ['-axo', 'pid=,command='], { capture: true });
+  return result.stdout.split('\n').flatMap((line) => {
+    const match = line.match(/^\s*(\d+)\s+(.+)$/);
+    if (!match) return [];
+    const command = match[2];
+    return command === executable || command.startsWith(`${executable} `)
+      ? [Number(match[1])]
+      : [];
+  });
+}
+
+async function stopExecutableProcesses(executable) {
+  if (!executable) return;
+  for (const pid of executablePids(executable)) {
+    if (pid !== process.pid) await stopPid(pid);
+  }
 }
 
 async function main(argv = process.argv.slice(2)) {
@@ -210,6 +261,7 @@ async function main(argv = process.argv.slice(2)) {
   if (!currentExpectations.identity || !currentExpectations.teamId) throw new Error('Updater verification requires signing identity variables.');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-updater-'));
   let child;
+  let executable;
   let server;
   let relaunchedPid;
   try {
@@ -228,31 +280,44 @@ async function main(argv = process.argv.slice(2)) {
     const prepared = prepareScenarioAssets({ candidateDirectory, metadataPath, scenario, root });
     if (prepared.version === previous.version) throw new Error('N-1 updater test requires different previous and candidate versions.');
     server = await serveFeed(prepared.assets, prepared.metadata);
-    const executable = path.join(installedApp, 'Contents', 'MacOS', contract.productName);
+    executable = path.join(installedApp, 'Contents', 'MacOS', contract.productName);
+    const runtimeEnvironment = restrictedEnvironment({
+      FRAIA_DEFAULT_PROJECT_DIR: path.join(userData, 'project'),
+      FRAIA_DISABLE_CALCULIX_RUNTIME: '1',
+      FRAIA_DISABLE_MANAGED_CCX_BOOTSTRAP: '1',
+      FRAIA_E2E_EXPECT_VERSION: prepared.version,
+      FRAIA_E2E_INSTALL_UPDATE: '1',
+      FRAIA_E2E_UPDATER: '1',
+      FRAIA_FAKE_AI_RUNTIME: '1',
+      FRAIA_UPDATE_FEED_URL: server.base,
+      FRAIA_UPDATER_EVENT_PATH: eventPath,
+      FRAIA_USER_DATA_DIR: userData,
+    });
     child = spawn(executable, [], {
-      env: restrictedEnvironment({
-        FRAIA_DEFAULT_PROJECT_DIR: path.join(userData, 'project'),
-        FRAIA_DISABLE_CALCULIX_RUNTIME: '1',
-        FRAIA_DISABLE_MANAGED_CCX_BOOTSTRAP: '1',
-        FRAIA_E2E_EXPECT_VERSION: prepared.version,
-        FRAIA_E2E_INSTALL_UPDATE: '1',
-        FRAIA_E2E_UPDATER: '1',
-        FRAIA_FAKE_AI_RUNTIME: '1',
-        FRAIA_UPDATE_FEED_URL: server.base,
-        FRAIA_UPDATER_EVENT_PATH: eventPath,
-        FRAIA_USER_DATA_DIR: userData,
-      }),
+      env: runtimeEnvironment,
       stdio: 'inherit',
     });
-    const accepted = scenario === 'valid' ? new Set(['updated-runtime-launched']) : new Set(['error']);
-    const event = await waitForEvent(eventPath, accepted);
+    const accepted = scenario === 'valid' ? new Set(['update-downloaded']) : new Set(['error']);
+    let event = await waitForEvent(eventPath, accepted);
     if (scenario === 'valid') {
+      if (event.version !== prepared.version) throw new Error('Updater downloaded the wrong candidate version.');
+      const previousPid = child.pid;
+      await waitForPidExit(previousPid);
+      child = null;
+      await waitForBundleVersion(installedApp, prepared.version);
+      const updated = verifyApp(installedApp, contract, currentExpectations);
+      if (updated.version !== prepared.version) throw new Error('Installed app was not replaced by the candidate.');
+      child = spawn(executable, [], { env: runtimeEnvironment, stdio: 'inherit' });
+      event = await waitForEvent(
+        eventPath,
+        new Set(['updated-runtime-launched']),
+        180_000,
+        (candidate) => candidate.pid === child.pid,
+      );
       if (event.currentVersion !== prepared.version) throw new Error('Relaunched runtime reported the wrong version.');
       if (path.resolve(event.executablePath) !== path.resolve(executable)) throw new Error('Updated runtime launched from an unexpected executable path.');
       if (!Number.isInteger(event.pid) || event.pid <= 0) throw new Error('Updated runtime did not report a valid process ID.');
       relaunchedPid = event.pid;
-      const updated = verifyApp(installedApp, contract, currentExpectations);
-      if (updated.version !== prepared.version) throw new Error('Installed app was not replaced by the candidate.');
     } else {
       const expectedError = scenario === 'corrupt'
         ? /sha512|checksum|digest|integrity/i
@@ -269,6 +334,7 @@ async function main(argv = process.argv.slice(2)) {
   } finally {
     await stopPid(relaunchedPid);
     await stopPid(child?.pid);
+    await stopExecutableProcesses(executable);
     if (server) await server.close();
     fs.rmSync(root, { recursive: true, force: true });
   }
