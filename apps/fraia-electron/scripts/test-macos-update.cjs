@@ -211,6 +211,23 @@ async function waitForBundleVersion(appPath, expectedVersion, timeoutMs = 180_00
   throw new Error(`Timed out waiting for Squirrel.Mac to install ${expectedVersion}.`);
 }
 
+async function waitForVerifiedApp(appPath, contract, expectations, expectedVersion, timeoutMs = 180_000) {
+  const started = Date.now();
+  let lastError;
+  while (Date.now() - started < timeoutMs) {
+    try {
+      const verified = verifyApp(appPath, contract, expectations);
+      if (verified.version === expectedVersion) return verified;
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(
+    `Timed out waiting for the complete signed ${expectedVersion} application bundle: ${lastError?.message || 'version did not match'}`,
+  );
+}
+
 function executablePids(executable) {
   const result = run('ps', ['-axo', 'pid=,command='], { capture: true });
   return result.stdout.split('\n').flatMap((line) => {
@@ -305,8 +322,7 @@ async function main(argv = process.argv.slice(2)) {
       await waitForPidExit(previousPid);
       child = null;
       await waitForBundleVersion(installedApp, prepared.version);
-      const updated = verifyApp(installedApp, contract, currentExpectations);
-      if (updated.version !== prepared.version) throw new Error('Installed app was not replaced by the candidate.');
+      await waitForVerifiedApp(installedApp, contract, currentExpectations, prepared.version);
       child = spawn(executable, [], { env: runtimeEnvironment, stdio: 'inherit' });
       event = await waitForEvent(
         eventPath,
