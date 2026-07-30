@@ -1,0 +1,5 @@
+Fraia updater-feed publication bundle
+Tag: v0.0.3
+Commit: b3ce88b2ed8db76775473d497d743c7bd7da0f03
+Destination: updates branch / stable and beta
+Publication: tag workflow, after explicit stable-release approval
