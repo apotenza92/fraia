@@ -258,6 +258,7 @@ test('each publication atomically advances only its matching isolated updater fe
   assert.match(updaterTest, /await waitForBundleVersion\(installedApp, prepared\.version\)/);
   assert.match(updaterTest, /await waitForVerifiedApp\(installedApp, contract, currentExpectations, prepared\.version\)/);
   assert.match(updaterTest, /candidate\.pid === child\.pid/);
+  assert.match(updaterTest, /fs\.realpathSync\.native\(event\.executablePath\)/);
   assert.match(updaterTest, /'gh', \['attestation', 'verify'/);
   assert.match(updaterTest, /sha512\|checksum\|digest\|integrity/);
   assert.match(updaterTest, /signature\|code sign\|signed/);
