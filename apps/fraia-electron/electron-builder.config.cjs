@@ -16,7 +16,10 @@ const platformArch = nativePlatformArch();
 const sidecarName = sidecarExecutableName();
 const calculixSourceDirectory = packagedCalculixSourceDirectory(__dirname);
 const calculixExecutable = path.join(calculixSourceDirectory, calculixExecutableName());
-const contract = releaseContract();
+const defaultReleaseChannel = packageMetadata.version.includes('-beta.') ? 'beta' : 'stable';
+const contract = releaseContract({
+  channel: process.env.FRAIA_RELEASE_CHANNEL || defaultReleaseChannel,
+});
 const releaseNotes = readReleaseNotes({
   changelogPath: path.resolve(__dirname, '..', '..', 'CHANGELOG.md'),
   version: packageMetadata.version,
@@ -24,11 +27,18 @@ const releaseNotes = readReleaseNotes({
 const hasSigningKeychain = Boolean(process.env.CSC_KEYCHAIN);
 const assistedNsisMigrationFixture = process.env.FRAIA_E2E_UPDATER === '1'
   && process.env.FRAIA_NSIS_ASSISTED_MIGRATION_FIXTURE === '1';
+const iconRoot = contract.iconVariant === 'beta'
+  ? path.join(__dirname, 'build', 'beta')
+  : path.join(__dirname, 'build');
 const iconPaths = {
-  darwin: path.join(__dirname, 'build', 'macos', 'Fraia.icon'),
-  darwinFallback: path.join(__dirname, 'build', 'icon.icns'),
-  win32: path.join(__dirname, 'build', 'icon.ico'),
-  linux: path.join(__dirname, 'build', 'icons'),
+  darwin: path.join(
+    iconRoot,
+    'macos',
+    contract.iconVariant === 'beta' ? 'Fraia Beta.icon' : 'Fraia.icon',
+  ),
+  darwinFallback: path.join(iconRoot, 'icon.icns'),
+  win32: path.join(iconRoot, 'icon.ico'),
+  linux: path.join(iconRoot, 'icons'),
 };
 const tufRootPath = path.join(__dirname, 'build', 'update-trust', 'root.json');
 const adaptiveMacosIconAvailable = contract.platform === 'darwin'
@@ -57,7 +67,7 @@ module.exports = {
   asar: true,
   compression: 'maximum',
   releaseInfo: {
-    releaseName: `Fraia ${packageMetadata.version}`,
+    releaseName: `${contract.productName} ${packageMetadata.version}`,
     releaseNotes: releaseNotes.body,
   },
   extraMetadata: {
@@ -80,6 +90,7 @@ module.exports = {
     'application-metadata.cjs',
     'binary-architecture.cjs',
     'package-boundary.cjs',
+    'release-contract.cjs',
     'tuf-update-feed.cjs',
     'update-manager.cjs',
     'scripts/perf-budgets.cjs',

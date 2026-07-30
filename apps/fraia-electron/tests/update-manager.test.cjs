@@ -65,6 +65,35 @@ test('macOS stable updater is automatic and configurable', async () => {
   fs.rmSync(userData, { recursive: true, force: true });
 });
 
+test('beta updater stays on the isolated beta feed and accepts prereleases', () => {
+  const updater = updaterDouble();
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-beta-updater-'));
+  const result = configureAutoUpdates({
+    app: { isPackaged: true, getPath: () => userData, getVersion: () => '0.1.0-beta.1' },
+    autoUpdater: updater,
+    packageMetadata: {
+      fraiaReleaseChannel: 'beta',
+      fraiaUpdateFeedUrl: 'https://raw.githubusercontent.com/apotenza92/fraia/updates/beta/darwin/arm64',
+    },
+    env: {},
+    platform: 'darwin',
+    schedule: {
+      clearInterval() {},
+      clearTimeout() {},
+      setInterval() { return 1; },
+      setTimeout() { return 2; },
+    },
+  });
+  assert.equal(result.channel, 'beta');
+  assert.equal(updater.allowPrerelease, true);
+  assert.deepEqual(updater.feed, {
+    provider: 'generic',
+    url: 'https://raw.githubusercontent.com/apotenza92/fraia/updates/beta/darwin/arm64',
+    channel: 'latest',
+  });
+  fs.rmSync(userData, { recursive: true, force: true });
+});
+
 test('downloaded updates show release notes and respect restart or later', async () => {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-updater-ready-'));
   const schedule = { clearInterval() {}, clearTimeout() {}, setInterval() { return 1; }, setTimeout() { return 2; } };

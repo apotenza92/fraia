@@ -102,7 +102,7 @@ function configureAutoUpdates({
     ? validateTestFeedUrl(env.FRAIA_UPDATE_FEED_URL)
     : packageMetadata.fraiaUpdateFeedUrl;
   const channel = packageMetadata.fraiaReleaseChannel;
-  if (channel !== 'stable' || typeof configuredFeedUrl !== 'string' || !configuredFeedUrl) {
+  if (!['stable', 'beta'].includes(channel) || typeof configuredFeedUrl !== 'string' || !configuredFeedUrl) {
     throw new Error('Packaged Fraia updater metadata is invalid.');
   }
 
@@ -167,7 +167,7 @@ function activateUpdater({
 }) {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.allowPrerelease = false;
+  autoUpdater.allowPrerelease = channel === 'beta';
   if (platform === 'win32') autoUpdater.disableWebInstaller = true;
   autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl, channel: 'latest' });
 

@@ -20,7 +20,7 @@ Build revision: `fraia-calculix-windows-v20`
 - GPL-2.0 text from GCC source `COPYING` SHA-256: `231f7edcc7352d7734a96eef0b8030f77982678c516876fcb81e25b32d68564c`
 - GPL-3.0 text from GCC source `COPYING3` SHA-256: `8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903`
 - winpthreads `COPYING` SHA-256: `63263614cdd29f2f93cba85e992f041b31f9fc7b4033692f31269489a8a1b177`
-- Build script SHA-256: `c2fd52b24b6b5bffcc77b713aa909ee550f03a4eb35f5be9cce6d98c907383ed`
+- Build script SHA-256: `1ed8520dbfd5257993ff0714e74c05ec654f126d9ad92b0d4ba49f304886f93d`
 - SOURCE_DATE_EPOCH: `1762047462`
 - Controlled compiler source root: `R:\` (temporary `subst` mapping)
 

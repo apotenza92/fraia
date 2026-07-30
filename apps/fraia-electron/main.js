@@ -10,7 +10,15 @@ const { resolveApplicationMetadata, resolveUserDataDirectory } = require('./appl
 const { nativePlatformArch, resolveCalculixRuntime, resolveSidecarLaunch } = require('./package-boundary.cjs');
 const { configureAutoUpdates } = require('./update-manager.cjs');
 const packageMetadata = require('./package.json');
-const applicationMetadata = resolveApplicationMetadata(packageMetadata);
+const developmentChannel = process.env.FRAIA_RELEASE_CHANNEL
+  || (packageMetadata.version.includes('-beta.') ? 'beta' : 'stable');
+const applicationMetadata = resolveApplicationMetadata(app.isPackaged
+  ? packageMetadata
+  : {
+      ...packageMetadata,
+      fraiaReleaseChannel: developmentChannel,
+      productName: developmentChannel === 'beta' ? 'Fraia Beta' : 'Fraia',
+    });
 
 app.setName(applicationMetadata.productName);
 

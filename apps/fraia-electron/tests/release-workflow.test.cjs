@@ -78,6 +78,7 @@ test('first-release updater resolution uses the exact bootstrap tag and later re
       process: {
         env: {
           GITHUB_OUTPUT: 'output',
+          RELEASE_CHANNEL: 'stable',
           RELEASE_ARCH: 'x64',
           ...environment,
         },
@@ -129,20 +130,38 @@ test('first-release updater resolution uses the exact bootstrap tag and later re
     }),
     /No prior stable package exists/,
   );
+  assert.equal(
+    runResolver([[
+      {
+        assets: [{ name: 'Fraia-Beta-macOS-x64.zip' }],
+        draft: false,
+        prerelease: true,
+        published_at: '2026-07-29T00:00:00Z',
+        tag_name: 'v0.0.4-beta.1',
+      },
+    ]], {
+      GITHUB_REF_NAME: 'v0.0.4-beta.2',
+      MACOS_UPDATER_BOOTSTRAP_TAG: '',
+      RELEASE_CHANNEL: 'beta',
+    }),
+    'tag=v0.0.4-beta.1\nasset=Fraia-Beta-macOS-x64.zip\nbootstrap=false\n',
+  );
 });
 
-test('one stable release is tag-only, native on six solver-backed targets, and uses protected publication boundaries', () => {
+test('stable and beta releases are tag-only, native on six solver-backed targets, and use protected publication boundaries', () => {
   assert.match(workflow, /tags:\n\s+- 'v\*'/);
   assert.doesNotMatch(workflow, /workflow_dispatch/);
   for (const runner of ['macos-15', 'macos-15-intel', 'windows-11-arm', 'windows-2025', 'ubuntu-24.04', 'ubuntu-24.04-arm']) {
     assert.match(workflow, new RegExp(runner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
-  assert.match(workflow, /Fraia-Windows-\$\{\{ matrix\.arch \}\}-Setup\.exe/);
+  assert.match(workflow, /artifactPrefix/);
   for (const environment of [
-    'release-signing', 'stable-release', 'stable-updater-verification',
+    'release-signing',
   ]) assert.match(workflow, new RegExp(environment));
-  assert.doesNotMatch(workflow, /beta-release|beta-updater-verification|Fraia-Beta|-beta\./);
-  assert.match(workflow, /Fraia release tags must be stable vX\.Y\.Z tags/);
+  assert.match(workflow, /environment: `\$\{channel\}-release`/);
+  assert.match(workflow, /\$\{\{ needs\.prepare\.outputs\.channel \}\}-updater-verification/);
+  assert.match(workflow, /vX\.Y\.Z-beta\.N/);
+  assert.match(workflow, /\^v\\d\+\\\.\\d\+\\\.\\d\+-beta\\\.\\d\+\$/);
   assert.match(workflow, /actions\/attest@[a-f0-9]{40}/);
   assert.match(workflow, /cancel-in-progress: false/);
   assert.match(workflow, /Require maintained release icons/);
@@ -207,7 +226,7 @@ test('private-source and package prerequisites fail before any secret-bearing jo
   assert.match(validate, /build\/macos\/Fraia\.icon\/Assets\/01-artwork-dark\.svg/);
 });
 
-test('one stable publication atomically advances byte-identical stable and beta feeds', () => {
+test('each publication atomically advances only its matching isolated updater feed', () => {
   assert.match(workflow, /MACOS_UPDATER_BOOTSTRAP_TAG !== process\.env\.GITHUB_REF_NAME/);
   assert.match(workflow, /APPLE_PRIOR_SIGNING_CERTIFICATE_SHA256/);
   assert.match(updaterTest, /priorExpectations/);
@@ -243,19 +262,20 @@ test('one stable publication atomically advances byte-identical stable and beta 
   const verifyPublic = workflow.indexOf('- name: Verify public release before sealing updater feed');
   const sealFeed = workflow.indexOf('- name: Prepare sealed updater-feed publication bundle');
   const uploadFeed = workflow.indexOf('- name: Upload sealed updater-feed publication bundle');
-  const publishFeeds = workflow.indexOf('- name: Publish stable bytes to both updater channels atomically');
+  const publishFeeds = workflow.indexOf('- name: Publish only the matching updater channel atomically');
   assert.ok(
     publishRelease >= 0
       && publishRelease < verifyPublic
       && verifyPublic < sealFeed
       && sealFeed < uploadFeed
       && uploadFeed < publishFeeds,
-    'the stable release must be public and byte-verified before both updater feeds are published',
+    'the release must be public and byte-verified before its updater feed is published',
   );
-  assert.match(workflow, /Publication: tag workflow, after explicit stable-release approval/);
-  assert.match(workflow, /for FEED_CHANNEL in stable beta/);
-  assert.match(workflow, /diff --recursive \\\n\s+"publish\/feed\/stable\/\$PLATFORM\/\$ARCH"/);
-  assert.match(workflow, /git add -- \.nojekyll PUBLICATION\.txt stable beta/);
+  assert.match(workflow, /Publication: tag workflow, after explicit \$CHANNEL-release approval/);
+  assert.match(workflow, /mkdir -p "feed-publication\/feed\/\$CHANNEL"/);
+  assert.match(workflow, /rm -rf "update-site\/\$CHANNEL"/);
+  assert.match(workflow, /git add -- \.nojekyll "PUBLICATION-\$CHANNEL\.txt" "\$CHANNEL"/);
+  assert.doesNotMatch(workflow, /for FEED_CHANNEL in stable beta|byte-identical stable and beta/);
   assert.match(workflow, /git push origin HEAD:updates/);
   assert.doesNotMatch(workflow, /git add -A/);
   assert.match(workflow, /fraia-update-feed-publication-\$\{\{ github\.ref_name \}\}/);
@@ -298,10 +318,12 @@ test('manual CI keeps deterministic checks default and native package preflight 
   assert.doesNotMatch(continuousIntegration, /^\s{2}pull_request:/m);
   assert.doesNotMatch(continuousIntegration, /^\s{2}push:/m);
   assert.match(continuousIntegration, /run_native_package_preflight:/);
+  assert.match(continuousIntegration, /release_channel:[\s\S]*?options:\n\s+- stable\n\s+- beta/);
   assert.match(continuousIntegration, /default: false/);
   assert.match(continuousIntegration, /if: \$\{\{ inputs\.run_native_package_preflight \}\}/);
   assert.match(continuousIntegration, /run_macos_signing_audit:/);
   assert.match(continuousIntegration, /uses: \.\/\.github\/workflows\/macos-signing-audit\.yml/);
+  assert.match(continuousIntegration, /channel: \$\{\{ inputs\.release_channel \}\}/);
   assert.match(continuousIntegration, /run_tuf_signing_audit:/);
   assert.match(continuousIntegration, /uses: \.\/\.github\/workflows\/tuf-signing-audit\.yml/);
   for (const runner of ['macos-26', 'macos-26-intel', 'windows-11-arm', 'windows-2025', 'ubuntu-24.04', 'ubuntu-24.04-arm']) {
@@ -378,6 +400,7 @@ test('native updater menu exposes manual checking and every supported persisted 
 test('packaged updater code ships TUF verification for Windows and Linux', () => {
   assert.match(builder, /'update-manager\.cjs'/);
   assert.match(builder, /'tuf-update-feed\.cjs'/);
+  assert.match(builder, /'release-contract\.cjs'/);
   assert.match(builder, /FRAIA_REQUIRE_TUF_ROOT/);
   assert.equal(
     [...workflow.matchAll(/FRAIA_REQUIRE_TUF_ROOT: '1'/g)].length,
@@ -388,7 +411,7 @@ test('packaged updater code ships TUF verification for Windows and Linux', () =>
   assert.match(updater, /createTufVerifiedUpdateFeed/);
   assert.match(updater, /platform !== 'darwin'/);
   assert.match(updater, /linux-package-manager/);
-  assert.match(updater, /allowPrerelease = false/);
+  assert.match(updater, /allowPrerelease = channel === 'beta'/);
   assert.match(updater, /loopback-only/);
   assert.match(mainProcess, /Restart and Update/);
   assert.match(mainProcess, /Later/);

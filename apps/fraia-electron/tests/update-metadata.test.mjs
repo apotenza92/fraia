@@ -47,66 +47,104 @@ test('post-stapling macOS metadata and blockmaps match final artifact bytes repr
   }
 });
 
-test('one stable package projects byte-identical metadata to stable and beta feeds', async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fraia-update-metadata-'));
+test('post-stapling beta metadata requires beta artifact names', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fraia-finalize-beta-macos-update-'));
   try {
-    const artifacts = path.join(root, 'artifacts');
-    const output = path.join(root, 'feed');
-    await fs.mkdir(artifacts);
-    const artifactName = 'Fraia-macOS-arm64.zip';
-    const artifactPath = path.join(artifacts, artifactName);
-    const artifact = Buffer.from('stable Fraia 0.0.1 fixture');
-    await fs.writeFile(artifactPath, artifact);
-    const input = path.join(root, 'latest-mac.yml');
-    await fs.writeFile(input, YAML.stringify({
-      version: '0.0.1',
-      files: [{
-        url: artifactName,
-        sha512: createHash('sha512').update(artifact).digest('base64'),
-        size: artifact.length,
-      }],
-      path: artifactName,
-      sha512: createHash('sha512').update(artifact).digest('base64'),
-      releaseName: 'Fraia 0.0.1',
-      releaseNotes: '### Added\n\n- Stable update notes.',
-      releaseDate: '2026-07-26T00:00:00.000Z',
+    const arch = 'arm64';
+    const names = [`Fraia-Beta-macOS-${arch}.dmg`, `Fraia-Beta-macOS-${arch}.zip`];
+    for (const name of names) await fs.writeFile(path.join(root, name), `final ${name} bytes`);
+    const metadataPath = path.join(root, 'latest-mac.yml');
+    await fs.writeFile(metadataPath, YAML.stringify({
+      version: '0.0.4-beta.1',
+      files: names.map((url) => ({ url, sha512: 'stale', size: 1 })),
+      path: names[1],
+      sha512: 'stale',
     }));
-
-    for (const channel of ['stable', 'beta']) {
-      await assembleUpdateMetadata({
-        input,
-        artifactDir: artifacts,
-        outputRoot: output,
-        auditOutput: path.join(root, `update-${channel}-darwin-arm64.yml`),
-        channel,
-        platform: 'darwin',
-        arch: 'arm64',
-        tag: 'v0.0.1',
-        repository: 'apotenza92/fraia',
-      });
-    }
-
-    const stable = await fs.readFile(path.join(output, 'stable', 'darwin', 'arm64', 'latest-mac.yml'));
-    const beta = await fs.readFile(path.join(output, 'beta', 'darwin', 'arm64', 'latest-mac.yml'));
-    assert.deepEqual(beta, stable);
-    assert.match(
-      stable.toString(),
-      /https:\/\/github\.com\/apotenza92\/fraia\/releases\/download\/v0\.0\.1\/Fraia-macOS-arm64\.zip/,
-    );
-    assert.match(stable.toString(), /Stable update notes/);
+    const result = await finalizeMacosUpdateArtifacts({
+      metadataPath,
+      artifactDir: root,
+      arch,
+      channel: 'beta',
+    });
+    assert.deepEqual(result.files, names.sort());
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }
 });
 
-test('update metadata rejects prerelease tags', async () => {
+test('stable and beta packages write only their matching channel metadata', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fraia-update-metadata-'));
+  try {
+    const artifacts = path.join(root, 'artifacts');
+    const output = path.join(root, 'feed');
+    await fs.mkdir(artifacts);
+    for (const fixture of [
+      {
+        channel: 'stable',
+        tag: 'v0.0.1',
+        version: '0.0.1',
+        artifactName: 'Fraia-macOS-arm64.zip',
+      },
+      {
+        channel: 'beta',
+        tag: 'v0.0.2-beta.1',
+        version: '0.0.2-beta.1',
+        artifactName: 'Fraia-Beta-macOS-arm64.zip',
+      },
+    ]) {
+      const artifact = Buffer.from(`${fixture.channel} Fraia fixture`);
+      await fs.writeFile(path.join(artifacts, fixture.artifactName), artifact);
+      const input = path.join(root, `latest-mac-${fixture.channel}.yml`);
+      await fs.writeFile(input, YAML.stringify({
+        version: fixture.version,
+        files: [{
+          url: fixture.artifactName,
+          sha512: createHash('sha512').update(artifact).digest('base64'),
+          size: artifact.length,
+        }],
+        path: fixture.artifactName,
+        sha512: createHash('sha512').update(artifact).digest('base64'),
+        releaseName: `Fraia ${fixture.version}`,
+        releaseNotes: `${fixture.channel} update notes.`,
+        releaseDate: '2026-07-26T00:00:00.000Z',
+      }));
+      await assembleUpdateMetadata({
+        input,
+        artifactDir: artifacts,
+        outputRoot: output,
+        auditOutput: path.join(root, `update-${fixture.channel}-darwin-arm64.yml`),
+        channel: fixture.channel,
+        platform: 'darwin',
+        arch: 'arm64',
+        tag: fixture.tag,
+        repository: 'apotenza92/fraia',
+      });
+    }
+
+    const stable = (await fs.readFile(path.join(output, 'stable', 'darwin', 'arm64', 'latest-mac.yml'))).toString();
+    const beta = (await fs.readFile(path.join(output, 'beta', 'darwin', 'arm64', 'latest-mac.yml'))).toString();
+    assert.notEqual(beta, stable);
+    assert.match(
+      stable,
+      /https:\/\/github\.com\/apotenza92\/fraia\/releases\/download\/v0\.0\.1\/Fraia-macOS-arm64\.zip/,
+    );
+    assert.match(
+      beta,
+      /https:\/\/github\.com\/apotenza92\/fraia\/releases\/download\/v0\.0\.2-beta\.1\/Fraia-Beta-macOS-arm64\.zip/,
+    );
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('update metadata rejects a tag whose release type does not match the channel', async () => {
   await assert.rejects(
     assembleUpdateMetadata({
       input: 'unused',
       artifactDir: 'unused',
       outputRoot: 'unused',
       auditOutput: 'unused',
-      channel: 'beta',
+      channel: 'stable',
       platform: 'darwin',
       arch: 'arm64',
       tag: 'v0.0.1-beta.1',

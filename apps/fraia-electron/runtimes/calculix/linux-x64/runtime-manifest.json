@@ -9,12 +9,12 @@
   },
   "build": {
     "recipe": "BUILD_RECIPE.md",
-    "recipeSha256": "d5e897d79c6e3affa5713c4ed973ab5001f7460c4b8ae18e3df1060320a79394",
+    "recipeSha256": "c39f6fbab0349d5e5fc30bc5c12f025ad09cbd427e7eac570a51357718eaf2f6",
     "revision": "fraia-calculix-linux-v3"
   },
   "redistribution": {
-    "sourceUrl": "https://github.com/apotenza92/fraia/releases/download/v0.0.3/Fraia-CalculiX-Corresponding-Source.tar",
-    "sourceSha256": "d0750b6f7635bf814f5bca16173b1f564f65373bc005b431e9ff8eccecde9a19",
+    "sourceUrl": "https://github.com/apotenza92/fraia/releases/download/v0.0.4-beta.1/Fraia-CalculiX-Corresponding-Source.tar",
+    "sourceSha256": "92ee240d757ccc4603fb371bed698d6a4fe450ae0ad2d113e4bf4061868ec730",
     "sourceAsset": "Fraia-CalculiX-Corresponding-Source.tar",
     "licenseIdentifiers": [
       "GPL-2.0-only",

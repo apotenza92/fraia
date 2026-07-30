@@ -48,7 +48,7 @@ const SOURCE_INPUTS = Object.freeze([
   },
   {
     fileName: 'gcc-16.1.0.tar.xz',
-    url: 'https://ftpmirror.gnu.org/gnu/gcc/gcc-16.1.0/gcc-16.1.0.tar.xz',
+    url: 'https://ftp.gnu.org/gnu/gcc/gcc-16.1.0/gcc-16.1.0.tar.xz',
     sha256: '50efb4d94c3397aff3b0d61a5abd748b4dd31d9d3f2ab7be05b171d36a510f79',
     usedBy: ['darwin', 'linux', 'win32'],
   },
@@ -107,7 +107,9 @@ function correspondingSourceUrl(repository, tag) {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) {
     throw new Error(`Invalid GitHub repository: ${repository}`);
   }
-  if (!/^v\d+\.\d+\.\d+$/.test(tag)) throw new Error(`Invalid stable release tag: ${tag}`);
+  if (!/^v\d+\.\d+\.\d+(?:-beta\.\d+)?$/.test(tag)) {
+    throw new Error(`Invalid Fraia release tag: ${tag}`);
+  }
   return `https://github.com/${repository}/releases/download/${tag}/${CALCULIX_SOURCE_ASSET_NAME}`;
 }
 

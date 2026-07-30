@@ -29,6 +29,30 @@ test('Linux packages retain Fraia canonical architecture tokens across formats',
   }
 });
 
+test('electron-builder emits isolated beta package identity and artifact names', () => {
+  const configPath = path.resolve(__dirname, '..', 'electron-builder.config.cjs');
+  const config = JSON.parse(execFileSync(
+    process.execPath,
+    ['-e', `const value=require(${JSON.stringify(configPath)}); process.stdout.write(JSON.stringify({appId:value.appId,productName:value.productName,name:value.extraMetadata.name,artifactName:value.linux.artifactName,executableName:value.linux.executableName,icon:value.linux.icon,feed:value.extraMetadata.fraiaUpdateFeedUrl}))`],
+    {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        FRAIA_RELEASE_ARCH: 'arm64',
+        FRAIA_RELEASE_CHANNEL: 'beta',
+        FRAIA_RELEASE_PLATFORM: 'linux',
+      },
+    },
+  ));
+  assert.equal(config.appId, 'app.fraia.desktop.beta');
+  assert.equal(config.productName, 'Fraia Beta');
+  assert.equal(config.name, 'fraia-electron-beta');
+  assert.equal(config.executableName, 'fraia-electron-beta');
+  assert.equal(config.artifactName, 'Fraia-Beta-Linux-arm64.${ext}');
+  assert.match(config.icon, /build\/beta\/icons$/);
+  assert.match(config.feed, /\/beta\/linux\/arm64$/);
+});
+
 test('Windows uses one-click NSIS while retaining an isolated assisted-installer migration fixture', () => {
   const configPath = path.resolve(__dirname, '..', 'electron-builder.config.cjs');
   const readNsisConfig = (extraEnvironment = {}) => JSON.parse(execFileSync(
@@ -70,16 +94,25 @@ test('Windows uses one-click NSIS while retaining an isolated assisted-installer
   }).oneClick, true);
 });
 
-test('Fraia has one stable durable application identity', () => {
+test('Fraia stable and beta releases have separate durable application identities', () => {
   const stable = releaseContract({ channel: 'stable', platform: 'darwin', arch: 'arm64' });
+  const beta = releaseContract({ channel: 'beta', platform: 'darwin', arch: 'arm64' });
   assert.equal(stable.appId, 'app.fraia.desktop');
   assert.equal(stable.productName, 'Fraia');
   assert.equal(stable.packageName, 'fraia-electron');
+  assert.equal(stable.userDataDirectoryName, 'Fraia');
+  assert.equal(stable.artifactPrefix, 'Fraia');
+  assert.equal(stable.iconVariant, 'stable');
   assert.match(stable.feedUrl, /\/stable\/darwin\/arm64$/);
-  assert.throws(
-    () => releaseContract({ channel: 'beta', platform: 'darwin', arch: 'arm64' }),
-    /channel must be one of stable/,
-  );
+  assert.equal(beta.appId, 'app.fraia.desktop.beta');
+  assert.equal(beta.productName, 'Fraia Beta');
+  assert.equal(beta.packageName, 'fraia-electron-beta');
+  assert.equal(beta.userDataDirectoryName, 'Fraia Beta');
+  assert.equal(beta.artifactPrefix, 'Fraia-Beta');
+  assert.equal(beta.iconVariant, 'beta');
+  assert.match(beta.feedUrl, /\/beta\/darwin\/arm64$/);
+  assert.notEqual(beta.appId, stable.appId);
+  assert.notEqual(beta.userDataDirectoryName, stable.userDataDirectoryName);
 });
 
 test('the exact six solver-backed native targets resolve without cross-compilation aliases', () => {
@@ -91,10 +124,12 @@ test('the exact six solver-backed native targets resolve without cross-compilati
     ['win32', 'arm64'],
     ['win32', 'x64'],
   ]) {
-    const contract = releaseContract({ channel: 'stable', platform, arch });
-    assert.equal(contract.platform, platform);
-    assert.equal(contract.arch, arch);
-    assert.equal(contract.outputDir.endsWith(`/stable/${platform}/${arch}`), true);
+    for (const channel of ['stable', 'beta']) {
+      const contract = releaseContract({ channel, platform, arch });
+      assert.equal(contract.platform, platform);
+      assert.equal(contract.arch, arch);
+      assert.equal(contract.outputDir.endsWith(`/${channel}/${platform}/${arch}`), true);
+    }
   }
   assert.throws(() => releaseContract({ platform: 'darwin', arch: 'universal' }), /architecture/);
 });

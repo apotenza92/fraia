@@ -3,11 +3,13 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const VERSION_HEADING = /^## \[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})$/gm;
+const VERSION_HEADING = /^## \[(\d+\.\d+\.\d+(?:-beta\.\d+)?)\] - (\d{4}-\d{2}-\d{2})$/gm;
 
 function releaseNotesFromText(source, version) {
   if (typeof source !== 'string') throw new Error('Changelog contents must be text.');
-  if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error(`Invalid release version: ${version}`);
+  if (!/^\d+\.\d+\.\d+(?:-beta\.\d+)?$/.test(version)) {
+    throw new Error(`Invalid release version: ${version}`);
+  }
 
   const matches = [...source.matchAll(VERSION_HEADING)];
   const versions = matches.map((match) => match[1]);

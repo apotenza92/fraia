@@ -2,13 +2,28 @@ name: macOS signing audit
 
 on:
   workflow_call:
+    inputs:
+      channel:
+        description: Stable or beta application identity to sign
+        required: false
+        type: string
+        default: stable
   workflow_dispatch:
+    inputs:
+      channel:
+        description: Application identity to sign
+        required: true
+        type: choice
+        default: stable
+        options:
+          - stable
+          - beta
 
 permissions:
   contents: read
 
 concurrency:
-  group: fraia-macos-signing-audit
+  group: fraia-macos-signing-audit-${{ inputs.channel }}
   cancel-in-progress: false
 
 jobs:
@@ -68,12 +83,12 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
           FRAIA_RELEASE_ARCH: ${{ matrix.arch }}
-          FRAIA_RELEASE_CHANNEL: stable
+          FRAIA_RELEASE_CHANNEL: ${{ inputs.channel }}
           FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
           FRAIA_REQUIRE_RELEASE_ICON: '1'
-          FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}/apps/fraia-electron/release/stable/darwin/${{ matrix.arch }}
+          FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}/apps/fraia-electron/release/${{ inputs.channel }}/darwin/${{ matrix.arch }}
           FRAIA_RELEASE_PLATFORM: darwin
-        run: npm run package:release:mac -- --channel stable --arch "$FRAIA_RELEASE_ARCH" --output-dir "$FRAIA_RELEASE_OUTPUT_DIR"
+        run: npm run package:release:mac -- --channel "$FRAIA_RELEASE_CHANNEL" --arch "$FRAIA_RELEASE_ARCH" --output-dir "$FRAIA_RELEASE_OUTPUT_DIR"
 
       - name: Verify signatures, notarization, Gatekeeper, launch, and solver without credentials
         working-directory: apps/fraia-electron
@@ -84,14 +99,14 @@ jobs:
           FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
         run: >-
           npm run verify:release:mac --
-          --channel stable
+          --channel "${{ inputs.channel }}"
           --arch "${{ matrix.arch }}"
-          --output-dir "release/stable/darwin/${{ matrix.arch }}"
+          --output-dir "release/${{ inputs.channel }}/darwin/${{ matrix.arch }}"
 
       - name: Upload independently reviewable signed evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: fraia-macos-signing-audit-${{ matrix.arch }}
-          path: apps/fraia-electron/release/stable/darwin/${{ matrix.arch }}
+          name: fraia-${{ inputs.channel }}-macos-signing-audit-${{ matrix.arch }}
+          path: apps/fraia-electron/release/${{ inputs.channel }}/darwin/${{ matrix.arch }}
           if-no-files-found: error
           retention-days: 14

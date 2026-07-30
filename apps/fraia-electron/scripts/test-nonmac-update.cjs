@@ -431,6 +431,7 @@ async function main(argv = process.argv.slice(2)) {
   if (!['win32', 'linux'].includes(process.platform)) {
     throw new Error('Fraia non-macOS updater tests require a native Windows or Linux runner.');
   }
+  const channel = option(argv, '--channel') || 'stable';
   const arch = option(argv, '--arch') || process.arch;
   if (arch !== process.arch) throw new Error(`Updater audit requires native ${arch}; current Node is ${process.arch}.`);
   const previousArtifact = path.resolve(option(argv, '--previous-artifact'));
@@ -444,13 +445,16 @@ async function main(argv = process.argv.slice(2)) {
     if (!fs.existsSync(required)) throw new Error(`Updater audit input is missing: ${required}`);
   }
 
-  const contract = releaseContract({ channel: 'stable', platform: process.platform, arch });
+  const contract = releaseContract({ channel, platform: process.platform, arch });
   const targetName = metadataFileName(process.platform, arch);
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-nonmac-updater-'));
   const userData = process.platform === 'win32'
     ? resolveUserDataDirectory({
       appDataPath: process.env.APPDATA,
-      metadata: resolveApplicationMetadata(),
+      metadata: resolveApplicationMetadata({
+        fraiaReleaseChannel: channel,
+        productName: contract.productName,
+      }),
     })
     : path.join(temporaryRoot, 'user-data');
   if (process.platform === 'win32' && fs.existsSync(userData)) {

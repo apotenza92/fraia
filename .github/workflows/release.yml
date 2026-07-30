@@ -69,12 +69,21 @@ jobs:
           const cargoVersion = cargo.match(/\[workspace\.package\][\s\S]*?\nversion\s*=\s*"([^"]+)"/)?.[1];
           const tag = process.env.GITHUB_REF_NAME;
           const stable = /^v\d+\.\d+\.\d+$/.test(tag);
-          if (!stable) throw new Error(`Fraia release tags must be stable vX.Y.Z tags; received ${tag}.`);
+          const beta = /^v\d+\.\d+\.\d+-beta\.\d+$/.test(tag);
+          if (!stable && !beta) {
+            throw new Error(`Fraia release tags must be vX.Y.Z or vX.Y.Z-beta.N; received ${tag}.`);
+          }
           const version = tag.slice(1);
           if (packageJson.version !== version || cargoVersion !== version) {
             throw new Error(`Tag ${tag} must match Electron ${packageJson.version} and Cargo ${cargoVersion}.`);
           }
-          const output = { channel: 'stable', environment: 'stable-release', prerelease: 'false', version };
+          const channel = beta ? 'beta' : 'stable';
+          const output = {
+            channel,
+            environment: `${channel}-release`,
+            prerelease: String(beta),
+            version,
+          };
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `${Object.entries(output).map(([key, value]) => `${key}=${value}`).join('\n')}\n`);
           NODE
 
@@ -120,6 +129,14 @@ jobs:
           test -f build/icon.icns
           test -f build/icon.ico
           test -f build/icons/512x512.png
+          test -f "build/beta/macos/Fraia Beta.icon/icon.json"
+          test -f "build/beta/macos/Fraia Beta.icon/Assets/01-artwork.svg"
+          test -f "build/beta/macos/Fraia Beta.icon/Assets/01-artwork-dark.svg"
+          test -f build/beta/icon.png
+          test -f build/beta/generated-icon-manifest.json
+          test -f build/beta/icon.icns
+          test -f build/beta/icon.ico
+          test -f build/beta/icons/512x512.png
 
       - name: Require reviewed native CalculiX runtime manifests
         run: node apps/fraia-electron/scripts/verify-calculix-runtimes.cjs --all --skip-dependency-inspection
@@ -228,22 +245,19 @@ jobs:
           set -euo pipefail
           OUTPUT="release/${{ needs.prepare.outputs.channel }}/darwin/${{ matrix.arch }}"
           mkdir -p ci-output/assets ci-output/feed
-          for FEED_CHANNEL in stable beta; do
-            node scripts/assemble-update-metadata.mjs \
-              --input "$OUTPUT/latest-mac.yml" \
-              --artifact-dir "$OUTPUT" \
-              --output-root ci-output/feed \
-              --audit-output "ci-output/assets/update-$FEED_CHANNEL-darwin-${{ matrix.arch }}.yml" \
-              --channel "$FEED_CHANNEL" \
-              --platform darwin \
-              --arch "${{ matrix.arch }}" \
-              --tag "${{ github.ref_name }}" \
-              --repository "${{ github.repository }}"
-          done
-          cmp \
-            "ci-output/feed/stable/darwin/${{ matrix.arch }}/latest-mac.yml" \
-            "ci-output/feed/beta/darwin/${{ matrix.arch }}/latest-mac.yml"
-          STEM="Fraia-macOS-${{ matrix.arch }}"
+          CHANNEL="${{ needs.prepare.outputs.channel }}"
+          node scripts/assemble-update-metadata.mjs \
+            --input "$OUTPUT/latest-mac.yml" \
+            --artifact-dir "$OUTPUT" \
+            --output-root ci-output/feed \
+            --audit-output "ci-output/assets/update-$CHANNEL-darwin-${{ matrix.arch }}.yml" \
+            --channel "$CHANNEL" \
+            --platform darwin \
+            --arch "${{ matrix.arch }}" \
+            --tag "${{ github.ref_name }}" \
+            --repository "${{ github.repository }}"
+          PREFIX=$(node -p "require('./release-contract.cjs').releaseContract({channel: '$CHANNEL', platform: 'darwin', arch: '${{ matrix.arch }}'}).artifactPrefix")
+          STEM="$PREFIX-macOS-${{ matrix.arch }}"
           cp "$OUTPUT/$STEM.dmg" "$OUTPUT/$STEM.dmg.blockmap" "$OUTPUT/$STEM.dmg.sha256" ci-output/assets/
           cp "$OUTPUT/$STEM.zip" "$OUTPUT/$STEM.zip.blockmap" "$OUTPUT/$STEM.zip.sha256" ci-output/assets/
           cp "$OUTPUT/notarization-${{ needs.prepare.outputs.channel }}-${{ matrix.arch }}.json" ci-output/assets/
@@ -312,23 +326,20 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ci-output/assets
-          STEM="Fraia-Windows-${{ matrix.arch }}-Setup.exe"
           OUTPUT="release/${{ needs.prepare.outputs.channel }}/win32/${{ matrix.arch }}"
-          for FEED_CHANNEL in stable beta; do
-            node scripts/assemble-update-metadata.mjs \
-              --input "$OUTPUT/latest.yml" \
-              --artifact-dir "$OUTPUT" \
-              --output-root ci-output/feed \
-              --audit-output "ci-output/assets/update-$FEED_CHANNEL-win32-${{ matrix.arch }}.yml" \
-              --channel "$FEED_CHANNEL" \
-              --platform win32 \
-              --arch "${{ matrix.arch }}" \
-              --tag "${{ github.ref_name }}" \
-              --repository "${{ github.repository }}"
-          done
-          cmp \
-            "ci-output/feed/stable/win32/${{ matrix.arch }}/latest.yml" \
-            "ci-output/feed/beta/win32/${{ matrix.arch }}/latest.yml"
+          CHANNEL="${{ needs.prepare.outputs.channel }}"
+          node scripts/assemble-update-metadata.mjs \
+            --input "$OUTPUT/latest.yml" \
+            --artifact-dir "$OUTPUT" \
+            --output-root ci-output/feed \
+            --audit-output "ci-output/assets/update-$CHANNEL-win32-${{ matrix.arch }}.yml" \
+            --channel "$CHANNEL" \
+            --platform win32 \
+            --arch "${{ matrix.arch }}" \
+            --tag "${{ github.ref_name }}" \
+            --repository "${{ github.repository }}"
+          PREFIX=$(node -p "require('./release-contract.cjs').releaseContract({channel: '$CHANNEL', platform: 'win32', arch: '${{ matrix.arch }}'}).artifactPrefix")
+          STEM="$PREFIX-Windows-${{ matrix.arch }}-Setup.exe"
           cp "$OUTPUT/$STEM" "$OUTPUT/$STEM.blockmap" ci-output/assets/
 
       - name: Upload Windows candidate
@@ -397,24 +408,21 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ci-output/assets
-          STEM="Fraia-Linux-${{ matrix.arch }}"
           OUTPUT="release/${{ needs.prepare.outputs.channel }}/linux/${{ matrix.arch }}"
           METADATA_NAME=$(node -p "require('./release-contract.cjs').metadataFileName('linux', '${{ matrix.arch }}')")
-          for FEED_CHANNEL in stable beta; do
-            node scripts/assemble-update-metadata.mjs \
-              --input "$OUTPUT/$METADATA_NAME" \
-              --artifact-dir "$OUTPUT" \
-              --output-root ci-output/feed \
-              --audit-output "ci-output/assets/update-$FEED_CHANNEL-linux-${{ matrix.arch }}.yml" \
-              --channel "$FEED_CHANNEL" \
-              --platform linux \
-              --arch "${{ matrix.arch }}" \
-              --tag "${{ github.ref_name }}" \
-              --repository "${{ github.repository }}"
-          done
-          cmp \
-            "ci-output/feed/stable/linux/${{ matrix.arch }}/$METADATA_NAME" \
-            "ci-output/feed/beta/linux/${{ matrix.arch }}/$METADATA_NAME"
+          CHANNEL="${{ needs.prepare.outputs.channel }}"
+          node scripts/assemble-update-metadata.mjs \
+            --input "$OUTPUT/$METADATA_NAME" \
+            --artifact-dir "$OUTPUT" \
+            --output-root ci-output/feed \
+            --audit-output "ci-output/assets/update-$CHANNEL-linux-${{ matrix.arch }}.yml" \
+            --channel "$CHANNEL" \
+            --platform linux \
+            --arch "${{ matrix.arch }}" \
+            --tag "${{ github.ref_name }}" \
+            --repository "${{ github.repository }}"
+          PREFIX=$(node -p "require('./release-contract.cjs').releaseContract({channel: '$CHANNEL', platform: 'linux', arch: '${{ matrix.arch }}'}).artifactPrefix")
+          STEM="$PREFIX-Linux-${{ matrix.arch }}"
           cp "$OUTPUT/$STEM.AppImage" "$OUTPUT/$STEM.deb" "$OUTPUT/$STEM.rpm" ci-output/assets/
 
       - name: Upload Linux candidate
@@ -430,7 +438,7 @@ jobs:
     needs: [prepare, package-macos]
     runs-on: ${{ matrix.arch == 'arm64' && 'macos-15' || 'macos-15-intel' }}
     environment:
-      name: stable-updater-verification
+      name: ${{ needs.prepare.outputs.channel }}-updater-verification
     permissions:
       attestations: read
       contents: read
@@ -466,6 +474,7 @@ jobs:
         id: previous
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
           RELEASE_ARCH: ${{ matrix.arch }}
           MACOS_UPDATER_BOOTSTRAP_TAG: ${{ vars.MACOS_UPDATER_BOOTSTRAP_TAG }}
         shell: bash
@@ -475,17 +484,19 @@ jobs:
           node <<'NODE'
           const fs = require('node:fs');
           const releases = JSON.parse(fs.readFileSync('releases.json', 'utf8')).flat();
-          const asset = `Fraia-macOS-${process.env.RELEASE_ARCH}.zip`;
+          const prerelease = process.env.RELEASE_CHANNEL === 'beta';
+          const prefix = prerelease ? 'Fraia-Beta' : 'Fraia';
+          const asset = `${prefix}-macOS-${process.env.RELEASE_ARCH}.zip`;
           const previous = releases
             .filter((release) => !release.draft && release.tag_name !== process.env.GITHUB_REF_NAME)
-            .filter((release) => !release.prerelease)
+            .filter((release) => release.prerelease === prerelease)
             .filter((release) => release.assets.some((candidate) => candidate.name === asset))
             .sort((left, right) => String(right.published_at).localeCompare(String(left.published_at)))[0];
           if (previous) {
             fs.appendFileSync(process.env.GITHUB_OUTPUT, `tag=${previous.tag_name}\nasset=${asset}\nbootstrap=false\n`);
           } else {
             if (process.env.MACOS_UPDATER_BOOTSTRAP_TAG !== process.env.GITHUB_REF_NAME) {
-              throw new Error('No prior stable package exists. Set MACOS_UPDATER_BOOTSTRAP_TAG to this exact first tag only.');
+              throw new Error(`No prior ${process.env.RELEASE_CHANNEL} package exists. Set MACOS_UPDATER_BOOTSTRAP_TAG to this exact first tag only.`);
             }
             fs.appendFileSync(process.env.GITHUB_OUTPUT, 'bootstrap=true\n');
           }
@@ -514,7 +525,7 @@ jobs:
             --previous-zip "previous/${{ steps.previous.outputs.asset }}" \
             --previous-checksums previous/SHA256SUMS \
             --candidate-directory candidate/assets \
-            --candidate-metadata "candidate/assets/update-stable-darwin-${{ matrix.arch }}.yml" \
+            --candidate-metadata "candidate/assets/update-${{ needs.prepare.outputs.channel }}-darwin-${{ matrix.arch }}.yml" \
             --repository "${{ github.repository }}"
 
       - name: Record exact bootstrap evidence
@@ -571,14 +582,7 @@ jobs:
             "${ARGS[@]}" > expected-assets.txt
           mkdir -p publish/feed
           while IFS= read -r feed_root; do cp -R "$feed_root/." publish/feed/; done < <(find candidates -type d -name feed | LC_ALL=C sort)
-          test "$(find publish/feed -type f | wc -l | tr -d ' ')" = 12
-          for PLATFORM in darwin win32 linux; do
-            for ARCH in arm64 x64; do
-              diff --recursive \
-                "publish/feed/stable/$PLATFORM/$ARCH" \
-                "publish/feed/beta/$PLATFORM/$ARCH"
-            done
-          done
+          test "$(find "publish/feed/${{ needs.prepare.outputs.channel }}" -type f | wc -l | tr -d ' ')" = 6
 
       - name: Upload verified release bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -659,32 +663,24 @@ jobs:
           export FRAIA_TUF_METADATA_NOW
           FRAIA_TUF_METADATA_NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           ROOT="$GITHUB_WORKSPACE/source/apps/fraia-electron/build/update-trust/root.json"
-          for CHANNEL in stable beta; do
-            for PLATFORM in win32 linux; do
-              for ARCH in arm64 x64; do
-                FEED="$GITHUB_WORKSPACE/publish/feed/$CHANNEL/$PLATFORM/$ARCH"
-                TARGET_NAME=$(node -p \
-                  "require('$GITHUB_WORKSPACE/source/apps/fraia-electron/release-contract.cjs').metadataFileName('$PLATFORM', '$ARCH')")
-                PREVIOUS="$GITHUB_WORKSPACE/previous-feed/$CHANNEL/$PLATFORM/$ARCH/tuf/metadata"
-                PREVIOUS_ARGS=()
-                if [ -d "$PREVIOUS" ]; then
-                  PREVIOUS_ARGS=(--previous-metadata "$PREVIOUS")
-                fi
-                node "$GITHUB_WORKSPACE/source/apps/fraia-electron/scripts/sign-tuf-update-repository.cjs" \
-                  --root "$ROOT" \
-                  --target "$FEED/$TARGET_NAME" \
-                  --target-name "$TARGET_NAME" \
-                  --output "$FEED/tuf" \
-                  "${PREVIOUS_ARGS[@]}"
-                (cd "$FEED/tuf" && sha256sum --check --strict SHA256SUMS)
-              done
-            done
-          done
+          CHANNEL="${{ needs.prepare.outputs.channel }}"
           for PLATFORM in win32 linux; do
             for ARCH in arm64 x64; do
-              diff --recursive \
-                "$GITHUB_WORKSPACE/publish/feed/stable/$PLATFORM/$ARCH" \
-                "$GITHUB_WORKSPACE/publish/feed/beta/$PLATFORM/$ARCH"
+              FEED="$GITHUB_WORKSPACE/publish/feed/$CHANNEL/$PLATFORM/$ARCH"
+              TARGET_NAME=$(node -p \
+                "require('$GITHUB_WORKSPACE/source/apps/fraia-electron/release-contract.cjs').metadataFileName('$PLATFORM', '$ARCH')")
+              PREVIOUS="$GITHUB_WORKSPACE/previous-feed/$CHANNEL/$PLATFORM/$ARCH/tuf/metadata"
+              PREVIOUS_ARGS=()
+              if [ -d "$PREVIOUS" ]; then
+                PREVIOUS_ARGS=(--previous-metadata "$PREVIOUS")
+              fi
+              node "$GITHUB_WORKSPACE/source/apps/fraia-electron/scripts/sign-tuf-update-repository.cjs" \
+                --root "$ROOT" \
+                --target "$FEED/$TARGET_NAME" \
+                --target-name "$TARGET_NAME" \
+                --output "$FEED/tuf" \
+                "${PREVIOUS_ARGS[@]}"
+              (cd "$FEED/tuf" && sha256sum --check --strict SHA256SUMS)
             done
           done
 
@@ -731,7 +727,11 @@ jobs:
             --output /tmp/reassembled-assets \
             --input publish/assets > expected-assets.txt
           rm -rf /tmp/reassembled-assets
-          TITLE="Fraia ${{ needs.prepare.outputs.version }}"
+          if [ "${{ needs.prepare.outputs.channel }}" = beta ]; then
+            TITLE="Fraia Beta ${{ needs.prepare.outputs.version }}"
+          else
+            TITLE="Fraia ${{ needs.prepare.outputs.version }}"
+          fi
           node source/apps/fraia-electron/scripts/changelog.cjs \
             --changelog source/CHANGELOG.md \
             --version "${{ needs.prepare.outputs.version }}" \
@@ -777,8 +777,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TITLE="Fraia ${{ needs.prepare.outputs.version }}"
-          gh release edit "${{ github.ref_name }}" --repo "${{ github.repository }}" --title "$TITLE" --notes-file release-notes.md --draft=false --prerelease=false --latest
+          if [ "${{ needs.prepare.outputs.channel }}" = beta ]; then
+            TITLE="Fraia Beta ${{ needs.prepare.outputs.version }}"
+            RELEASE_TYPE=(--prerelease --latest=false)
+          else
+            TITLE="Fraia ${{ needs.prepare.outputs.version }}"
+            RELEASE_TYPE=(--prerelease=false --latest)
+          fi
+          gh release edit "${{ github.ref_name }}" --repo "${{ github.repository }}" \
+            --title "$TITLE" --notes-file release-notes.md --draft=false "${RELEASE_TYPE[@]}"
 
       - name: Verify public release before sealing updater feed
         shell: bash
@@ -817,25 +824,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          DESTINATION="updates branch / stable and beta"
+          CHANNEL="${{ needs.prepare.outputs.channel }}"
+          DESTINATION="updates branch / $CHANNEL"
           rm -rf feed-publication
-          mkdir -p feed-publication/feed/stable feed-publication/feed/beta
-          cp -R publish/feed/stable/. feed-publication/feed/stable/
-          cp -R publish/feed/beta/. feed-publication/feed/beta/
-          for PLATFORM in darwin win32 linux; do
-            for ARCH in arm64 x64; do
-              diff --recursive \
-                "feed-publication/feed/stable/$PLATFORM/$ARCH" \
-                "feed-publication/feed/beta/$PLATFORM/$ARCH"
-            done
-          done
+          mkdir -p "feed-publication/feed/$CHANNEL"
+          cp -R "publish/feed/$CHANNEL/." "feed-publication/feed/$CHANNEL/"
           touch feed-publication/.nojekyll
-          cat > feed-publication/PUBLICATION.txt <<EOF
+          cat > "feed-publication/PUBLICATION-$CHANNEL.txt" <<EOF
           Fraia updater-feed publication bundle
+          Channel: $CHANNEL
           Tag: ${{ github.ref_name }}
           Commit: ${{ github.sha }}
           Destination: $DESTINATION
-          Publication: tag workflow, after explicit stable-release approval
+          Publication: tag workflow, after explicit $CHANNEL-release approval
           EOF
           (
             cd feed-publication
@@ -865,30 +866,23 @@ jobs:
           path: update-site
           ref: updates
 
-      - name: Publish stable bytes to both updater channels atomically
+      - name: Publish only the matching updater channel atomically
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf update-site/stable/darwin update-site/beta/darwin
-          mkdir -p update-site/stable update-site/beta
-          cp -R feed-publication/feed/stable/. update-site/stable/
-          cp -R feed-publication/feed/beta/. update-site/beta/
-          cp feed-publication/.nojekyll feed-publication/PUBLICATION.txt update-site/
-          test "$(find update-site/stable update-site/beta -type f | wc -l | tr -d ' ')" = 76
-          for PLATFORM in darwin win32 linux; do
-            for ARCH in arm64 x64; do
-              diff --recursive \
-                "update-site/stable/$PLATFORM/$ARCH" \
-                "update-site/beta/$PLATFORM/$ARCH"
-            done
-          done
+          CHANNEL="${{ needs.prepare.outputs.channel }}"
+          rm -rf "update-site/$CHANNEL"
+          mkdir -p "update-site/$CHANNEL"
+          cp -R "feed-publication/feed/$CHANNEL/." "update-site/$CHANNEL/"
+          cp feed-publication/.nojekyll "feed-publication/PUBLICATION-$CHANNEL.txt" update-site/
+          diff --recursive "feed-publication/feed/$CHANNEL" "update-site/$CHANNEL"
           (
             cd update-site
             git config user.name github-actions
             git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-            git add -- .nojekyll PUBLICATION.txt stable beta
+            git add -- .nojekyll "PUBLICATION-$CHANNEL.txt" "$CHANNEL"
             if ! git diff --cached --quiet; then
-              git commit -m "Publish Fraia ${{ needs.prepare.outputs.version }} update feeds"
+              git commit -m "Publish Fraia ${{ needs.prepare.outputs.version }} $CHANNEL feed"
               git push origin HEAD:updates
             fi
           )
@@ -939,7 +933,7 @@ jobs:
             done < <(find expected/feed -type f | LC_ALL=C sort)
             if [ "$complete" = true ]; then break; fi
             if [ "$attempt" = 12 ]; then
-              echo 'Public updater feeds did not converge to the exact stable and beta projections.' >&2
+              echo 'Public updater feed did not converge to the exact channel projection.' >&2
               exit 1
             fi
             sleep 5

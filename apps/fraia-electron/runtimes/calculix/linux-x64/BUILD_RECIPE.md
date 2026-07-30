@@ -10,14 +10,14 @@ Build revision: `fraia-calculix-linux-v3`
 - SPOOLES correction SHA-256: `15528f09312dc7605c0600358f5e6de12945449f249dfcfca7417eed6c220b93`
 - ARPACK-NG source SHA-256: `f6641deb07fa69165b7815de9008af3ea47eb39b2bb97521fbf74c97aba6e844`
 - OpenBLAS source SHA-256: `cd7e129868320cc2d033afa920e31202dfe0b8066a5b66661900ccc0f197dfed`
-- GCC source: `https://ftpmirror.gnu.org/gnu/gcc/gcc-16.1.0/gcc-16.1.0.tar.xz`
+- GCC source: `https://ftp.gnu.org/gnu/gcc/gcc-16.1.0/gcc-16.1.0.tar.xz`
 - GCC source SHA-256: `50efb4d94c3397aff3b0d61a5abd748b4dd31d9d3f2ab7be05b171d36a510f79`
 - GPL-2.0 text from GCC source `COPYING` SHA-256: `231f7edcc7352d7734a96eef0b8030f77982678c516876fcb81e25b32d68564c`
 - GPL-3.0 text from GCC source `COPYING3` SHA-256: `8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903`
 - gcc SHA-256: `821af3c74506283c179ca413bb33e6b528805a4dd8a5c09df125e5ad560a9e89`
 - gfortran SHA-256: `61bf7aa223e378dba0978c92e951c95a4e8124f8efda72f0e1fd9166a35c6bd4`
 - linker SHA-256: `58937fc20c21e147883b4fdaa0fc7438a8e8f2bb886cfcaa4896100ca91139e7`
-- Build script SHA-256: `22bcf17a74914dfe56e3869fb7bbda630f1237d699e1d84853800f86345458e6`
+- Build script SHA-256: `0f438fa92af201c4f840468f46c916a3307bc0110488c8134a4503e3aaf6c58c`
 - SOURCE_DATE_EPOCH: `1762047462`
 - GLIBC symbol ceiling: `2.35`
 

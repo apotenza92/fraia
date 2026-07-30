@@ -9,7 +9,7 @@ Build revision: `fraia-calculix-macos-v5`
 - ARPACK-NG source SHA-256: `bd86b9adf3152bda8a21b3b5faf65a877b209be0f33c4629e2073a073ea5d706`
 - GPL-2.0 text from GCC source `COPYING` SHA-256: `231f7edcc7352d7734a96eef0b8030f77982678c516876fcb81e25b32d68564c`
 - GPL-3.0 text from GCC source `COPYING3` SHA-256: `8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903`
-- GCC source: `https://ftpmirror.gnu.org/gnu/gcc/gcc-16.1.0/gcc-16.1.0.tar.xz`
+- GCC source: `https://ftp.gnu.org/gnu/gcc/gcc-16.1.0/gcc-16.1.0.tar.xz`
 - GCC source SHA-256: `50efb4d94c3397aff3b0d61a5abd748b4dd31d9d3f2ab7be05b171d36a510f79`
 - Homebrew/core revision: `1a2659e79c546348874da58b878ce326426749c4`
 - Homebrew GCC formula SHA-256: `5f4b4fe9aab99c021d23b2c1da9025e70b502e275076da12a64fc6196db6f3d3`
@@ -23,7 +23,7 @@ Build revision: `fraia-calculix-macos-v5`
 - gfortran driver SHA-256: `ef46cf36258063e563b5576ac1830e26b7a7bcaaa31280786054dea999fee487`
 - gfortran f951 SHA-256: `524a4e00ee656fe87b2f14b828f2ad14a186f0baa0c888d900c0392f4a7253e6`
 - gfortran collect2 SHA-256: `cca33f287f5bbbdef8f41ea57add8e954a05ecf5e6aa533aa54e5a2a3e56b8b4`
-- Build script SHA-256: `013aab3fdf4ebf75d021b6ef4a5f79a97c3221f518def3a0cc11d9c058517d3d`
+- Build script SHA-256: `452274f3452339e100c0107badd829bc73513698da84cea97992b2564d1c74ca`
 - SOURCE_DATE_EPOCH: `1762047462`
 - MACOSX_DEPLOYMENT_TARGET: `15.0`
 - macOS SDK version: `15.5`
