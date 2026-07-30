@@ -1,52 +1,24 @@
-version: 0.0.3
+version: 0.0.4
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.3/Fraia-Windows-x64-Setup.exe
-    sha512: BhQ6ZmwtekykMBUNAOtiJvTaVgDVMXtx5BPluaraJ2iFDU/vVm94ZC4OLlwwkkX6lllALOo06YjC3SoWuXoefQ==
-    size: 119286217
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.3/Fraia-Windows-x64-Setup.exe
-sha512: BhQ6ZmwtekykMBUNAOtiJvTaVgDVMXtx5BPluaraJ2iFDU/vVm94ZC4OLlwwkkX6lllALOo06YjC3SoWuXoefQ==
-releaseName: Fraia 0.0.3
-releaseNotes: "### Added\r
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.4/Fraia-Windows-x64-Setup.exe
+    sha512: ckdzJh/fv5y4GHj2ezoQAX1BvUgRCm0cGkNgx9NSpEY+VMciR+R9/QMjGPX8v+Du965bHyjrFQWJBhbz+LWw8w==
+    size: 119287401
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.4/Fraia-Windows-x64-Setup.exe
+sha512: ckdzJh/fv5y4GHj2ezoQAX1BvUgRCm0cGkNgx9NSpEY+VMciR+R9/QMjGPX8v+Du965bHyjrFQWJBhbz+LWw8w==
+releaseName: Fraia 0.0.4
+releaseNotes: "### Changed\r
 
   \r
 
-  - Native Windows ARM64 packaging backed by a reviewed ARM64 CalculiX runtime,\r
+  - Stable and beta are now separate, side-by-side applications with isolated\r
 
-  \  alongside the existing macOS, Linux, and Windows x64 targets.\r
+  \  application ids, package names, user-data directories, artifacts, update\r
 
-  - Authenticated automatic updates for Windows and Linux using an embedded,\r
+  \  feeds, and release tags.\r
 
-  \  reviewed TUF root and separately protected targets, snapshot, and timestamp\r
+  - CalculiX corresponding source now uses GNU's canonical GCC archive endpoint\r
 
-  \  signing roles.\r
-
-  \r
-
-  ### Changed\r
-
-  \r
-
-  - The release matrix now requires six native solver-backed packages: macOS\r
-
-  \  ARM64 and x64, Linux ARM64 and x64, and Windows ARM64 and x64.\r
-
-  - Stable and beta feed aliases resolve to the same stable application identity\r
-
-  \  and package bytes rather than separate beta builds.\r
-
-  \r
-
-  ### Security\r
-
-  \r
-
-  - Windows and Linux update metadata is TUF-signed and rejects corrupt,\r
-
-  \  expired, or incorrectly signed targets. Their initial installers remain\r
-
-  \  unsigned and must be accompanied by a clear disclosure, public checksums,\r
-
-  \  and provenance.\r
+  \  while retaining the reviewed GCC 16.1.0 SHA-256.\r
 
   \r
 
@@ -54,15 +26,7 @@ releaseNotes: "### Added\r
 
   \r
 
-  - Fraia packages check the public stable feed automatically each day by\r
+  - Stable `0.0.4` updates only the `Fraia` application and stable feed. The\r
 
-  \  default. macOS retains Developer ID and notarisation verification; Windows\r
-
-  \  and Linux require the embedded TUF trust root. Users can change the\r
-
-  \  frequency from the Fraia menu.\r
-
-  - Windows NSIS and Linux AppImage installations can update in place. Linux DEB\r
-
-  \  and RPM installations remain under their system package manager."
-releaseDate: 2026-07-30T02:46:28.125Z
+  \  separately installed `Fraia Beta` application remains on its beta-only feed."
+releaseDate: 2026-07-30T12:27:00.598Z

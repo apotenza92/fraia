@@ -1,47 +1,29 @@
-version: 0.0.3
+version: 0.0.4
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.3/Fraia-Linux-arm64.AppImage
-    sha512: n9mB6G9Rzft8VwjApdbYgGN7HR8QByUo5n+Lk1ejz3accm4FKOkylh61KJn+wOW7pDtFjn7DcgvQ+kgzQdXvkg==
-    size: 100626453
-    blockMapSize: 105313
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.3/Fraia-Linux-arm64.deb
-    sha512: 6DBtnkeFX110lp7UXYaNgaRXqstmZw0RA2O5mxHGsiICTC4nZ1vj6cz+fApp52hcJbsQtTxqeZfNv7O74r7s2A==
-    size: 100763984
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.3/Fraia-Linux-arm64.rpm
-    sha512: uFkt9Vpq2afKDyPsrxleO2e5vEeWm/2vP/RNXXzMXNeKGDlJ8wFS6u8zQL2q8h36f+RTPh1gFweDX6n/szEHtw==
-    size: 88206317
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.3/Fraia-Linux-arm64.AppImage
-sha512: n9mB6G9Rzft8VwjApdbYgGN7HR8QByUo5n+Lk1ejz3accm4FKOkylh61KJn+wOW7pDtFjn7DcgvQ+kgzQdXvkg==
-releaseName: Fraia 0.0.3
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.4/Fraia-Linux-arm64.AppImage
+    sha512: gQl4pi3WMuKAttexaxqE9PiSRfZS4FTzCFLQBd+OecgpfhwMm+zkSqYI4B8VGjuZ7Nk2aAXltc3Rt0Z6gQioXQ==
+    size: 100626435
+    blockMapSize: 105295
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.4/Fraia-Linux-arm64.deb
+    sha512: 8v8z8M87lCVVU2OmYDACvWAc4v4j9vVH7lPTNDQc0dH7EkAw1kSQ5fiG/4KkBlzst4bmc7NAUxftB6ISPLItig==
+    size: 100764812
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.4/Fraia-Linux-arm64.rpm
+    sha512: KxH+3wmaCvsbbHh57bI9TgOGzU82vfuax6Il/HvOqSO2ceO9IUp77TN6LQgh7g8gmRZOWfNySdqvMZQXNF6XvA==
+    size: 88208685
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.4/Fraia-Linux-arm64.AppImage
+sha512: gQl4pi3WMuKAttexaxqE9PiSRfZS4FTzCFLQBd+OecgpfhwMm+zkSqYI4B8VGjuZ7Nk2aAXltc3Rt0Z6gQioXQ==
+releaseName: Fraia 0.0.4
 releaseNotes: |-
-  ### Added
-
-  - Native Windows ARM64 packaging backed by a reviewed ARM64 CalculiX runtime,
-    alongside the existing macOS, Linux, and Windows x64 targets.
-  - Authenticated automatic updates for Windows and Linux using an embedded,
-    reviewed TUF root and separately protected targets, snapshot, and timestamp
-    signing roles.
-
   ### Changed
 
-  - The release matrix now requires six native solver-backed packages: macOS
-    ARM64 and x64, Linux ARM64 and x64, and Windows ARM64 and x64.
-  - Stable and beta feed aliases resolve to the same stable application identity
-    and package bytes rather than separate beta builds.
-
-  ### Security
-
-  - Windows and Linux update metadata is TUF-signed and rejects corrupt,
-    expired, or incorrectly signed targets. Their initial installers remain
-    unsigned and must be accompanied by a clear disclosure, public checksums,
-    and provenance.
+  - Stable and beta are now separate, side-by-side applications with isolated
+    application ids, package names, user-data directories, artifacts, update
+    feeds, and release tags.
+  - CalculiX corresponding source now uses GNU's canonical GCC archive endpoint
+    while retaining the reviewed GCC 16.1.0 SHA-256.
 
   ### Updating
 
-  - Fraia packages check the public stable feed automatically each day by
-    default. macOS retains Developer ID and notarisation verification; Windows
-    and Linux require the embedded TUF trust root. Users can change the
-    frequency from the Fraia menu.
-  - Windows NSIS and Linux AppImage installations can update in place. Linux DEB
-    and RPM installations remain under their system package manager.
-releaseDate: 2026-07-30T02:46:36.387Z
+  - Stable `0.0.4` updates only the `Fraia` application and stable feed. The
+    separately installed `Fraia Beta` application remains on its beta-only feed.
+releaseDate: 2026-07-30T12:27:48.757Z
