@@ -66,10 +66,10 @@ test('inline Node release workflow scripts are valid standalone programs', () =>
   });
 });
 
-test('first-release updater resolution uses the exact bootstrap tag and later releases use N-1', () => {
+test('updater resolution uses the exact highest-SemVer feed predecessor across release classifications', () => {
   const resolver = [...workflow.matchAll(/^[ \t]*node <<'NODE'\n([\s\S]*?)^[ \t]*NODE$/gm)]
     .map((match) => match[1])
-    .find((script) => script.includes('MACOS_UPDATER_BOOTSTRAP_TAG'));
+    .find((script) => script.includes('EXPECTED_PREVIOUS_VERSION'));
   assert.ok(resolver, 'updater release resolver is missing');
 
   const runResolver = (releasePages, environment) => {
@@ -80,6 +80,7 @@ test('first-release updater resolution uses the exact bootstrap tag and later re
           GITHUB_OUTPUT: 'output',
           RELEASE_CHANNEL: 'stable',
           RELEASE_ARCH: 'x64',
+          EXPECTED_PREVIOUS_VERSION: '0.0.2',
           ...environment,
         },
       },
@@ -102,13 +103,6 @@ test('first-release updater resolution uses the exact bootstrap tag and later re
   };
 
   assert.equal(
-    runResolver([], {
-      GITHUB_REF_NAME: 'v0.0.3',
-      MACOS_UPDATER_BOOTSTRAP_TAG: 'v0.0.3',
-    }),
-    'bootstrap=true\n',
-  );
-  assert.equal(
     runResolver([[
       {
         assets: [{ name: 'Fraia-macOS-x64.zip' }],
@@ -119,36 +113,34 @@ test('first-release updater resolution uses the exact bootstrap tag and later re
       },
     ]], {
       GITHUB_REF_NAME: 'v0.0.3',
-      MACOS_UPDATER_BOOTSTRAP_TAG: '',
     }),
-    'tag=v0.0.2\nasset=Fraia-macOS-x64.zip\nbootstrap=false\n',
+    'tag=v0.0.2\nasset=Fraia-macOS-x64.zip\n',
   );
   assert.throws(
     () => runResolver([], {
       GITHUB_REF_NAME: 'v0.0.3',
-      MACOS_UPDATER_BOOTSTRAP_TAG: 'v0.0.2',
     }),
-    /No prior stable package exists/,
+    /has no matching Fraia-macOS-x64\.zip release asset/,
   );
   assert.equal(
     runResolver([[
       {
         assets: [{ name: 'Fraia-Beta-macOS-x64.zip' }],
         draft: false,
-        prerelease: true,
+        prerelease: false,
         published_at: '2026-07-29T00:00:00Z',
-        tag_name: 'v0.0.4-beta.1',
+        tag_name: 'v0.0.4',
       },
     ]], {
-      GITHUB_REF_NAME: 'v0.0.4-beta.2',
-      MACOS_UPDATER_BOOTSTRAP_TAG: '',
+      EXPECTED_PREVIOUS_VERSION: '0.0.4',
+      GITHUB_REF_NAME: 'v0.0.5-beta.1',
       RELEASE_CHANNEL: 'beta',
     }),
-    'tag=v0.0.4-beta.1\nasset=Fraia-Beta-macOS-x64.zip\nbootstrap=false\n',
+    'tag=v0.0.4\nasset=Fraia-Beta-macOS-x64.zip\n',
   );
 });
 
-test('stable and beta releases are tag-only, native on six solver-backed targets, and use protected publication boundaries', () => {
+test('stable-inclusive and beta releases are tag-only, native on six solver-backed targets, and use protected publication boundaries', () => {
   assert.match(workflow, /tags:\n\s+- 'v\*'/);
   assert.doesNotMatch(workflow, /workflow_dispatch/);
   for (const runner of ['macos-15', 'macos-15-intel', 'windows-11-arm', 'windows-2025', 'ubuntu-24.04', 'ubuntu-24.04-arm']) {
@@ -159,7 +151,12 @@ test('stable and beta releases are tag-only, native on six solver-backed targets
     'release-signing',
   ]) assert.match(workflow, new RegExp(environment));
   assert.match(workflow, /environment: `\$\{channel\}-release`/);
-  assert.match(workflow, /\$\{\{ needs\.prepare\.outputs\.channel \}\}-updater-verification/);
+  assert.match(workflow, /\$\{\{ matrix\.channel \}\}-updater-verification/);
+  assert.match(workflow, /channel: \$\{\{ fromJSON\(needs\.prepare\.outputs\.channels\) \}\}/);
+  assert.match(workflow, /readPublishedChannelVersion/);
+  assert.match(workflow, /releasePolicy/);
+  assert.match(workflow, /Approve stable release projection to Beta/);
+  assert.match(workflow, /environment:\n\s+name: beta-release/);
   assert.match(workflow, /vX\.Y\.Z-beta\.N/);
   assert.match(workflow, /\^v\\d\+\\\.\\d\+\\\.\\d\+-beta\\\.\\d\+\$/);
   assert.match(workflow, /actions\/attest@[a-f0-9]{40}/);
@@ -226,11 +223,12 @@ test('private-source and package prerequisites fail before any secret-bearing jo
   assert.match(validate, /build\/macos\/Fraia\.icon\/Assets\/01-artwork-dark\.svg/);
 });
 
-test('each publication atomically advances only its matching isolated updater feed', () => {
-  assert.match(workflow, /MACOS_UPDATER_BOOTSTRAP_TAG !== process\.env\.GITHUB_REF_NAME/);
+test('each publication atomically advances only higher-SemVer identity-isolated updater feeds', () => {
+  assert.match(workflow, /EXPECTED_PREVIOUS_VERSION/);
+  assert.match(workflow, /expectedTag = `v\$\{process\.env\.EXPECTED_PREVIOUS_VERSION\}`/);
   assert.match(workflow, /APPLE_PRIOR_SIGNING_CERTIFICATE_SHA256/);
   assert.match(updaterTest, /priorExpectations/);
-  assert.match(workflow, /needs: \[prepare, seal-tuf, attest\]/);
+  assert.match(workflow, /needs: \[prepare, seal-tuf, attest, approve-beta-projection\]/);
   assert.match(workflow, /environment: update-signing/);
   assert.match(workflow, /sign-tuf-update-repository\.cjs/);
   for (const role of ['TARGETS', 'SNAPSHOT', 'TIMESTAMP']) {
@@ -267,7 +265,7 @@ test('each publication atomically advances only its matching isolated updater fe
   const verifyPublic = workflow.indexOf('- name: Verify public release before sealing updater feed');
   const sealFeed = workflow.indexOf('- name: Prepare sealed updater-feed publication bundle');
   const uploadFeed = workflow.indexOf('- name: Upload sealed updater-feed publication bundle');
-  const publishFeeds = workflow.indexOf('- name: Publish only the matching updater channel atomically');
+  const publishFeeds = workflow.indexOf('- name: Publish only the eligible updater channels atomically');
   assert.ok(
     publishRelease >= 0
       && publishRelease < verifyPublic
@@ -276,11 +274,15 @@ test('each publication atomically advances only its matching isolated updater fe
       && uploadFeed < publishFeeds,
     'the release must be public and byte-verified before its updater feed is published',
   );
-  assert.match(workflow, /Publication: tag workflow, after explicit \$CHANNEL-release approval/);
+  assert.match(workflow, /APPROVAL='stable-release and beta-release'/);
+  assert.match(workflow, /printf 'Publication: tag workflow, after explicit %s approval\\n' "\$APPROVAL"/);
   assert.match(workflow, /mkdir -p "feed-publication\/feed\/\$CHANNEL"/);
   assert.match(workflow, /rm -rf "update-site\/\$CHANNEL"/);
-  assert.match(workflow, /git add -- \.nojekyll "PUBLICATION-\$CHANNEL\.txt" "\$CHANNEL"/);
+  assert.match(workflow, /git add -- "\$\{PATHS\[@\]\}"/);
   assert.doesNotMatch(workflow, /for FEED_CHANNEL in stable beta|byte-identical stable and beta/);
+  assert.match(workflow, /--channels "\$\{\{ needs\.prepare\.outputs\.channels_csv \}\}"/);
+  assert.match(workflow, /uses: \.\/\.github\/workflows\/nonmac-updater-audit\.yml/);
+  assert.match(workflow, /previous_version: \$\{\{ matrix\.channel == 'stable'/);
   assert.match(workflow, /git push origin HEAD:updates/);
   assert.doesNotMatch(workflow, /git add -A/);
   assert.match(workflow, /fraia-update-feed-publication-\$\{\{ github\.ref_name \}\}/);

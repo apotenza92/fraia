@@ -13,7 +13,7 @@
     "revision": "fraia-calculix-windows-arm64-v1"
   },
   "redistribution": {
-    "sourceUrl": "https://github.com/apotenza92/fraia/releases/download/v0.0.4/Fraia-CalculiX-Corresponding-Source.tar",
+    "sourceUrl": "https://github.com/apotenza92/fraia/releases/download/v0.0.5/Fraia-CalculiX-Corresponding-Source.tar",
     "sourceSha256": "92ee240d757ccc4603fb371bed698d6a4fe450ae0ad2d113e4bf4061868ec730",
     "sourceAsset": "Fraia-CalculiX-Corresponding-Source.tar",
     "licenseIdentifiers": [
