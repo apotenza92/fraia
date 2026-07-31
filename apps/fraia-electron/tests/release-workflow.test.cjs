@@ -420,11 +420,16 @@ test('packaged updater code ships TUF verification for Windows and Linux', () =>
   assert.match(updater, /linux-package-manager/);
   assert.match(updater, /allowPrerelease = channel === 'beta'/);
   assert.match(updater, /loopback-only/);
-  assert.match(mainProcess, /Restart and Update/);
-  assert.match(mainProcess, /Later/);
-  assert.match(mainProcess, /showUpdateReady/);
-  assert.match(mainProcess, /defaultId: 1/);
-  assert.match(mainProcess, /cancelId: 1/);
+  assert.match(updater, /download-progress/);
+  assert.match(mainProcess, /broadcastUpdateStatus/);
+  const updateDialog = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'components', 'updates', 'UpdateDialog.tsx'),
+    'utf8',
+  );
+  assert.match(updateDialog, /Restart and update/);
+  assert.match(updateDialog, /Install when Fraia closes/);
+  assert.match(updateDialog, /ProgressLabel/);
+  assert.match(updateDialog, /formatEta/);
 });
 
 test('all third-party workflow actions are pinned to full commit SHAs', () => {

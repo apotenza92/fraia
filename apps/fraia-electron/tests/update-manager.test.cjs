@@ -6,9 +6,13 @@ const os = require('node:os');
 const path = require('node:path');
 const {
   UPDATE_FREQUENCY_MS,
+  UPDATE_RETRY_MS,
   configureAutoUpdates,
+  normalizeDownloadProgress,
   normalizeReleaseNotes,
+  readCheckHistory,
   safeWriteEvent,
+  userFacingUpdateError,
   validateTestFeedUrl,
 } = require('../update-manager.cjs');
 
@@ -57,6 +61,7 @@ test('macOS stable updater is automatic and configurable', async () => {
   assert.deepEqual(scheduled, [['timeout', 30_000]]);
   await timeoutCallbacks[0]();
   assert.deepEqual(scheduled.at(-1), ['interval', UPDATE_FREQUENCY_MS.daily]);
+  updater.emit('update-not-available', { version: '0.1.0' });
   result.setFrequency('daily');
   assert.equal(result.frequency, 'daily');
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(userData, 'update-frequency.json'))), { frequency: 'daily' });
@@ -139,6 +144,153 @@ test('downloaded updates show release notes and respect restart or later', async
   fs.rmSync(userData, { recursive: true, force: true });
 });
 
+test('updater publishes check, progress, ready, and up-to-date states for the in-app experience', async () => {
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-updater-status-'));
+  try {
+    const statuses = [];
+    const updater = updaterDouble();
+    updater.checkForUpdates = async () => {
+      updater.emit('checking-for-update');
+      updater.emit('update-not-available', { version: '0.0.1' });
+    };
+    const result = configureAutoUpdates({
+      app: { isPackaged: true, getPath: () => userData, getVersion: () => '0.0.1' },
+      autoUpdater: updater,
+      packageMetadata: { fraiaReleaseChannel: 'stable', fraiaUpdateFeedUrl: 'https://updates.example/stable' },
+      platform: 'darwin',
+      schedule: { clearInterval() {}, clearTimeout() {}, setInterval() { return 1; }, setTimeout() { return 2; } },
+      onStatusChange: (status) => statuses.push(status),
+    });
+
+    await result.checkNow();
+    assert.equal(result.getStatus().phase, 'up-to-date');
+    assert.ok(result.getStatus().lastSuccessfulCheckAt);
+    assert.equal(readCheckHistory(path.join(userData, 'last-update-check.json')).lastSuccessfulCheckAt > 0, true);
+
+    updater.emit('update-available', { version: '0.0.2' });
+    updater.emit('download-progress', {
+      bytesPerSecond: 2_000_000,
+      percent: 50.4,
+      total: 20_000_000,
+      transferred: 10_000_000,
+    });
+    assert.deepEqual(result.getStatus().progress, {
+      bytesPerSecond: 2_000_000,
+      etaSeconds: 5,
+      percent: 50,
+      total: 20_000_000,
+      transferred: 10_000_000,
+    });
+    updater.emit('update-downloaded', { version: '0.0.2', releaseNotes: '- Safer updates' });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(result.getStatus().phase, 'ready');
+    assert.equal(result.getStatus().releaseNotes, '• Safer updates');
+    assert.ok(statuses.some((status) => status.phase === 'checking'));
+    assert.ok(statuses.some((status) => status.phase === 'downloading'));
+    assert.ok(statuses.some((status) => status.phase === 'ready'));
+  } finally {
+    fs.rmSync(userData, { recursive: true, force: true });
+  }
+});
+
+test('download progress and user-facing errors are bounded and safe to display', () => {
+  assert.deepEqual(normalizeDownloadProgress({
+    bytesPerSecond: 100,
+    percent: 140,
+    total: 1_000,
+    transferred: 2_000,
+  }), {
+    bytesPerSecond: 100,
+    etaSeconds: null,
+    percent: 100,
+    total: 1_000,
+    transferred: 1_000,
+  });
+  assert.match(userFacingUpdateError(new Error('TUF metadata signature verification failed')), /securely verify/);
+  assert.match(userFacingUpdateError(new Error('network request timed out')), /internet connection/);
+  assert.doesNotMatch(userFacingUpdateError(new Error('secret internal path /tmp/private')), /private|\/tmp/);
+});
+
+test('legacy last-check timestamps migrate silently to successful-check history', () => {
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-updater-history-'));
+  try {
+    const historyPath = path.join(userData, 'last-update-check.json');
+    fs.writeFileSync(historyPath, '{"timestamp":123456}\n');
+    assert.deepEqual(readCheckHistory(historyPath), {
+      lastAttemptAt: 123456,
+      lastSuccessfulCheckAt: 123456,
+    });
+  } finally {
+    fs.rmSync(userData, { recursive: true, force: true });
+  }
+});
+
+test('failed automatic checks do not become successful checks and retry with backoff', async () => {
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-updater-retry-'));
+  try {
+    const timeouts = [];
+    const updater = updaterDouble();
+    updater.checkForUpdates = async () => {
+      throw new Error('network request timed out');
+    };
+    const result = configureAutoUpdates({
+      app: { isPackaged: true, getPath: () => userData, getVersion: () => '0.0.1' },
+      autoUpdater: updater,
+      packageMetadata: { fraiaReleaseChannel: 'stable', fraiaUpdateFeedUrl: 'https://updates.example/stable' },
+      platform: 'darwin',
+      log: { error() {} },
+      schedule: {
+        clearInterval() {},
+        clearTimeout() {},
+        setInterval() { return 1; },
+        setTimeout(fn, ms) { timeouts.push({ fn, ms }); return timeouts.length; },
+      },
+    });
+
+    await assert.rejects(() => result.checkNow({ automatic: true }), /timed out/);
+    assert.equal(result.getStatus().phase, 'error');
+    assert.equal(result.getStatus().lastSuccessfulCheckAt, null);
+    assert.equal(timeouts.some(({ ms }) => ms === UPDATE_RETRY_MS[0]), true);
+    assert.equal(readCheckHistory(path.join(userData, 'last-update-check.json')).lastSuccessfulCheckAt, 0);
+  } finally {
+    fs.rmSync(userData, { recursive: true, force: true });
+  }
+});
+
+test('macOS in-app updating is independent of a Homebrew installation origin', () => {
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-updater-homebrew-'));
+  try {
+    const updater = updaterDouble();
+    const result = configureAutoUpdates({
+      app: {
+        isPackaged: true,
+        getAppPath: () => '/opt/homebrew/Caskroom/fraia/0.0.5/Fraia.app/Contents/Resources/app.asar',
+        getPath: () => userData,
+        getVersion: () => '0.0.5',
+      },
+      autoUpdater: updater,
+      env: {
+        HOMEBREW_CASK_OPTS: '--appdir=/Applications',
+        HOMEBREW_CELLAR: '/opt/homebrew/Cellar',
+        HOMEBREW_PREFIX: '/opt/homebrew',
+      },
+      packageMetadata: {
+        fraiaReleaseChannel: 'stable',
+        fraiaUpdateFeedUrl: 'https://raw.githubusercontent.com/apotenza92/fraia/updates/stable/darwin/arm64',
+      },
+      platform: 'darwin',
+      schedule: { clearInterval() {}, clearTimeout() {}, setInterval() { return 1; }, setTimeout() { return 2; } },
+    });
+
+    assert.equal(result.enabled, true);
+    assert.equal(result.getStatus().phase, 'idle');
+    assert.equal(updater.autoDownload, true);
+    assert.equal(updater.feed.url, 'https://raw.githubusercontent.com/apotenza92/fraia/updates/stable/darwin/arm64');
+  } finally {
+    fs.rmSync(userData, { recursive: true, force: true });
+  }
+});
+
 test('release-note normalization handles updater string, array, and empty forms', () => {
   assert.equal(normalizeReleaseNotes('  Added native solving.  '), 'Added native solving.');
   assert.equal(
@@ -172,7 +324,8 @@ test('unpackaged and unsupported runtimes cannot activate production updating', 
     autoUpdater: updater,
     packageMetadata: {},
   });
-  assert.deepEqual(result, { enabled: false });
+  assert.equal(result.enabled, false);
+  assert.equal(result.getStatus().phase, 'disabled');
   assert.equal(updater.feed, undefined);
   const packaged = configureAutoUpdates({
     app: { isPackaged: true },
@@ -180,7 +333,8 @@ test('unpackaged and unsupported runtimes cannot activate production updating', 
     packageMetadata: {},
     platform: 'freebsd',
   });
-  assert.deepEqual(packaged, { enabled: false });
+  assert.equal(packaged.enabled, false);
+  assert.equal(packaged.getStatus().phase, 'disabled');
 });
 
 test('Linux distro packages defer to their package manager while AppImage can self-update', () => {
@@ -192,7 +346,9 @@ test('Linux distro packages defer to their package manager while AppImage can se
     packageMetadata: {},
     platform: 'linux',
   });
-  assert.deepEqual(packaged, { enabled: false, reason: 'linux-package-manager' });
+  assert.equal(packaged.enabled, false);
+  assert.equal(packaged.reason, 'linux-package-manager');
+  assert.equal(packaged.getStatus().phase, 'managed');
   assert.equal(updater.feed, undefined);
 });
 

@@ -706,20 +706,28 @@ function reloadWindow(window, ignoreCache = false) {
   }
 }
 
-function showUpdateReady({ releaseNotes, version }) {
-  const options = {
-    type: 'info',
-    title: 'Fraia Update Ready',
-    message: `Fraia ${version} is ready to install.`,
-    detail: releaseNotes,
-    buttons: ['Restart and Update', 'Later'],
-    defaultId: 1,
-    cancelId: 1,
-    noLink: true,
+function currentUpdateStatus() {
+  return updateController?.getStatus?.() ?? {
+    channel: applicationMetadata.channel,
+    currentVersion: app.getVersion(),
+    enabled: false,
+    frequency: 'never',
+    phase: app.isPackaged ? 'initializing' : 'disabled',
+    reason: app.isPackaged ? 'initializing' : 'development',
   };
-  return mainWindow && !mainWindow.isDestroyed()
-    ? dialog.showMessageBox(mainWindow, options)
-    : dialog.showMessageBox(options);
+}
+
+function broadcastUpdateStatus(status) {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) window.webContents.send('fraia:updateStatus', status);
+  }
+}
+
+function openUpdateDialog() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.show();
+  mainWindow.focus();
+  mainWindow.webContents.send('fraia:openUpdateDialog');
 }
 
 function installApplicationMenu() {
@@ -735,7 +743,10 @@ function installApplicationMenu() {
   const updateSubmenu = updateController?.enabled ? [
     {
       label: 'Check for Updates…',
-      click: () => { void updateController.checkNow().catch(() => {}); },
+      click: () => {
+        openUpdateDialog();
+        void updateController.checkNow().catch(() => {});
+      },
     },
     { type: 'separator' },
     ...Object.entries(frequencyLabels).map(([frequency, label]) => ({
@@ -1005,6 +1016,25 @@ ipcMain.handle('fraia:setThemeSource', (_event, themeSource) => {
   syncAllWindowThemes();
   return { ok: true, themeSource };
 });
+ipcMain.handle('fraia:updateStatus', () => currentUpdateStatus());
+ipcMain.handle('fraia:checkForUpdates', async () => {
+  if (!updateController?.enabled) return currentUpdateStatus();
+  try {
+    await updateController.checkNow();
+  } catch { /* the controller publishes a user-safe error state */ }
+  return currentUpdateStatus();
+});
+ipcMain.handle('fraia:setUpdateFrequency', (_event, frequency) => {
+  if (!updateController?.enabled) return currentUpdateStatus();
+  updateController.setFrequency(frequency);
+  installApplicationMenu();
+  return currentUpdateStatus();
+});
+ipcMain.handle('fraia:installUpdate', async () => {
+  if (!updateController?.enabled) return currentUpdateStatus();
+  await updateController.installUpdate();
+  return currentUpdateStatus();
+});
 ipcMain.handle('fraia:reloadWindow', (event) => {
   reloadWindow(BrowserWindow.fromWebContents(event.sender));
   return { ok: true };
@@ -1032,11 +1062,25 @@ app.whenReady().then(async () => {
           app,
           autoUpdater,
           packageMetadata,
+          onStatusChange: broadcastUpdateStatus,
           prepareForInstall: prepareForUpdateInstall,
-          showUpdateReady,
         });
+        broadcastUpdateStatus(currentUpdateStatus());
       } catch (error) {
         safeError(`[updater] secure updater initialization failed: ${error}`);
+        updateController = {
+          enabled: false,
+          getStatus: () => ({
+            channel: applicationMetadata.channel,
+            currentVersion: app.getVersion(),
+            enabled: false,
+            errorMessage: 'Fraia could not securely start the updater. No update was installed.',
+            frequency: 'never',
+            phase: 'error',
+            reason: 'initialization-failed',
+          }),
+        };
+        broadcastUpdateStatus(currentUpdateStatus());
       }
     }
     installApplicationMenu();

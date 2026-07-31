@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
+const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const { releaseContract, metadataFileName } = require('../release-contract.cjs');
@@ -7,6 +8,36 @@ const packageMetadata = require('../package.json');
 
 test('native package metadata points to Fraia public source', () => {
   assert.equal(packageMetadata.homepage, 'https://github.com/apotenza92/fraia');
+});
+
+test('Homebrew remains an optional update path and cannot take ownership of the in-app updater', () => {
+  const repositoryRoot = path.resolve(__dirname, '..', '..', '..');
+  const agentContract = fs.readFileSync(path.join(repositoryRoot, 'AGENTS.md'), 'utf8');
+  const desktopReadme = fs.readFileSync(path.join(repositoryRoot, 'apps', 'fraia-electron', 'README.md'), 'utf8');
+  const updateManager = fs.readFileSync(path.join(repositoryRoot, 'apps', 'fraia-electron', 'update-manager.cjs'), 'utf8');
+
+  assert.match(agentContract, /`auto_updates true`/);
+  assert.match(agentContract, /must not disable, redirect, wrap, or become a prerequisite/);
+  assert.match(desktopReadme, /Homebrew remains an optional installation and update route/);
+  assert.doesNotMatch(updateManager, /HOMEBREW|spawnSync|execFile|brew upgrade/);
+});
+
+test('the renderer receives only the public updater state and narrow update actions', () => {
+  const repositoryRoot = path.resolve(__dirname, '..', '..', '..');
+  const main = fs.readFileSync(path.join(repositoryRoot, 'apps', 'fraia-electron', 'main.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(repositoryRoot, 'apps', 'fraia-electron', 'preload.js'), 'utf8');
+
+  for (const channel of [
+    'fraia:updateStatus',
+    'fraia:checkForUpdates',
+    'fraia:setUpdateFrequency',
+    'fraia:installUpdate',
+  ]) {
+    assert.match(main, new RegExp(`ipcMain\\.handle\\(['"]${channel}`));
+    assert.match(preload, new RegExp(`ipcRenderer\\.invoke\\(['"]${channel}`));
+  }
+  assert.match(preload, /ipcRenderer\.on\(['"]fraia:updateStatus/);
+  assert.doesNotMatch(preload, /autoUpdater|feedUrl|TUF|root\.json/);
 });
 
 test('Linux packages retain Fraia canonical architecture tokens across formats', () => {

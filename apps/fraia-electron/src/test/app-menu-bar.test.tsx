@@ -59,4 +59,52 @@ describe('AppMenuBar application identity', () => {
 
     expect(await screen.findByRole('dialog', { name: 'Fraia AI' })).toBeVisible();
   });
+
+  it('runs a manual update check in the Fraia menu and always shows the result', async () => {
+    let statusListener: ((status: any) => void) | undefined;
+    const checkForUpdates = vi.fn().mockImplementation(async () => {
+      const status = {
+        channel: 'stable',
+        currentVersion: '0.0.5',
+        enabled: true,
+        frequency: 'daily',
+        lastSuccessfulCheckAt: Date.now(),
+        phase: 'up-to-date',
+      };
+      statusListener?.(status);
+      return status;
+    });
+    Object.defineProperty(window, 'fraia', {
+      configurable: true,
+      value: {
+        applicationMetadata: vi.fn().mockResolvedValue({
+          channel: 'stable',
+          productName: 'Fraia',
+        }),
+        checkForUpdates,
+        onOpenUpdateDialog: vi.fn(() => () => {}),
+        onUpdateStatus: vi.fn((listener) => {
+          statusListener = listener;
+          return () => {};
+        }),
+        updateStatus: vi.fn().mockResolvedValue({
+          channel: 'stable',
+          currentVersion: '0.0.5',
+          enabled: true,
+          frequency: 'daily',
+          phase: 'idle',
+        }),
+      },
+    });
+
+    const user = userEvent.setup();
+    render(<AppMenuBar />);
+
+    await user.click(await screen.findByRole('menuitem', { name: 'Fraia' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Check for Updates…' }));
+
+    expect(checkForUpdates).toHaveBeenCalledOnce();
+    expect(await screen.findByRole('dialog', { name: 'Fraia Updates' })).toBeVisible();
+    expect(await screen.findByText('Fraia is up to date')).toBeVisible();
+  });
 });
