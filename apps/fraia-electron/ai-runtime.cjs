@@ -570,7 +570,10 @@ class FraiaAiRuntime {
     if (this.refreshTimer) clearInterval(this.refreshTimer);
     for (const requestId of [...this.activeTurns.keys()]) await this.cancelTurn(requestId);
     for (const flowId of [...this.authFlows.keys()]) this.cancelAuth(flowId);
-    if (this.server) await new Promise((resolve) => this.server.close(resolve));
+    if (this.server) {
+      this.server.closeAllConnections?.();
+      await new Promise((resolve) => this.server.close(resolve));
+    }
     this.server = null;
   }
 }

@@ -40,6 +40,8 @@ let mainWindow = null;
 let aiRuntime = null;
 let aiRuntimeReadyPromise = null;
 let updateController = null;
+let quitCleanupComplete = false;
+let quitCleanupPromise = null;
 const FRAIA_AI_PROVIDER_ID = 'openai-codex';
 
 function isPipeClosedError(error) {
@@ -646,6 +648,7 @@ function stopSidecar() {
   if (processRef && !processRef.killed) {
     processRef.kill();
   }
+  return processRef;
 }
 
 function waitForChildExit(processRef, timeoutMs = 5_000) {
@@ -659,22 +662,38 @@ function waitForChildExit(processRef, timeoutMs = 5_000) {
     };
     const timer = setTimeout(() => {
       processRef.off('exit', onExit);
-      reject(new Error(`Fraia sidecar process ${processRef.pid} did not stop before update installation.`));
+      reject(new Error(`Fraia sidecar process ${processRef.pid} did not stop within ${timeoutMs} ms.`));
     }, timeoutMs);
     processRef.once('exit', onExit);
   });
 }
 
-async function prepareForUpdateInstall() {
-  const processRef = sidecarProcess;
+async function stopSidecarAndWait() {
+  const processRef = stopSidecar();
+  try {
+    await waitForChildExit(processRef);
+  } catch (error) {
+    safeError(`[sidecar] ${error} Forcing termination.`);
+    if (processRef && processRef.exitCode === null && processRef.signalCode === null) {
+      processRef.kill('SIGKILL');
+      await waitForChildExit(processRef);
+    }
+  }
+}
+
+async function stopRuntimeServices() {
   const runtime = aiRuntime;
-  stopSidecar();
   aiRuntime = null;
   aiRuntimeReadyPromise = null;
   await Promise.all([
-    waitForChildExit(processRef),
+    stopSidecarAndWait(),
     runtime?.stop?.(),
   ]);
+}
+
+async function prepareForUpdateInstall() {
+  await stopRuntimeServices();
+  quitCleanupComplete = true;
 }
 
 function reloadWindow(window, ignoreCache = false) {
@@ -1045,14 +1064,22 @@ app.on('browser-window-focus', () => {
 });
 
 app.on('window-all-closed', () => {
-  stopSidecar();
   if (process.platform !== 'darwin') {
     app.quit();
+  } else {
+    void stopSidecarAndWait();
   }
 });
 
-app.on('before-quit', () => {
-  stopSidecar();
+app.on('before-quit', (event) => {
   updateController?.stop?.();
-  if (aiRuntime) void aiRuntime.stop();
+  if (quitCleanupComplete) return;
+  event.preventDefault();
+  if (quitCleanupPromise) return;
+  quitCleanupPromise = stopRuntimeServices()
+    .catch((error) => safeError(`[shutdown] Runtime cleanup failed: ${error}`))
+    .finally(() => {
+      quitCleanupComplete = true;
+      app.quit();
+    });
 });

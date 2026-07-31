@@ -80,6 +80,27 @@ test('non-persistent store exposes no credentials and refuses writes', async () 
   await assert.rejects(() => store.modify('provider', async () => ({ type: 'api_key', key: 'secret' })), /persistent authentication is disabled/);
 });
 
+test('runtime closes active HTTP connections before waiting for server shutdown', async () => {
+  const runtime = new FraiaAiRuntime({ safeStorage: fakeSafeStorage(), userDataDir: '/tmp/fraia-unused' });
+  let activeConnectionsClosed = false;
+  let serverClosed = false;
+  runtime.server = {
+    closeAllConnections() {
+      activeConnectionsClosed = true;
+    },
+    close(callback) {
+      assert.equal(activeConnectionsClosed, true);
+      serverClosed = true;
+      callback();
+    },
+  };
+
+  await runtime.stop();
+
+  assert.equal(serverClosed, true);
+  assert.equal(runtime.server, null);
+});
+
 test('fake AI test cipher persists only fake tokens without relying on OS encryption', async () => {
   const first = fakeAiTestSafeStorage();
   const second = fakeAiTestSafeStorage();
