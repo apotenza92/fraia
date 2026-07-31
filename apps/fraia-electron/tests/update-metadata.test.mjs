@@ -72,7 +72,7 @@ test('post-stapling beta metadata requires beta artifact names', async () => {
   }
 });
 
-test('stable and beta packages write only their matching channel metadata', async () => {
+test('stable, beta, and stable-promoted beta packages write only their matching channel metadata', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fraia-update-metadata-'));
   try {
     const artifacts = path.join(root, 'artifacts');
@@ -90,6 +90,13 @@ test('stable and beta packages write only their matching channel metadata', asyn
         tag: 'v0.0.2-beta.1',
         version: '0.0.2-beta.1',
         artifactName: 'Fraia-Beta-macOS-arm64.zip',
+      },
+      {
+        channel: 'beta',
+        tag: 'v0.0.2',
+        version: '0.0.2',
+        artifactName: 'Fraia-Beta-macOS-x64.zip',
+        arch: 'x64',
       },
     ]) {
       const artifact = Buffer.from(`${fixture.channel} Fraia fixture`);
@@ -115,7 +122,7 @@ test('stable and beta packages write only their matching channel metadata', asyn
         auditOutput: path.join(root, `update-${fixture.channel}-darwin-arm64.yml`),
         channel: fixture.channel,
         platform: 'darwin',
-        arch: 'arm64',
+        arch: fixture.arch || 'arm64',
         tag: fixture.tag,
         repository: 'apotenza92/fraia',
       });
@@ -131,6 +138,11 @@ test('stable and beta packages write only their matching channel metadata', asyn
     assert.match(
       beta,
       /https:\/\/github\.com\/apotenza92\/fraia\/releases\/download\/v0\.0\.2-beta\.1\/Fraia-Beta-macOS-arm64\.zip/,
+    );
+    const promotedBeta = (await fs.readFile(path.join(output, 'beta', 'darwin', 'x64', 'latest-mac.yml'))).toString();
+    assert.match(
+      promotedBeta,
+      /https:\/\/github\.com\/apotenza92\/fraia\/releases\/download\/v0\.0\.2\/Fraia-Beta-macOS-x64\.zip/,
     );
   } finally {
     await fs.rm(root, { recursive: true, force: true });

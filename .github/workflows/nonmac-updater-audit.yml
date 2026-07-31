@@ -123,19 +123,19 @@ jobs:
           set -euo pipefail
           CANDIDATE_VERSION=$(node -p 'require("./package.json").version')
           PREVIOUS_VERSION='${{ inputs.previous_version }}'
-          if [ "$FRAIA_RELEASE_CHANNEL" = stable ]; then
-            VERSION_PATTERN='^[0-9]+\.[0-9]+\.[0-9]+$'
-          else
-            VERSION_PATTERN='^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$'
-          fi
-          if ! [[ "$PREVIOUS_VERSION" =~ $VERSION_PATTERN ]] || ! [[ "$CANDIDATE_VERSION" =~ $VERSION_PATTERN ]]; then
-            echo "previous and candidate versions must match the exact $FRAIA_RELEASE_CHANNEL semantic-version contract." >&2
-            exit 1
-          fi
-          if [ "$PREVIOUS_VERSION" = "$CANDIDATE_VERSION" ]; then
-            echo 'The native updater audit requires distinct previous and candidate versions.' >&2
-            exit 1
-          fi
+          node - "$FRAIA_RELEASE_CHANNEL" "$PREVIOUS_VERSION" "$CANDIDATE_VERSION" <<'NODE'
+          const { compareVersions, parseVersion } = require('./release-version-policy.cjs');
+          const [, , channel, previousVersion, candidateVersion] = process.argv;
+          const previous = parseVersion(previousVersion);
+          const candidate = parseVersion(candidateVersion);
+          if (channel === 'stable' && (previous.prerelease !== null || candidate.prerelease !== null)) {
+            throw new Error('Stable native updater audits require final previous and candidate versions.');
+          }
+          if (channel !== 'stable' && channel !== 'beta') throw new Error(`Unsupported release channel: ${channel}`);
+          if (compareVersions(candidateVersion, previousVersion) <= 0) {
+            throw new Error(`Candidate ${candidateVersion} must be newer than previous ${previousVersion}.`);
+          }
+          NODE
           if ! grep -Fq "## [$PREVIOUS_VERSION]" ../../CHANGELOG.md; then
             node -e 'require("node:fs").appendFileSync("../../CHANGELOG.md", "\n## [" + process.argv[1] + "] - 2026-07-29\n\n### Test fixture\n\n- Synthetic prior package used only for the native updater migration audit.\n")' "$PREVIOUS_VERSION"
           fi

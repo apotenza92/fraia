@@ -5,6 +5,26 @@ All notable user-facing changes to Fraia are documented here. Fraia follows
 workflow uses the matching version section below as the authoritative GitHub
 release notes and macOS updater notes.
 
+## [0.0.5] - 2026-07-31
+
+### Changed
+
+- Beta is now a stable-inclusive channel: beta installations receive the
+  highest Semantic Version across beta and final releases without changing
+  into the stable application.
+- A final release that advances Beta now builds and verifies separate `Fraia`
+  and `Fraia Beta` packages from the same reviewed source commit. Each retains
+  its own application identity, icons, user-data directory, and update feed.
+- Release policy rejects downgrades and requires both stable and beta approval
+  before a final version can advance both feeds.
+
+### Updating
+
+- Stable `0.0.5` installations update only through the stable feed.
+- `Fraia Beta` installations receive a separately packaged Beta-identity
+  `0.0.5` update because it is newer than `0.0.4-beta.1`. Existing Beta
+  settings, projects, and user data remain under the isolated Beta identity.
+
 ## [0.0.4] - 2026-07-30
 
 ### Changed

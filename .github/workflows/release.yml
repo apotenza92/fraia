@@ -18,8 +18,13 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       channel: ${{ steps.release.outputs.channel }}
+      channels: ${{ steps.release.outputs.channels }}
+      channels_csv: ${{ steps.release.outputs.channels_csv }}
       environment: ${{ steps.release.outputs.environment }}
+      previous_beta_version: ${{ steps.release.outputs.previous_beta_version }}
+      previous_stable_version: ${{ steps.release.outputs.previous_stable_version }}
       prerelease: ${{ steps.release.outputs.prerelease }}
+      promotes_beta: ${{ steps.release.outputs.promotes_beta }}
       version: ${{ steps.release.outputs.version }}
     steps:
       - name: Checkout
@@ -27,6 +32,13 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Checkout current updater feeds
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: published-feed
+          ref: updates
 
       - name: Prove tag commit belongs to the approved release source
         env:
@@ -64,6 +76,11 @@ jobs:
         run: |
           node <<'NODE'
           const fs = require('node:fs');
+          const path = require('node:path');
+          const {
+            readPublishedChannelVersion,
+            releasePolicy,
+          } = require('./apps/fraia-electron/release-version-policy.cjs');
           const packageJson = require('./apps/fraia-electron/package.json');
           const cargo = fs.readFileSync('Cargo.toml', 'utf8');
           const cargoVersion = cargo.match(/\[workspace\.package\][\s\S]*?\nversion\s*=\s*"([^"]+)"/)?.[1];
@@ -78,10 +95,26 @@ jobs:
             throw new Error(`Tag ${tag} must match Electron ${packageJson.version} and Cargo ${cargoVersion}.`);
           }
           const channel = beta ? 'beta' : 'stable';
+          const currentStableVersion = readPublishedChannelVersion(path.resolve('published-feed'), 'stable');
+          const currentBetaVersion = readPublishedChannelVersion(path.resolve('published-feed'), 'beta');
+          if (!currentStableVersion || !currentBetaVersion) {
+            throw new Error('Stable-inclusive releases require complete existing stable and beta feeds.');
+          }
+          const policy = releasePolicy({
+            tagChannel: channel,
+            candidateVersion: version,
+            currentStableVersion,
+            currentBetaVersion,
+          });
           const output = {
             channel,
+            channels: JSON.stringify(policy.channels),
+            channels_csv: policy.channels.join(','),
             environment: `${channel}-release`,
+            previous_beta_version: policy.previousBetaVersion,
+            previous_stable_version: policy.previousStableVersion,
             prerelease: String(beta),
+            promotes_beta: String(policy.promotesBeta),
             version,
           };
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `${Object.entries(output).map(([key, value]) => `${key}=${value}`).join('\n')}\n`);
@@ -157,7 +190,7 @@ jobs:
         run: npm run typecheck && npm run build && xvfb-run -a npm test
 
   package-macos:
-    name: macOS ${{ matrix.arch }}
+    name: macOS ${{ matrix.channel }} ${{ matrix.arch }}
     needs: [prepare, validate]
     runs-on: ${{ matrix.arch == 'arm64' && 'macos-26' || 'macos-26-intel' }}
     environment: release-signing
@@ -169,6 +202,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        channel: ${{ fromJSON(needs.prepare.outputs.channels) }}
         arch: [arm64, x64]
     steps:
       - name: Checkout
@@ -218,10 +252,10 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
           FRAIA_RELEASE_ARCH: ${{ matrix.arch }}
-          FRAIA_RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
+          FRAIA_RELEASE_CHANNEL: ${{ matrix.channel }}
           FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
           FRAIA_REQUIRE_RELEASE_ICON: '1'
-          FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}/apps/fraia-electron/release/${{ needs.prepare.outputs.channel }}/darwin/${{ matrix.arch }}
+          FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}/apps/fraia-electron/release/${{ matrix.channel }}/darwin/${{ matrix.arch }}
           FRAIA_RELEASE_PLATFORM: darwin
         run: npm run package:release:mac -- --channel "$FRAIA_RELEASE_CHANNEL" --arch "$FRAIA_RELEASE_ARCH" --output-dir "$FRAIA_RELEASE_OUTPUT_DIR"
 
@@ -234,18 +268,18 @@ jobs:
           FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
         run: >-
           npm run verify:release:mac --
-          --channel "${{ needs.prepare.outputs.channel }}"
+          --channel "${{ matrix.channel }}"
           --arch "${{ matrix.arch }}"
-          --output-dir "release/${{ needs.prepare.outputs.channel }}/darwin/${{ matrix.arch }}"
+          --output-dir "release/${{ matrix.channel }}/darwin/${{ matrix.arch }}"
 
       - name: Assemble versioned macOS update metadata
         working-directory: apps/fraia-electron
         shell: bash
         run: |
           set -euo pipefail
-          OUTPUT="release/${{ needs.prepare.outputs.channel }}/darwin/${{ matrix.arch }}"
+          OUTPUT="release/${{ matrix.channel }}/darwin/${{ matrix.arch }}"
           mkdir -p ci-output/assets ci-output/feed
-          CHANNEL="${{ needs.prepare.outputs.channel }}"
+          CHANNEL="${{ matrix.channel }}"
           node scripts/assemble-update-metadata.mjs \
             --input "$OUTPUT/latest-mac.yml" \
             --artifact-dir "$OUTPUT" \
@@ -260,23 +294,24 @@ jobs:
           STEM="$PREFIX-macOS-${{ matrix.arch }}"
           cp "$OUTPUT/$STEM.dmg" "$OUTPUT/$STEM.dmg.blockmap" "$OUTPUT/$STEM.dmg.sha256" ci-output/assets/
           cp "$OUTPUT/$STEM.zip" "$OUTPUT/$STEM.zip.blockmap" "$OUTPUT/$STEM.zip.sha256" ci-output/assets/
-          cp "$OUTPUT/notarization-${{ needs.prepare.outputs.channel }}-${{ matrix.arch }}.json" ci-output/assets/
+          cp "$OUTPUT/notarization-${{ matrix.channel }}-${{ matrix.arch }}.json" ci-output/assets/
 
       - name: Upload macOS candidate
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: fraia-darwin-${{ matrix.arch }}
+          name: fraia-${{ matrix.channel }}-darwin-${{ matrix.arch }}
           path: apps/fraia-electron/ci-output
           if-no-files-found: error
           retention-days: 14
 
   package-windows:
-    name: Windows ${{ matrix.arch }}
+    name: Windows ${{ matrix.channel }} ${{ matrix.arch }}
     needs: [prepare, validate]
     runs-on: ${{ matrix.arch == 'arm64' && 'windows-11-arm' || 'windows-2025' }}
     strategy:
       fail-fast: false
       matrix:
+        channel: ${{ fromJSON(needs.prepare.outputs.channels) }}
         arch: [arm64, x64]
     steps:
       - name: Checkout
@@ -304,11 +339,11 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           FRAIA_RELEASE_ARCH: ${{ matrix.arch }}
-          FRAIA_RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
+          FRAIA_RELEASE_CHANNEL: ${{ matrix.channel }}
           FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
           FRAIA_REQUIRE_RELEASE_ICON: '1'
           FRAIA_REQUIRE_TUF_ROOT: '1'
-          FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}\apps\fraia-electron\release\${{ needs.prepare.outputs.channel }}\win32\${{ matrix.arch }}
+          FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}\apps\fraia-electron\release\${{ matrix.channel }}\win32\${{ matrix.arch }}
           FRAIA_RELEASE_PLATFORM: win32
         run: npx --no-install electron-builder --config electron-builder.config.cjs --win nsis --${{ matrix.arch }} --publish never
 
@@ -316,9 +351,9 @@ jobs:
         working-directory: apps/fraia-electron
         run: >-
           node scripts/verify-native-package.cjs
-          --channel "${{ needs.prepare.outputs.channel }}"
+          --channel "${{ matrix.channel }}"
           --arch "${{ matrix.arch }}"
-          --output-dir "release/${{ needs.prepare.outputs.channel }}/win32/${{ matrix.arch }}"
+          --output-dir "release/${{ matrix.channel }}/win32/${{ matrix.arch }}"
 
       - name: Assemble authenticated Windows update target
         working-directory: apps/fraia-electron
@@ -326,8 +361,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ci-output/assets
-          OUTPUT="release/${{ needs.prepare.outputs.channel }}/win32/${{ matrix.arch }}"
-          CHANNEL="${{ needs.prepare.outputs.channel }}"
+          OUTPUT="release/${{ matrix.channel }}/win32/${{ matrix.arch }}"
+          CHANNEL="${{ matrix.channel }}"
           node scripts/assemble-update-metadata.mjs \
             --input "$OUTPUT/latest.yml" \
             --artifact-dir "$OUTPUT" \
@@ -345,18 +380,19 @@ jobs:
       - name: Upload Windows candidate
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: fraia-win32-${{ matrix.arch }}
+          name: fraia-${{ matrix.channel }}-win32-${{ matrix.arch }}
           path: apps/fraia-electron/ci-output
           if-no-files-found: error
           retention-days: 14
 
   package-linux:
-    name: Linux ${{ matrix.arch }}
+    name: Linux ${{ matrix.channel }} ${{ matrix.arch }}
     needs: [prepare, validate]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
       matrix:
+        channel: ${{ fromJSON(needs.prepare.outputs.channels) }}
         arch: [arm64, x64]
     steps:
       - name: Checkout
@@ -386,11 +422,11 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           FRAIA_RELEASE_ARCH: ${{ matrix.arch }}
-          FRAIA_RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
+          FRAIA_RELEASE_CHANNEL: ${{ matrix.channel }}
           FRAIA_REQUIRE_PACKAGED_CALCULIX: '1'
           FRAIA_REQUIRE_RELEASE_ICON: '1'
           FRAIA_REQUIRE_TUF_ROOT: '1'
-          FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}/apps/fraia-electron/release/${{ needs.prepare.outputs.channel }}/linux/${{ matrix.arch }}
+          FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}/apps/fraia-electron/release/${{ matrix.channel }}/linux/${{ matrix.arch }}
           FRAIA_RELEASE_PLATFORM: linux
         run: npx --no-install electron-builder --config electron-builder.config.cjs --linux AppImage deb rpm --${{ matrix.arch }} --publish never
 
@@ -398,9 +434,9 @@ jobs:
         working-directory: apps/fraia-electron
         run: >-
           xvfb-run -a node scripts/verify-native-package.cjs
-          --channel "${{ needs.prepare.outputs.channel }}"
+          --channel "${{ matrix.channel }}"
           --arch "${{ matrix.arch }}"
-          --output-dir "release/${{ needs.prepare.outputs.channel }}/linux/${{ matrix.arch }}"
+          --output-dir "release/${{ matrix.channel }}/linux/${{ matrix.arch }}"
 
       - name: Assemble authenticated AppImage update target
         working-directory: apps/fraia-electron
@@ -408,9 +444,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ci-output/assets
-          OUTPUT="release/${{ needs.prepare.outputs.channel }}/linux/${{ matrix.arch }}"
+          OUTPUT="release/${{ matrix.channel }}/linux/${{ matrix.arch }}"
           METADATA_NAME=$(node -p "require('./release-contract.cjs').metadataFileName('linux', '${{ matrix.arch }}')")
-          CHANNEL="${{ needs.prepare.outputs.channel }}"
+          CHANNEL="${{ matrix.channel }}"
           node scripts/assemble-update-metadata.mjs \
             --input "$OUTPUT/$METADATA_NAME" \
             --artifact-dir "$OUTPUT" \
@@ -428,23 +464,24 @@ jobs:
       - name: Upload Linux candidate
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: fraia-linux-${{ matrix.arch }}
+          name: fraia-${{ matrix.channel }}-linux-${{ matrix.arch }}
           path: apps/fraia-electron/ci-output
           if-no-files-found: error
           retention-days: 14
 
   test-macos-updater:
-    name: macOS updater ${{ matrix.scenario }} ${{ matrix.arch }}
+    name: macOS updater ${{ matrix.channel }} ${{ matrix.scenario }} ${{ matrix.arch }}
     needs: [prepare, package-macos]
     runs-on: ${{ matrix.arch == 'arm64' && 'macos-15' || 'macos-15-intel' }}
     environment:
-      name: ${{ needs.prepare.outputs.channel }}-updater-verification
+      name: ${{ matrix.channel }}-updater-verification
     permissions:
       attestations: read
       contents: read
     strategy:
       fail-fast: false
       matrix:
+        channel: ${{ fromJSON(needs.prepare.outputs.channels) }}
         arch: [arm64, x64]
         scenario: [valid, corrupt, signature]
     steps:
@@ -467,16 +504,16 @@ jobs:
       - name: Download signed candidate
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: fraia-darwin-${{ matrix.arch }}
+          name: fraia-${{ matrix.channel }}-darwin-${{ matrix.arch }}
           path: candidate
 
       - name: Resolve previous public channel package
         id: previous
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
+          EXPECTED_PREVIOUS_VERSION: ${{ matrix.channel == 'stable' && needs.prepare.outputs.previous_stable_version || needs.prepare.outputs.previous_beta_version }}
+          RELEASE_CHANNEL: ${{ matrix.channel }}
           RELEASE_ARCH: ${{ matrix.arch }}
-          MACOS_UPDATER_BOOTSTRAP_TAG: ${{ vars.MACOS_UPDATER_BOOTSTRAP_TAG }}
         shell: bash
         run: |
           set -euo pipefail
@@ -484,25 +521,20 @@ jobs:
           node <<'NODE'
           const fs = require('node:fs');
           const releases = JSON.parse(fs.readFileSync('releases.json', 'utf8')).flat();
-          const prerelease = process.env.RELEASE_CHANNEL === 'beta';
-          const prefix = prerelease ? 'Fraia-Beta' : 'Fraia';
+          const prefix = process.env.RELEASE_CHANNEL === 'beta' ? 'Fraia-Beta' : 'Fraia';
           const asset = `${prefix}-macOS-${process.env.RELEASE_ARCH}.zip`;
-          const previous = releases
-            .filter((release) => !release.draft && release.tag_name !== process.env.GITHUB_REF_NAME)
-            .filter((release) => release.prerelease === prerelease)
-            .filter((release) => release.assets.some((candidate) => candidate.name === asset))
-            .sort((left, right) => String(right.published_at).localeCompare(String(left.published_at)))[0];
-          if (previous) {
-            fs.appendFileSync(process.env.GITHUB_OUTPUT, `tag=${previous.tag_name}\nasset=${asset}\nbootstrap=false\n`);
-          } else {
-            if (process.env.MACOS_UPDATER_BOOTSTRAP_TAG !== process.env.GITHUB_REF_NAME) {
-              throw new Error(`No prior ${process.env.RELEASE_CHANNEL} package exists. Set MACOS_UPDATER_BOOTSTRAP_TAG to this exact first tag only.`);
-            }
-            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'bootstrap=true\n');
+          const expectedTag = `v${process.env.EXPECTED_PREVIOUS_VERSION}`;
+          const previous = releases.find((release) => (
+            !release.draft
+            && release.tag_name === expectedTag
+            && release.assets.some((candidate) => candidate.name === asset)
+          ));
+          if (!previous) {
+            throw new Error(`Published ${process.env.RELEASE_CHANNEL} feed ${process.env.EXPECTED_PREVIOUS_VERSION} has no matching ${asset} release asset.`);
           }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `tag=${previous.tag_name}\nasset=${asset}\n`);
           NODE
       - name: Download and test N-1 update
-        if: steps.previous.outputs.bootstrap != 'true'
         env:
           APPLE_PRIOR_SIGNING_CERTIFICATE_SHA256: ${{ vars.APPLE_PRIOR_SIGNING_CERTIFICATE_SHA256 }}
           APPLE_SIGNING_CERTIFICATE_SHA256: ${{ vars.APPLE_SIGNING_CERTIFICATE_SHA256 }}
@@ -520,21 +552,31 @@ jobs:
             --dir previous
           node apps/fraia-electron/scripts/test-macos-update.cjs \
             --scenario "${{ matrix.scenario }}" \
-            --channel "${{ needs.prepare.outputs.channel }}" \
+            --channel "${{ matrix.channel }}" \
             --arch "${{ matrix.arch }}" \
             --previous-zip "previous/${{ steps.previous.outputs.asset }}" \
             --previous-checksums previous/SHA256SUMS \
             --candidate-directory candidate/assets \
-            --candidate-metadata "candidate/assets/update-${{ needs.prepare.outputs.channel }}-darwin-${{ matrix.arch }}.yml" \
+            --candidate-metadata "candidate/assets/update-${{ matrix.channel }}-darwin-${{ matrix.arch }}.yml" \
             --repository "${{ github.repository }}"
 
-      - name: Record exact bootstrap evidence
-        if: steps.previous.outputs.bootstrap == 'true'
-        run: test "${{ vars.MACOS_UPDATER_BOOTSTRAP_TAG }}" = "${{ github.ref_name }}"
+  test-nonmac-updater:
+    name: Native updater ${{ matrix.channel }} ${{ matrix.target }}
+    needs: [prepare, validate]
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: ${{ fromJSON(needs.prepare.outputs.channels) }}
+        target: [win32-arm64, win32-x64, linux-arm64, linux-x64]
+    uses: ./.github/workflows/nonmac-updater-audit.yml
+    with:
+      channel: ${{ matrix.channel }}
+      target: ${{ matrix.target }}
+      previous_version: ${{ matrix.channel == 'stable' && needs.prepare.outputs.previous_stable_version || needs.prepare.outputs.previous_beta_version }}
 
   assemble:
     name: Assemble exact release bundle
-    needs: [prepare, package-macos, package-windows, package-linux, test-macos-updater]
+    needs: [prepare, package-macos, package-windows, package-linux, test-macos-updater, test-nonmac-updater]
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -577,12 +619,15 @@ jobs:
           ARGS=()
           for input in "${INPUTS[@]}"; do ARGS+=(--input "$input"); done
           node apps/fraia-electron/scripts/release-assets.cjs \
-            --channel "${{ needs.prepare.outputs.channel }}" \
+            --channels "${{ needs.prepare.outputs.channels_csv }}" \
             --output publish/assets \
             "${ARGS[@]}" > expected-assets.txt
           mkdir -p publish/feed
           while IFS= read -r feed_root; do cp -R "$feed_root/." publish/feed/; done < <(find candidates -type d -name feed | LC_ALL=C sort)
-          test "$(find "publish/feed/${{ needs.prepare.outputs.channel }}" -type f | wc -l | tr -d ' ')" = 6
+          IFS=, read -r -a CHANNELS <<< "${{ needs.prepare.outputs.channels_csv }}"
+          for CHANNEL in "${CHANNELS[@]}"; do
+            test "$(find "publish/feed/$CHANNEL" -type f | wc -l | tr -d ' ')" = 6
+          done
 
       - name: Upload verified release bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -663,24 +708,26 @@ jobs:
           export FRAIA_TUF_METADATA_NOW
           FRAIA_TUF_METADATA_NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           ROOT="$GITHUB_WORKSPACE/source/apps/fraia-electron/build/update-trust/root.json"
-          CHANNEL="${{ needs.prepare.outputs.channel }}"
-          for PLATFORM in win32 linux; do
-            for ARCH in arm64 x64; do
-              FEED="$GITHUB_WORKSPACE/publish/feed/$CHANNEL/$PLATFORM/$ARCH"
-              TARGET_NAME=$(node -p \
-                "require('$GITHUB_WORKSPACE/source/apps/fraia-electron/release-contract.cjs').metadataFileName('$PLATFORM', '$ARCH')")
-              PREVIOUS="$GITHUB_WORKSPACE/previous-feed/$CHANNEL/$PLATFORM/$ARCH/tuf/metadata"
-              PREVIOUS_ARGS=()
-              if [ -d "$PREVIOUS" ]; then
-                PREVIOUS_ARGS=(--previous-metadata "$PREVIOUS")
-              fi
-              node "$GITHUB_WORKSPACE/source/apps/fraia-electron/scripts/sign-tuf-update-repository.cjs" \
-                --root "$ROOT" \
-                --target "$FEED/$TARGET_NAME" \
-                --target-name "$TARGET_NAME" \
-                --output "$FEED/tuf" \
-                "${PREVIOUS_ARGS[@]}"
-              (cd "$FEED/tuf" && sha256sum --check --strict SHA256SUMS)
+          IFS=, read -r -a CHANNELS <<< "${{ needs.prepare.outputs.channels_csv }}"
+          for CHANNEL in "${CHANNELS[@]}"; do
+            for PLATFORM in win32 linux; do
+              for ARCH in arm64 x64; do
+                FEED="$GITHUB_WORKSPACE/publish/feed/$CHANNEL/$PLATFORM/$ARCH"
+                TARGET_NAME=$(node -p \
+                  "require('$GITHUB_WORKSPACE/source/apps/fraia-electron/release-contract.cjs').metadataFileName('$PLATFORM', '$ARCH')")
+                PREVIOUS="$GITHUB_WORKSPACE/previous-feed/$CHANNEL/$PLATFORM/$ARCH/tuf/metadata"
+                PREVIOUS_ARGS=()
+                if [ -d "$PREVIOUS" ]; then
+                  PREVIOUS_ARGS=(--previous-metadata "$PREVIOUS")
+                fi
+                node "$GITHUB_WORKSPACE/source/apps/fraia-electron/scripts/sign-tuf-update-repository.cjs" \
+                  --root "$ROOT" \
+                  --target "$FEED/$TARGET_NAME" \
+                  --target-name "$TARGET_NAME" \
+                  --output "$FEED/tuf" \
+                  "${PREVIOUS_ARGS[@]}"
+                (cd "$FEED/tuf" && sha256sum --check --strict SHA256SUMS)
+              done
             done
           done
 
@@ -692,9 +739,30 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  publish:
-    name: Publish ${{ needs.prepare.outputs.channel }} release
+  approve-beta-projection:
+    name: Approve stable release projection to Beta
+    if: ${{ needs.prepare.outputs.promotes_beta == 'true' }}
     needs: [prepare, seal-tuf, attest]
+    runs-on: ubuntu-24.04
+    environment:
+      name: beta-release
+    steps:
+      - name: Confirm stable-inclusive beta scope
+        run: |
+          test "${{ needs.prepare.outputs.channel }}" = stable
+          test "${{ needs.prepare.outputs.channels_csv }}" = stable,beta
+
+  publish:
+    name: Publish ${{ needs.prepare.outputs.channel }} release and eligible feeds
+    if: >-
+      ${{
+        always()
+        && needs.prepare.result == 'success'
+        && needs.seal-tuf.result == 'success'
+        && needs.attest.result == 'success'
+        && (needs.approve-beta-projection.result == 'success' || needs.approve-beta-projection.result == 'skipped')
+      }}
+    needs: [prepare, seal-tuf, attest, approve-beta-projection]
     runs-on: ubuntu-24.04
     environment:
       name: ${{ needs.prepare.outputs.environment }}
@@ -723,7 +791,7 @@ jobs:
           TAG="${{ github.ref_name }}"
           REPOSITORY="${{ github.repository }}"
           node source/apps/fraia-electron/scripts/release-assets.cjs \
-            --channel "${{ needs.prepare.outputs.channel }}" \
+            --channels "${{ needs.prepare.outputs.channels_csv }}" \
             --output /tmp/reassembled-assets \
             --input publish/assets > expected-assets.txt
           rm -rf /tmp/reassembled-assets
@@ -824,20 +892,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          CHANNEL="${{ needs.prepare.outputs.channel }}"
-          DESTINATION="updates branch / $CHANNEL"
+          PRIMARY_CHANNEL="${{ needs.prepare.outputs.channel }}"
+          IFS=, read -r -a CHANNELS <<< "${{ needs.prepare.outputs.channels_csv }}"
           rm -rf feed-publication
-          mkdir -p "feed-publication/feed/$CHANNEL"
-          cp -R "publish/feed/$CHANNEL/." "feed-publication/feed/$CHANNEL/"
           touch feed-publication/.nojekyll
-          cat > "feed-publication/PUBLICATION-$CHANNEL.txt" <<EOF
-          Fraia updater-feed publication bundle
-          Channel: $CHANNEL
-          Tag: ${{ github.ref_name }}
-          Commit: ${{ github.sha }}
-          Destination: $DESTINATION
-          Publication: tag workflow, after explicit $CHANNEL-release approval
-          EOF
+          for CHANNEL in "${CHANNELS[@]}"; do
+            mkdir -p "feed-publication/feed/$CHANNEL"
+            cp -R "publish/feed/$CHANNEL/." "feed-publication/feed/$CHANNEL/"
+            APPROVAL="$PRIMARY_CHANNEL-release"
+            if [ "$PRIMARY_CHANNEL" = stable ] && [ "$CHANNEL" = beta ]; then
+              APPROVAL='stable-release and beta-release'
+            fi
+            {
+              printf 'Fraia updater-feed publication bundle\n'
+              printf 'Channel: %s\n' "$CHANNEL"
+              printf 'Tag: %s\n' "${{ github.ref_name }}"
+              printf 'Commit: %s\n' "${{ github.sha }}"
+              printf 'Destination: updates branch / %s\n' "$CHANNEL"
+              printf 'Publication: tag workflow, after explicit %s approval\n' "$APPROVAL"
+            } > "feed-publication/PUBLICATION-$CHANNEL.txt"
+          done
           (
             cd feed-publication
             checksum_file="$(mktemp)"
@@ -866,23 +940,28 @@ jobs:
           path: update-site
           ref: updates
 
-      - name: Publish only the matching updater channel atomically
+      - name: Publish only the eligible updater channels atomically
         shell: bash
         run: |
           set -euo pipefail
-          CHANNEL="${{ needs.prepare.outputs.channel }}"
-          rm -rf "update-site/$CHANNEL"
-          mkdir -p "update-site/$CHANNEL"
-          cp -R "feed-publication/feed/$CHANNEL/." "update-site/$CHANNEL/"
-          cp feed-publication/.nojekyll "feed-publication/PUBLICATION-$CHANNEL.txt" update-site/
-          diff --recursive "feed-publication/feed/$CHANNEL" "update-site/$CHANNEL"
+          IFS=, read -r -a CHANNELS <<< "${{ needs.prepare.outputs.channels_csv }}"
+          PATHS=(.nojekyll)
+          cp feed-publication/.nojekyll update-site/
+          for CHANNEL in "${CHANNELS[@]}"; do
+            rm -rf "update-site/$CHANNEL"
+            mkdir -p "update-site/$CHANNEL"
+            cp -R "feed-publication/feed/$CHANNEL/." "update-site/$CHANNEL/"
+            cp "feed-publication/PUBLICATION-$CHANNEL.txt" update-site/
+            diff --recursive "feed-publication/feed/$CHANNEL" "update-site/$CHANNEL"
+            PATHS+=("PUBLICATION-$CHANNEL.txt" "$CHANNEL")
+          done
           (
             cd update-site
             git config user.name github-actions
             git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-            git add -- .nojekyll "PUBLICATION-$CHANNEL.txt" "$CHANNEL"
+            git add -- "${PATHS[@]}"
             if ! git diff --cached --quiet; then
-              git commit -m "Publish Fraia ${{ needs.prepare.outputs.version }} $CHANNEL feed"
+              git commit -m "Publish Fraia ${{ needs.prepare.outputs.version }} ${{ needs.prepare.outputs.channels_csv }} feeds"
               git push origin HEAD:updates
             fi
           )

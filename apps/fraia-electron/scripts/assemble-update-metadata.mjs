@@ -34,10 +34,11 @@ export async function assembleUpdateMetadata({ input, artifactDir, outputRoot, a
   requireChoice('channel', channel, CHANNELS);
   requireChoice('platform', platform, PLATFORMS);
   requireChoice('architecture', arch, ARCHITECTURES);
-  const tagPattern = channel === 'stable'
-    ? /^v\d+\.\d+\.\d+$/
-    : /^v\d+\.\d+\.\d+-beta\.\d+$/;
-  if (!tagPattern.test(tag)) throw new Error(`Invalid ${channel} release tag: ${tag}`);
+  const stableTag = /^v\d+\.\d+\.\d+$/.test(tag);
+  const betaTag = /^v\d+\.\d+\.\d+-beta\.\d+$/.test(tag);
+  if ((channel === 'stable' && !stableTag) || (channel === 'beta' && !stableTag && !betaTag)) {
+    throw new Error(`Invalid ${channel} release tag: ${tag}`);
+  }
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) throw new Error('Repository must use owner/name form.');
 
   const source = YAML.parse(await readFile(input, 'utf8'));

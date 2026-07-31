@@ -11,10 +11,18 @@ function requireChannel(channel) {
   }
 }
 
-function expectedReleaseAssetNames(channel) {
+function normalizeChannels(value) {
+  const candidates = Array.isArray(value) ? value : String(value).split(',');
+  const channels = [...new Set(candidates.map((channel) => channel.trim()).filter(Boolean))];
+  if (channels.length === 0) throw new Error('Fraia release must package at least one channel.');
+  channels.forEach(requireChannel);
+  return channels;
+}
+
+function expectedChannelAssetNames(channel) {
   requireChannel(channel);
   const prefix = channel === 'beta' ? 'Fraia-Beta' : 'Fraia';
-  const names = ['SHA256SUMS', CALCULIX_SOURCE_ASSET_NAME];
+  const names = [];
   for (const arch of ['arm64', 'x64']) {
     const mac = `${prefix}-macOS-${arch}`;
     names.push(
@@ -38,6 +46,15 @@ function expectedReleaseAssetNames(channel) {
     );
   }
   return names.sort();
+}
+
+function expectedReleaseAssetNames(channelsValue) {
+  const channels = normalizeChannels(channelsValue);
+  return [
+    'SHA256SUMS',
+    CALCULIX_SOURCE_ASSET_NAME,
+    ...channels.flatMap(expectedChannelAssetNames),
+  ].sort();
 }
 
 function actualFileNames(directory) {
@@ -64,8 +81,8 @@ function writeChecksums(directory) {
   fs.writeFileSync(path.join(directory, 'SHA256SUMS'), `${lines.join('\n')}\n`, { mode: 0o644 });
 }
 
-function assembleReleaseAssets(channel, inputDirectories, outputDirectory) {
-  requireChannel(channel);
+function assembleReleaseAssets(channelsValue, inputDirectories, outputDirectory) {
+  const channels = normalizeChannels(channelsValue);
   fs.rmSync(outputDirectory, { recursive: true, force: true });
   fs.mkdirSync(outputDirectory, { recursive: true });
   const seen = new Set();
@@ -77,22 +94,23 @@ function assembleReleaseAssets(channel, inputDirectories, outputDirectory) {
       fs.copyFileSync(path.join(directory, name), path.join(outputDirectory, name), fs.constants.COPYFILE_EXCL);
     }
   }
-  const expectedWithoutChecksums = expectedReleaseAssetNames(channel).filter((name) => name !== 'SHA256SUMS');
+  const expectedWithoutChecksums = expectedReleaseAssetNames(channels).filter((name) => name !== 'SHA256SUMS');
   compareExact(expectedWithoutChecksums, actualFileNames(outputDirectory), 'Release candidate assets');
   writeChecksums(outputDirectory);
-  compareExact(expectedReleaseAssetNames(channel), actualFileNames(outputDirectory), 'Public release assets');
-  return expectedReleaseAssetNames(channel);
+  compareExact(expectedReleaseAssetNames(channels), actualFileNames(outputDirectory), 'Public release assets');
+  return expectedReleaseAssetNames(channels);
 }
 
 function main(argv = process.argv.slice(2)) {
   const channelIndex = argv.indexOf('--channel');
+  const channelsIndex = argv.indexOf('--channels');
   const outputIndex = argv.indexOf('--output');
   const inputIndices = argv.flatMap((value, index) => value === '--input' ? [index] : []);
-  if (channelIndex < 0 || outputIndex < 0 || inputIndices.length === 0) {
-    throw new Error('Usage: release-assets.cjs --channel stable|beta --output DIR --input DIR [--input DIR]');
+  if ((channelIndex < 0 && channelsIndex < 0) || outputIndex < 0 || inputIndices.length === 0) {
+    throw new Error('Usage: release-assets.cjs --channels stable[,beta] --output DIR --input DIR [--input DIR]');
   }
   const names = assembleReleaseAssets(
-    argv[channelIndex + 1],
+    argv[(channelsIndex >= 0 ? channelsIndex : channelIndex) + 1],
     inputIndices.map((index) => path.resolve(argv[index + 1])),
     path.resolve(argv[outputIndex + 1]),
   );
@@ -101,4 +119,9 @@ function main(argv = process.argv.slice(2)) {
 
 if (require.main === module) main();
 
-module.exports = { assembleReleaseAssets, expectedReleaseAssetNames };
+module.exports = {
+  assembleReleaseAssets,
+  expectedChannelAssetNames,
+  expectedReleaseAssetNames,
+  normalizeChannels,
+};

@@ -135,6 +135,8 @@ test('native updater workflow performs real TUF-backed Windows and AppImage repl
   assert.match(workflow, /\$prefix-Windows-\$\{arch\}-Setup\.exe/);
   assert.match(workflow, /\$prefix-Linux-\$\{arch\}\.AppImage/);
   assert.match(workflow, /FRAIA_RELEASE_CHANNEL: \$\{\{ inputs\.channel \}\}/);
+  assert.match(workflow, /release-version-policy\.cjs/);
+  assert.match(workflow, /compareVersions\(candidateVersion, previousVersion\) <= 0/);
   assert.match(workflow, /latest-linux-arm64\.yml/);
   assert.match(workflow, /--linux AppImage --arm64/);
   assert.match(workflow, /Synthetic prior package used only for the native updater migration audit/);
