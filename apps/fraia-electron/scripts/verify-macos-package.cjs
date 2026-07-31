@@ -10,6 +10,7 @@ const { assertBinaryArchitecture } = require('../binary-architecture.cjs');
 const { assertMacosMinimumVersion } = require('../macos-version-contract.cjs');
 const { nativePlatformArch, packagedCalculixPath, sidecarExecutableName } = require('../package-boundary.cjs');
 const { releaseContract } = require('../release-contract.cjs');
+const { parseVersion } = require('../release-version-policy.cjs');
 
 function option(argv, name, fallback = null) {
   const index = argv.indexOf(name);
@@ -136,6 +137,15 @@ function extractPackageMetadata(appPath) {
   return JSON.parse(asar.extractFile(archive, 'package.json').toString('utf8'));
 }
 
+function isValidChannelVersion(channel, version) {
+  try {
+    const parsed = parseVersion(version);
+    return channel === 'beta' || (channel === 'stable' && parsed.prerelease === null);
+  } catch {
+    return false;
+  }
+}
+
 function verifyApp(appPath, contract, expectations) {
   const info = path.join(appPath, 'Contents', 'Info.plist');
   const readPlist = (key) => run('plutil', ['-extract', key, 'raw', '-o', '-', info]).stdout.trim();
@@ -147,10 +157,7 @@ function verifyApp(appPath, contract, expectations) {
   const iconName = readPlist('CFBundleIconFile');
   if (!iconName || /electron/i.test(iconName)) throw new Error(`${appPath} uses Electron's default icon.`);
   const version = readPlist('CFBundleShortVersionString');
-  const versionPattern = contract.channel === 'beta'
-    ? /^\d+\.\d+\.\d+-beta\.\d+$/
-    : /^\d+\.\d+\.\d+$/;
-  if (!versionPattern.test(version)) {
+  if (!isValidChannelVersion(contract.channel, version)) {
     throw new Error(`${appPath} has an invalid ${contract.channel} version: ${version}`);
   }
 
@@ -289,6 +296,7 @@ if (require.main === module) main();
 module.exports = {
   extractPackageMetadata,
   extractedZip,
+  isValidChannelVersion,
   normalizeFingerprint,
   verifyApp,
   verifyMacPackage,
