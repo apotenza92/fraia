@@ -10,6 +10,7 @@ const UPDATE_FREQUENCY_MS = Object.freeze({
   weekly: 7 * 24 * 60 * 60 * 1000,
 });
 const UPDATE_FREQUENCIES = Object.freeze(['never', 'startup', ...Object.keys(UPDATE_FREQUENCY_MS)]);
+const UPDATE_RETRY_MS = Object.freeze([5 * 60 * 1000, 15 * 60 * 1000, 60 * 60 * 1000, 6 * 60 * 60 * 1000]);
 
 function safeWriteEvent(eventPath, event) {
   if (!eventPath) return;
@@ -47,11 +48,73 @@ function writeJson(filePath, value) {
   fs.renameSync(temporary, filePath);
 }
 
-function readLastCheck(filePath) {
+function readCheckHistory(filePath) {
   try {
-    const timestamp = JSON.parse(fs.readFileSync(filePath, 'utf8')).timestamp;
-    return Number.isFinite(timestamp) && timestamp >= 0 ? timestamp : 0;
-  } catch { return 0; }
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    const legacyTimestamp = Number.isFinite(parsed.timestamp) && parsed.timestamp >= 0
+      ? parsed.timestamp
+      : 0;
+    return {
+      lastAttemptAt: Number.isFinite(parsed.lastAttemptAt) && parsed.lastAttemptAt >= 0
+        ? parsed.lastAttemptAt
+        : legacyTimestamp,
+      lastSuccessfulCheckAt: Number.isFinite(parsed.lastSuccessfulCheckAt) && parsed.lastSuccessfulCheckAt >= 0
+        ? parsed.lastSuccessfulCheckAt
+        : legacyTimestamp,
+    };
+  } catch {
+    return { lastAttemptAt: 0, lastSuccessfulCheckAt: 0 };
+  }
+}
+
+function userFacingUpdateError(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  if (/signature|metadata|tuf|trust|verification|checksum/.test(message)) {
+    return 'Fraia could not securely verify the update information. No update was installed.';
+  }
+  if (/network|internet|fetch|http|socket|dns|timed? ?out|enotfound|econn/.test(message)) {
+    return 'Fraia could not reach the update service. Check your internet connection and try again.';
+  }
+  return 'Fraia could not check for updates. Try again in a few minutes.';
+}
+
+function normalizeDownloadProgress(info = {}) {
+  const total = Number.isFinite(info.total) && info.total > 0 ? Math.round(info.total) : 0;
+  const transferred = Number.isFinite(info.transferred) && info.transferred >= 0
+    ? Math.min(Math.round(info.transferred), total || Number.MAX_SAFE_INTEGER)
+    : 0;
+  const bytesPerSecond = Number.isFinite(info.bytesPerSecond) && info.bytesPerSecond > 0
+    ? Math.round(info.bytesPerSecond)
+    : 0;
+  const reportedPercent = Number.isFinite(info.percent) ? info.percent : null;
+  const percent = Math.max(0, Math.min(100, Math.round(
+    reportedPercent ?? (total ? (transferred / total) * 100 : 0),
+  )));
+  const remainingBytes = total ? Math.max(0, total - transferred) : 0;
+  const etaSeconds = bytesPerSecond && remainingBytes
+    ? Math.max(1, Math.round(remainingBytes / bytesPerSecond))
+    : null;
+  return { bytesPerSecond, etaSeconds, percent, total, transferred };
+}
+
+function disabledUpdaterStatus({ app, reason = 'unavailable' } = {}) {
+  return {
+    channel: null,
+    currentVersion: app?.getVersion?.() ?? null,
+    enabled: false,
+    frequency: 'never',
+    phase: reason === 'linux-package-manager' ? 'managed' : 'disabled',
+    reason,
+  };
+}
+
+function disabledUpdaterController(options) {
+  const status = disabledUpdaterStatus(options);
+  return {
+    enabled: false,
+    reason: status.reason,
+    getStatus: () => ({ ...status }),
+  };
 }
 
 function normalizeReleaseNotes(value) {
@@ -81,17 +144,18 @@ function configureAutoUpdates({
   prepareForInstall = async () => {},
   resourcesPath = process.resourcesPath,
   schedule = { clearInterval, clearTimeout, setInterval, setTimeout },
-  showUpdateReady = async () => ({ response: 1 }),
+  showUpdateReady = null,
+  onStatusChange = () => {},
 } = {}) {
   if (
     !app?.isPackaged
     || !['darwin', 'win32', 'linux'].includes(platform)
     || env.FRAIA_DISABLE_UPDATES === '1'
   ) {
-    return { enabled: false };
+    return disabledUpdaterController({ app });
   }
   if (platform === 'linux' && !env.APPIMAGE && env.FRAIA_E2E_UPDATER !== '1') {
-    return { enabled: false, reason: 'linux-package-manager' };
+    return disabledUpdaterController({ app, reason: 'linux-package-manager' });
   }
 
   const testMode = env.FRAIA_E2E_UPDATER === '1';
@@ -130,6 +194,7 @@ function configureAutoUpdates({
       prepareForInstall,
       schedule,
       showUpdateReady,
+      onStatusChange,
       testMode,
       verifiedFeed,
     }));
@@ -146,6 +211,7 @@ function configureAutoUpdates({
     prepareForInstall,
     schedule,
     showUpdateReady,
+    onStatusChange,
     testMode,
     verifiedFeed: null,
   });
@@ -162,6 +228,7 @@ function activateUpdater({
   prepareForInstall,
   schedule,
   showUpdateReady,
+  onStatusChange,
   testMode,
   verifiedFeed,
 }) {
@@ -181,6 +248,35 @@ function activateUpdater({
     ...details,
   });
   let stopSchedule = () => {};
+  const userData = app.getPath('userData');
+  const frequencyPath = path.join(userData, 'update-frequency.json');
+  const lastCheckPath = path.join(userData, 'last-update-check.json');
+  const defaultFrequency = 'daily';
+  let frequency = testMode ? 'sixHours' : readFrequency(frequencyPath, defaultFrequency);
+  let checkHistory = readCheckHistory(lastCheckPath);
+  let status = {
+    channel,
+    currentVersion: app.getVersion(),
+    enabled: true,
+    frequency,
+    lastAttemptAt: checkHistory.lastAttemptAt || null,
+    lastSuccessfulCheckAt: checkHistory.lastSuccessfulCheckAt || null,
+    phase: 'idle',
+    trustedMetadata: Boolean(verifiedFeed),
+  };
+  const publishStatus = (patch) => {
+    status = { ...status, ...patch, frequency };
+    onStatusChange({ ...status });
+    return { ...status };
+  };
+  const recordCheckHistory = (patch) => {
+    checkHistory = { ...checkHistory, ...patch };
+    if (!testMode) writeJson(lastCheckPath, checkHistory);
+    publishStatus({
+      lastAttemptAt: checkHistory.lastAttemptAt || null,
+      lastSuccessfulCheckAt: checkHistory.lastSuccessfulCheckAt || null,
+    });
+  };
   let verifiedFeedClosePromise = null;
   const closeVerifiedFeed = () => {
     if (!verifiedFeed) return Promise.resolve();
@@ -192,7 +288,11 @@ function activateUpdater({
   let installPromise = null;
   const installDownloadedUpdate = () => {
     if (installPromise) return installPromise;
+    if (status.phase !== 'ready') {
+      return Promise.reject(new Error('No downloaded Fraia update is ready to install.'));
+    }
     stopSchedule();
+    publishStatus({ phase: 'installing' });
     installPromise = Promise.resolve()
       .then(() => prepareForInstall())
       .then(() => closeVerifiedFeed())
@@ -208,6 +308,10 @@ function activateUpdater({
       .catch((error) => {
         event('error', { message: String(error?.message || error) });
         log.error('[updater] could not prepare the downloaded update for installation', error);
+        publishStatus({
+          errorMessage: 'Fraia could not prepare the update for installation. Your current version was not changed.',
+          phase: 'error',
+        });
         throw error;
       });
     return installPromise;
@@ -222,20 +326,55 @@ function activateUpdater({
   autoUpdater.on('error', (error) => {
     event('error', { message: String(error?.message || error) });
     log.error('[updater] update check failed', error);
+    publishStatus({ errorMessage: userFacingUpdateError(error), phase: 'error' });
   });
-  autoUpdater.on('update-available', (info) => event('update-available', { version: info.version }));
-  autoUpdater.on('update-not-available', (info) => event('update-not-available', { version: info.version }));
+  autoUpdater.on('checking-for-update', () => {
+    publishStatus({ errorMessage: null, phase: 'checking' });
+  });
+  const markSuccessfulCheck = () => {
+    const timestamp = Date.now();
+    recordCheckHistory({ lastAttemptAt: timestamp, lastSuccessfulCheckAt: timestamp });
+  };
+  autoUpdater.on('update-available', (info) => {
+    event('update-available', { version: info.version });
+    markSuccessfulCheck();
+    publishStatus({ errorMessage: null, phase: 'available', version: info.version });
+  });
+  autoUpdater.on('update-not-available', (info) => {
+    event('update-not-available', { version: info.version });
+    markSuccessfulCheck();
+    publishStatus({ errorMessage: null, phase: 'up-to-date', version: null });
+  });
+  autoUpdater.on('download-progress', (info) => {
+    publishStatus({
+      errorMessage: null,
+      phase: 'downloading',
+      progress: normalizeDownloadProgress(info),
+    });
+  });
   let promptedVersion = null;
   autoUpdater.on('update-downloaded', async (info) => {
     const releaseNotes = normalizeReleaseNotes(info.releaseNotes);
     event('update-downloaded', { version: info.version, releaseNotes });
+    publishStatus({
+      errorMessage: null,
+      phase: 'ready',
+      progress: normalizeDownloadProgress({
+        bytesPerSecond: 0,
+        percent: 100,
+        total: status.progress?.total ?? 0,
+        transferred: status.progress?.total ?? 0,
+      }),
+      releaseNotes,
+      version: info.version,
+    });
     if (testMode && env.FRAIA_E2E_INSTALL_UPDATE === '1') {
       schedule.setTimeout(() => {
         void installDownloadedUpdate().catch(() => {});
       }, 100);
       return;
     }
-    if (promptedVersion === info.version) return;
+    if (!showUpdateReady || promptedVersion === info.version) return;
     promptedVersion = info.version;
     try {
       const result = await showUpdateReady({ releaseNotes, version: info.version });
@@ -245,26 +384,42 @@ function activateUpdater({
     }
   });
 
-  const userData = app.getPath('userData');
-  const frequencyPath = path.join(userData, 'update-frequency.json');
-  const lastCheckPath = path.join(userData, 'last-update-check.json');
-  const defaultFrequency = 'daily';
-  let frequency = testMode ? 'sixHours' : readFrequency(frequencyPath, defaultFrequency);
   let initialTimer = null;
   let intervalTimer = null;
+  let retryTimer = null;
+  let consecutiveFailures = 0;
   let checkPromise = null;
 
-  const check = () => {
+  const scheduleRetry = () => {
+    if (frequency === 'never' || retryTimer !== null) return;
+    const delay = UPDATE_RETRY_MS[Math.min(consecutiveFailures - 1, UPDATE_RETRY_MS.length - 1)];
+    retryTimer = schedule.setTimeout(() => {
+      retryTimer = null;
+      void check({ automatic: true }).catch(() => {});
+    }, delay);
+  };
+  const check = ({ automatic = false } = {}) => {
     if (checkPromise) return checkPromise;
+    const attemptAt = Date.now();
+    recordCheckHistory({ lastAttemptAt: attemptAt });
+    publishStatus({ errorMessage: null, phase: 'checking' });
     checkPromise = Promise.resolve(verifiedFeed?.refresh?.())
       .then(() => autoUpdater.checkForUpdates())
+      .then((result) => {
+        consecutiveFailures = 0;
+        if (retryTimer !== null) schedule.clearTimeout(retryTimer);
+        retryTimer = null;
+        return result;
+      })
       .catch((error) => {
+        consecutiveFailures += 1;
         event('error', { message: String(error?.message || error) });
         log.error('[updater] update check failed', error);
+        publishStatus({ errorMessage: userFacingUpdateError(error), phase: 'error' });
+        if (automatic) scheduleRetry();
         throw error;
       })
       .finally(() => {
-        if (!testMode) writeJson(lastCheckPath, { timestamp: Date.now() });
         checkPromise = null;
       });
     return checkPromise;
@@ -273,24 +428,26 @@ function activateUpdater({
   stopSchedule = () => {
     if (initialTimer !== null) schedule.clearTimeout(initialTimer);
     if (intervalTimer !== null) schedule.clearInterval(intervalTimer);
+    if (retryTimer !== null) schedule.clearTimeout(retryTimer);
     initialTimer = null;
     intervalTimer = null;
+    retryTimer = null;
   };
   const startSchedule = () => {
     stopSchedule();
     if (frequency === 'never') return;
     const scheduledFrequency = frequency;
     const interval = UPDATE_FREQUENCY_MS[frequency];
-    const elapsed = interval ? Date.now() - readLastCheck(lastCheckPath) : 0;
+    const elapsed = interval ? Date.now() - checkHistory.lastSuccessfulCheckAt : 0;
     const initialDelay = testMode
       ? 0
       : interval && elapsed < interval
         ? Math.max(30_000, interval - elapsed)
         : 30_000;
     initialTimer = schedule.setTimeout(async () => {
-      await check().catch(() => {});
+      await check({ automatic: true }).catch(() => {});
       if (scheduledFrequency === frequency && interval) {
-        intervalTimer = schedule.setInterval(() => { void check().catch(() => {}); }, interval);
+        intervalTimer = schedule.setInterval(() => { void check({ automatic: true }).catch(() => {}); }, interval);
       }
     }, initialDelay);
   };
@@ -298,6 +455,7 @@ function activateUpdater({
     if (!UPDATE_FREQUENCIES.includes(next)) throw new Error(`Invalid updater frequency: ${next}`);
     frequency = next;
     if (!testMode) writeJson(frequencyPath, { frequency });
+    publishStatus({ frequency });
     startSchedule();
     return frequency;
   };
@@ -308,7 +466,9 @@ function activateUpdater({
     checkNow: check,
     enabled: true,
     feedUrl,
+    getStatus: () => ({ ...status }),
     get frequency() { return frequency; },
+    installUpdate: installDownloadedUpdate,
     installed: false,
     setFrequency,
     stop: () => {
@@ -324,10 +484,14 @@ function activateUpdater({
 module.exports = {
   UPDATE_FREQUENCIES,
   UPDATE_FREQUENCY_MS,
+  UPDATE_RETRY_MS,
   configureAutoUpdates,
+  disabledUpdaterStatus,
+  normalizeDownloadProgress,
   normalizeReleaseNotes,
+  readCheckHistory,
   readFrequency,
-  readLastCheck,
   safeWriteEvent,
   validateTestFeedUrl,
+  userFacingUpdateError,
 };

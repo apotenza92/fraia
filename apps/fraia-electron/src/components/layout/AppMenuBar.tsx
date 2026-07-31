@@ -9,6 +9,8 @@ import {
   MenubarTrigger,
 } from '@/components/ui/menubar';
 import { AiProvidersDialog } from '@/components/ai/AiProvidersDialog';
+import { UpdateDialog } from '@/components/updates/UpdateDialog';
+import type { UpdateFrequency, UpdateStatus } from '@/lib/updateStatus';
 import { Fragment, useEffect, useState } from 'react';
 import { CHROME } from './chromeMetrics';
 
@@ -21,6 +23,9 @@ type MenuItem = {
 
 export function AppMenuBar() {
   const [fraiaAiOpen, setFraiaAiOpen] = useState(false);
+  const [updateOpen, setUpdateOpen] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
+  const [updateAction, setUpdateAction] = useState<'checking' | 'installing' | null>(null);
   const [productName, setProductName] = useState('Fraia');
 
   useEffect(() => {
@@ -32,6 +37,28 @@ export function AppMenuBar() {
     });
     return () => {
       active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void window.fraia.updateStatus?.()
+      .then((status) => {
+        if (active) setUpdateStatus(status);
+      })
+      .catch(() => {});
+    const unsubscribeStatus = window.fraia.onUpdateStatus?.((status) => {
+      if (!active) return;
+      setUpdateStatus(status);
+      if (status.phase === 'ready') setUpdateOpen(true);
+    });
+    const unsubscribeOpen = window.fraia.onOpenUpdateDialog?.(() => {
+      if (active) setUpdateOpen(true);
+    });
+    return () => {
+      active = false;
+      unsubscribeStatus?.();
+      unsubscribeOpen?.();
     };
   }, []);
 
@@ -59,6 +86,47 @@ export function AppMenuBar() {
     }
     window.close();
   };
+  const checkForUpdates = async () => {
+    setUpdateOpen(true);
+    setUpdateAction('checking');
+    try {
+      const status = await window.fraia.checkForUpdates?.();
+      if (status) setUpdateStatus(status);
+    } catch {
+      const status = await window.fraia.updateStatus?.().catch(() => null);
+      if (status) setUpdateStatus(status);
+    } finally {
+      setUpdateAction(null);
+    }
+  };
+  const installUpdate = async () => {
+    setUpdateAction('installing');
+    try {
+      const status = await window.fraia.installUpdate?.();
+      if (status) setUpdateStatus(status);
+    } catch {
+      const status = await window.fraia.updateStatus?.().catch(() => null);
+      if (status) setUpdateStatus(status);
+    } finally {
+      setUpdateAction(null);
+    }
+  };
+  const setUpdateFrequency = async (frequency: UpdateFrequency) => {
+    try {
+      const status = await window.fraia.setUpdateFrequency?.(frequency);
+      if (status) setUpdateStatus(status);
+    } catch {
+      const status = await window.fraia.updateStatus?.().catch(() => null);
+      if (status) setUpdateStatus(status);
+    }
+  };
+  const updateMenuLabel = updateStatus?.phase === 'ready'
+    ? 'Restart to Update…'
+    : updateStatus?.phase === 'downloading'
+      ? 'Downloading Update…'
+      : updateStatus?.phase === 'checking'
+        ? 'Checking for Updates…'
+        : 'Check for Updates…';
 
   const menus: Array<{ key: string; label: string; groups: MenuItem[][] }> = [
     {
@@ -67,6 +135,16 @@ export function AppMenuBar() {
       groups: [
         [
           { label: 'Fraia AI…', onSelect: () => setFraiaAiOpen(true) },
+          ...(window.fraia.updateStatus ? [{
+            label: updateMenuLabel,
+            onSelect: () => {
+              if (['downloading', 'ready', 'installing'].includes(updateStatus?.phase ?? '')) {
+                setUpdateOpen(true);
+              } else {
+                void checkForUpdates();
+              }
+            },
+          }] : []),
         ],
         [
           { label: `Quit ${productName}`, onSelect: quitApp },
@@ -110,6 +188,16 @@ export function AppMenuBar() {
       ))}
     </Menubar>
     <AiProvidersDialog open={fraiaAiOpen} onOpenChange={setFraiaAiOpen} />
+    <UpdateDialog
+      checking={updateAction === 'checking' || updateStatus?.phase === 'checking'}
+      installing={updateAction === 'installing' || updateStatus?.phase === 'installing'}
+      onCheck={() => { void checkForUpdates(); }}
+      onInstall={() => { void installUpdate(); }}
+      onOpenChange={setUpdateOpen}
+      onSetFrequency={(frequency) => { void setUpdateFrequency(frequency); }}
+      open={updateOpen}
+      status={updateStatus}
+    />
     </>
   );
 }

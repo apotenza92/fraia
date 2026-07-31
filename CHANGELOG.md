@@ -9,6 +9,13 @@ release notes and macOS updater notes.
 
 ### Changed
 
+- The Fraia menu now reports checking, up-to-date, downloading, ready,
+  installing, and retryable error states instead of leaving manual checks
+  silent. Downloads show percentage, transferred and total size, speed, and
+  estimated time remaining.
+- Automatic update settings now record the last successful check separately
+  from failed attempts and retry failed background checks with bounded
+  backoff.
 - Beta is now a stable-inclusive channel: beta installations receive the
   highest Semantic Version across beta and final releases without changing
   into the stable application.
@@ -20,6 +27,10 @@ release notes and macOS updater notes.
 
 ### Updating
 
+- The embedded updater remains active when Fraia is installed through a future
+  Homebrew cask. Homebrew and Fraia are independent same-channel update paths;
+  either may replace the application while preserving its identity, settings,
+  projects, and AI authorization.
 - Stable `0.0.5` installations update only through the stable feed.
 - `Fraia Beta` installations receive a separately packaged Beta-identity
   `0.0.5` update because it is newer than `0.0.4-beta.1`. Existing Beta

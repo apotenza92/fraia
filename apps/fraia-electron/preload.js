@@ -33,6 +33,20 @@ contextBridge.exposeInMainWorld('fraia', {
     ipcRenderer.on('fraia:aiRuntimeStatus', handler);
     return () => ipcRenderer.removeListener('fraia:aiRuntimeStatus', handler);
   },
+  updateStatus: () => ipcRenderer.invoke('fraia:updateStatus'),
+  checkForUpdates: () => ipcRenderer.invoke('fraia:checkForUpdates'),
+  setUpdateFrequency: (frequency) => ipcRenderer.invoke('fraia:setUpdateFrequency', frequency),
+  installUpdate: () => ipcRenderer.invoke('fraia:installUpdate'),
+  onUpdateStatus: (listener) => {
+    const handler = (_event, status) => listener(status);
+    ipcRenderer.on('fraia:updateStatus', handler);
+    return () => ipcRenderer.removeListener('fraia:updateStatus', handler);
+  },
+  onOpenUpdateDialog: (listener) => {
+    const handler = () => listener();
+    ipcRenderer.on('fraia:openUpdateDialog', handler);
+    return () => ipcRenderer.removeListener('fraia:openUpdateDialog', handler);
+  },
   applyReview: (payload) => ipcRenderer.invoke('fraia:applyReview', payload),
   editBaseModel: (payload) => ipcRenderer.invoke('fraia:editBaseModel', payload),
   refreshProject: (projectDir) => ipcRenderer.invoke('fraia:refreshProject', projectDir),

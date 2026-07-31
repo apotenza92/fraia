@@ -7,6 +7,12 @@ declare global {
         productName: string;
         userDataDirectoryName: string;
       }>;
+      updateStatus?: () => Promise<import('@/lib/updateStatus').UpdateStatus>;
+      checkForUpdates?: () => Promise<import('@/lib/updateStatus').UpdateStatus>;
+      setUpdateFrequency?: (frequency: import('@/lib/updateStatus').UpdateFrequency) => Promise<import('@/lib/updateStatus').UpdateStatus>;
+      installUpdate?: () => Promise<import('@/lib/updateStatus').UpdateStatus>;
+      onUpdateStatus?: (listener: (status: import('@/lib/updateStatus').UpdateStatus) => void) => () => void;
+      onOpenUpdateDialog?: (listener: () => void) => () => void;
       defaultProjectDir: () => Promise<string>;
       setThemeSource?: (themeSource: 'light' | 'dark' | 'system') => Promise<{ ok: boolean; themeSource?: string }>;
       reloadWindow?: () => Promise<{ ok: boolean }>;
