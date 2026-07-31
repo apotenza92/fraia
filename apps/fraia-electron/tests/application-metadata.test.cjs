@@ -9,7 +9,10 @@ const {
   resolveApplicationMetadata,
   resolveUserDataDirectory,
 } = require('../application-metadata.cjs');
-const { extractPackageMetadata } = require('../scripts/verify-macos-package.cjs');
+const {
+  extractPackageMetadata,
+  isValidChannelVersion,
+} = require('../scripts/verify-macos-package.cjs');
 
 test('defaults development metadata to the stable identity', () => {
   assert.deepEqual(resolveApplicationMetadata(), {
@@ -69,6 +72,14 @@ test('rejects a product name that does not match its channel identity', () => {
     }),
     /requires productName Fraia Beta/,
   );
+});
+
+test('macOS package verification permits final versions only for identities that should receive them', () => {
+  assert.equal(isValidChannelVersion('stable', '0.0.5'), true);
+  assert.equal(isValidChannelVersion('stable', '0.0.5-beta.1'), false);
+  assert.equal(isValidChannelVersion('beta', '0.0.5-beta.1'), true);
+  assert.equal(isValidChannelVersion('beta', '0.0.5'), true);
+  assert.equal(isValidChannelVersion('beta', '0.0.5-rc.1'), false);
 });
 
 test('package verification discards stale ASAR headers after an in-place update', async () => {
