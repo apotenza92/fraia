@@ -5,6 +5,21 @@ All notable user-facing changes to Fraia are documented here. Fraia follows
 workflow uses the matching version section below as the authoritative GitHub
 release notes and macOS updater notes.
 
+## [0.0.6] - 2026-08-04
+
+### Changed
+
+- The updater-feed publication stage now creates its sealed staging directory
+  before writing and checksumming the feed projection. A deterministic release
+  workflow test protects that ordering.
+
+### Updating
+
+- Stable and Beta installations on the `0.0.4` feeds update directly to their
+  separately packaged `0.0.6` identities. The public `0.0.5` GitHub release
+  remains available for direct download, but its updater-feed projection did
+  not publish after the release assets were made public.
+
 ## [0.0.5] - 2026-08-04
 
 ### Changed
@@ -45,10 +60,10 @@ release notes and macOS updater notes.
   Homebrew cask. Homebrew and Fraia are independent same-channel update paths;
   either may replace the application while preserving its identity, settings,
   projects, and AI authorization.
-- Stable `0.0.5` installations update only through the stable feed.
-- `Fraia Beta` installations receive a separately packaged Beta-identity
-  `0.0.5` update because it is newer than `0.0.4-beta.1`. Existing Beta
-  settings, projects, and user data remain under the isolated Beta identity.
+- Stable `0.0.5` installations use only the stable feed, while separately
+  installed `Fraia Beta` packages use only the beta feed. The `0.0.5` release
+  assets were published before a workflow error prevented either feed from
+  advancing; `0.0.6` supersedes this release for automatic updating.
 
 ## [0.0.4] - 2026-07-30
 

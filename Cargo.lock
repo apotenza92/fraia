@@ -160,7 +160,7 @@ dependencies = [
 
 [[package]]
 name = "fraia-app-api"
-version = "0.0.5"
+version = "0.0.6"
 dependencies = [
  "fraia-core",
  "serde",
@@ -169,7 +169,7 @@ dependencies = [
 
 [[package]]
 name = "fraia-appd"
-version = "0.0.5"
+version = "0.0.6"
 dependencies = [
  "anyhow",
  "axum",
@@ -183,7 +183,7 @@ dependencies = [
 
 [[package]]
 name = "fraia-cli"
-version = "0.0.5"
+version = "0.0.6"
 dependencies = [
  "anyhow",
  "fraia-core",
@@ -192,7 +192,7 @@ dependencies = [
 
 [[package]]
 name = "fraia-core"
-version = "0.0.5"
+version = "0.0.6"
 dependencies = [
  "anyhow",
  "fraia-geometry",
@@ -204,7 +204,7 @@ dependencies = [
 
 [[package]]
 name = "fraia-geometry"
-version = "0.0.5"
+version = "0.0.6"
 dependencies = [
  "fraia-math",
  "serde",
@@ -212,14 +212,14 @@ dependencies = [
 
 [[package]]
 name = "fraia-math"
-version = "0.0.5"
+version = "0.0.6"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "fraia-physics"
-version = "0.0.5"
+version = "0.0.6"
 dependencies = [
  "serde",
  "serde_json",
