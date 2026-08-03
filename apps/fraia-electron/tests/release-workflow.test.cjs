@@ -435,6 +435,18 @@ test('packaged updater code ships TUF verification for Windows and Linux', () =>
   assert.match(updateDialog, /formatEta/);
 });
 
+test('packaged main process includes every explicitly required local module', () => {
+  const localModules = [...mainProcess.matchAll(/require\(['"]\.\/([^'"]+)['"]\)/g)]
+    .map((match) => match[1]);
+  for (const localModule of localModules) {
+    assert.match(
+      builder,
+      new RegExp(`['"]${localModule.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]`),
+      `${localModule} must be included in the packaged application`,
+    );
+  }
+});
+
 test('all third-party workflow actions are pinned to full commit SHAs', () => {
   const uses = [
     ...`${workflow}\n${continuousIntegration}\n${runtimeAudit}\n${nonmacUpdaterAudit}\n${tufMetadataRefresh}\n${tufSigningAudit}`
