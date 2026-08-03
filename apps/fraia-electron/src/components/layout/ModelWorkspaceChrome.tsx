@@ -1,36 +1,6 @@
 import type { ReactNode } from 'react';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { CHROME } from './chromeMetrics';
-
-function workspaceLabel(label?: string) {
-  return label?.trim() || 'Current Model';
-}
-
-export function ModelTabBar({
-  workspaceName,
-}: {
-  workspaceName?: string;
-}) {
-  const fileLabel = workspaceLabel(workspaceName);
-  return (
-    <div className="shrink-0" style={{ height: CHROME.tabHeight }}>
-      <Tabs value="current">
-        <TabsList aria-label="Open files" variant="line" className="h-full rounded-none px-2" activateOnFocus>
-          <TabsTrigger
-            id="fraia-current-model-tab"
-            aria-controls="fraia-current-model-panel"
-            value="current"
-            title={fileLabel}
-            className="max-w-70"
-          >
-            {fileLabel}
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
-    </div>
-  );
-}
 
 export function ModelWorkspaceChrome({
   title,

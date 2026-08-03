@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ExternalLink, LoaderCircle, RefreshCw, ShieldCheck, Sparkles, Unplug } from 'lucide-react';
+import { ExternalLink, RefreshCw, ShieldCheck, Sparkles, Unplug } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,13 +24,13 @@ import {
   ItemTitle,
 } from '@/components/ui/item';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Spinner } from '@/components/ui/spinner';
 import {
   FRAIA_AI_MODEL_ID,
   FRAIA_AI_MODEL_NAME,
   FRAIA_AI_PROVIDER_ID,
   FRAIA_AI_REASONING_EFFORT,
 } from '@/lib/agentOptions';
-import { cn } from '@/lib/utils';
 import type { AiProviderCatalogue } from '@/lib/types';
 
 type RuntimeEvent = {
@@ -54,7 +54,7 @@ export function AiProvidersDialog({ open, onOpenChange }: { open: boolean; onOpe
   const [busyAction, setBusyAction] = useState<'refresh' | 'sign-in' | 'disconnect' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [runtimeEvent, setRuntimeEvent] = useState<RuntimeEvent | null>(null);
-  const [promptAnswer, setPromptAnswer] = useState('');
+  const [promptAnswer, setPromptAnswer] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -137,8 +137,8 @@ export function AiProvidersDialog({ open, onOpenChange }: { open: boolean; onOpe
 
   async function answerPrompt(event: RuntimeEvent) {
     if (!event.flowId) return;
-    await window.fraia.aiAnswerAuthPrompt({ flowId: event.flowId, value: promptAnswer });
-    setPromptAnswer('');
+    await window.fraia.aiAnswerAuthPrompt({ flowId: event.flowId, value: promptAnswer ?? '' });
+    setPromptAnswer(null);
   }
 
   const secureStorage = catalogue?.secureCredentialStorageAvailable ?? catalogue?.secure_credential_storage_available;
@@ -253,16 +253,20 @@ export function AiProvidersDialog({ open, onOpenChange }: { open: boolean; onOpe
                         {runtimeEvent.prompt?.type === 'select' ? (
                           <Select
                             value={promptAnswer}
-                            items={(runtimeEvent.prompt.options ?? []).map((option) => ({ value: option.id, label: option.label }))}
+                            items={[
+                              { value: null, label: 'Choose an option' },
+                              ...(runtimeEvent.prompt.options ?? []).map((option) => ({ value: option.id, label: option.label })),
+                            ]}
                             onValueChange={(value) => {
                               if (typeof value === 'string') setPromptAnswer(value);
                             }}
                           >
                             <SelectTrigger id="chatgpt-auth-prompt" className="w-full">
-                              <SelectValue placeholder="Choose an option" />
+                              <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
                               <SelectGroup>
+                                <SelectItem value={null}>Choose an option</SelectItem>
                                 {(runtimeEvent.prompt.options ?? []).map((option) => (
                                   <SelectItem key={option.id} value={option.id}>{option.label}</SelectItem>
                                 ))}
@@ -274,12 +278,12 @@ export function AiProvidersDialog({ open, onOpenChange }: { open: boolean; onOpe
                             id="chatgpt-auth-prompt"
                             type={runtimeEvent.prompt?.type === 'secret' ? 'password' : 'text'}
                             autoComplete="off"
-                            value={promptAnswer}
+                            value={promptAnswer ?? ''}
                             onChange={(event) => setPromptAnswer(event.target.value)}
                           />
                         )}
                       </FieldContent>
-                      <Button type="submit" disabled={!promptAnswer.trim()}>Continue</Button>
+                      <Button type="submit" disabled={!promptAnswer?.trim()}>Continue</Button>
                     </Field>
                   </FieldGroup>
                 </form>
@@ -295,13 +299,15 @@ export function AiProvidersDialog({ open, onOpenChange }: { open: boolean; onOpe
 
         <DialogFooter className="sm:justify-between">
           <Button type="button" size="sm" variant="ghost" onClick={refresh} disabled={busyAction === 'refresh'}>
-            <RefreshCw data-icon="inline-start" className={cn(busyAction === 'refresh' && 'animate-spin')} />
+            {busyAction === 'refresh'
+              ? <Spinner data-icon="inline-start" />
+              : <RefreshCw data-icon="inline-start" />}
             Refresh
           </Button>
           {connected ? (
             <Button type="button" size="sm" variant="outline" onClick={disconnect} disabled={busyAction === 'disconnect'}>
               {busyAction === 'disconnect'
-                ? <LoaderCircle data-icon="inline-start" className="animate-spin" />
+                ? <Spinner data-icon="inline-start" />
                 : <Unplug data-icon="inline-start" />}
               Disconnect
             </Button>
@@ -313,7 +319,7 @@ export function AiProvidersDialog({ open, onOpenChange }: { open: boolean; onOpe
               disabled={!secureStorage || !oauth || busyAction === 'sign-in' || authInProgress}
             >
               {busyAction === 'sign-in' || authInProgress
-                ? <LoaderCircle data-icon="inline-start" className="animate-spin" />
+                ? <Spinner data-icon="inline-start" />
                 : <ExternalLink data-icon="inline-start" />}
               {authInProgress ? 'Waiting for ChatGPT' : 'Sign in with ChatGPT'}
             </Button>

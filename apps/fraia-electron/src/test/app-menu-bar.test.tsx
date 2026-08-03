@@ -5,6 +5,23 @@ import { describe, expect, it, vi } from 'vitest';
 import { AppMenuBar } from '@/components/layout/AppMenuBar';
 
 describe('AppMenuBar application identity', () => {
+  it('fills the native menu row without overriding the official menubar frame', () => {
+    Object.defineProperty(window, 'fraia', {
+      configurable: true,
+      value: {},
+    });
+
+    render(<AppMenuBar />);
+
+    const menubar = screen.getByRole('menubar', { name: 'Application menu' });
+    const frame = menubar.closest('[data-app-menu-frame]');
+
+    expect(frame).toHaveClass('relative', 'flex', 'w-full', 'items-center');
+    expect(menubar).toHaveClass('contents');
+    expect(menubar).not.toHaveClass('border-0', 'rounded-none', 'shadow-none');
+    expect(frame?.querySelector('[data-slot="separator"]')).toHaveAttribute('data-orientation', 'horizontal');
+  });
+
   it('uses the canonical stable identity in visible chrome and the document title', async () => {
     const quitApp = vi.fn().mockResolvedValue({ ok: true });
     Object.defineProperty(window, 'fraia', {

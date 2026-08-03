@@ -63,7 +63,6 @@ function EdgeButton({
       disabled={isEndpoint}
       aria-disabled={isGated || undefined}
       aria-describedby={gateReason ? descriptionId : undefined}
-      className={isGated ? 'opacity-50' : undefined}
       onClick={() => {
         if (!destination || isGated) return;
         onNavigate(destination);
@@ -108,10 +107,7 @@ export function WorkflowStageBar({
   return (
     <Breadcrumb
       aria-label="Design workflow"
-      className={cn(
-        'grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 bg-background px-2 pt-1.5',
-        className,
-      )}
+      className={cn('grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 px-2 pt-1.5', className)}
     >
       <div className="pb-1.5">
         <EdgeButton
@@ -143,8 +139,7 @@ export function WorkflowStageBar({
                     <BreadcrumbPage aria-current="step">{label}</BreadcrumbPage>
                   ) : isAvailableEarlier ? (
                     <BreadcrumbLink
-                      render={<button type="button" />}
-                      className="rounded-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+                      render={<Button type="button" variant="link" size="sm" />}
                       onClick={() => onNavigate(stage)}
                     >
                       {label}

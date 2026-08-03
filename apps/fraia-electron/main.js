@@ -897,6 +897,19 @@ ipcMain.handle('fraia:pickDirectory', async () => {
   });
   return result.canceled ? null : result.filePaths[0];
 });
+ipcMain.handle('fraia:pickProjectFile', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'Open Fraia Model',
+    properties: ['openFile'],
+    filters: [{ name: 'Fraia project', extensions: ['json'] }],
+  });
+  if (result.canceled) return null;
+  const projectFile = result.filePaths[0];
+  if (path.basename(projectFile) !== 'fraia.project.json') {
+    throw new Error('Select the fraia.project.json file inside a Fraia model folder.');
+  }
+  return path.dirname(projectFile);
+});
 ipcMain.handle('fraia:createProject', (_event, payload) =>
   callApi('/projects/create', { method: 'POST', body: JSON.stringify(payload) })
 );

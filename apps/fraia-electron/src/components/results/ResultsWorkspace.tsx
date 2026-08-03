@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Empty, EmptyDescription } from '@/components/ui/empty';
 import {
   Table,
   TableBody,
@@ -291,10 +293,17 @@ function memberNames(result: RawSolverResult, labels?: LabelMaps) {
 }
 
 function RawTextPanel({ text, empty }: { text: string; empty: string }) {
+  if (!text) {
+    return (
+      <Empty className="h-[420px]">
+        <EmptyDescription>{empty}</EmptyDescription>
+      </Empty>
+    );
+  }
   return (
-    <div className="h-[420px] overflow-auto rounded-md border bg-muted p-3">
+    <Card className="h-[420px] overflow-auto p-3">
       <pre className="whitespace-pre-wrap font-mono text-sm">{text || empty}</pre>
-    </div>
+    </Card>
   );
 }
 
@@ -321,7 +330,9 @@ function DenseTable({ columns, rows }: { columns: string[]; rows: Array<Array<st
           )) : (
             <TableRow>
               <TableCell colSpan={columns.length}>
-                <p className="py-8 text-center text-muted-foreground">No extracted rows.</p>
+                <Empty className="min-h-28">
+                  <EmptyDescription>No extracted rows.</EmptyDescription>
+                </Empty>
               </TableCell>
             </TableRow>
           )}
@@ -343,11 +354,11 @@ function CandidateTable({ results, selected, labels, onSelect }: { results: RawS
             <TableHead>Shape</TableHead>
             <TableHead>Size</TableHead>
             <TableHead>Section</TableHead>
-            <TableHead className="text-right">Moment kNm</TableHead>
-            <TableHead className="text-right">Shear kN</TableHead>
-            <TableHead className="text-right">Defl mm</TableHead>
-            <TableHead className="text-right">Stress MPa</TableHead>
-            <TableHead className="text-right">Reaction kN</TableHead>
+            <TableHead><div className="text-right">Moment kNm</div></TableHead>
+            <TableHead><div className="text-right">Shear kN</div></TableHead>
+            <TableHead><div className="text-right">Defl mm</div></TableHead>
+            <TableHead><div className="text-right">Stress MPa</div></TableHead>
+            <TableHead><div className="text-right">Reaction kN</div></TableHead>
             <TableHead>Outcome</TableHead>
             <TableHead>Exit</TableHead>
           </TableRow>
@@ -364,20 +375,29 @@ function CandidateTable({ results, selected, labels, onSelect }: { results: RawS
             return (
               <TableRow
                 key={`${candidateKey(result)}-${index}`}
-                onClick={() => onSelect(result)}
-                className={active ? 'bg-accent text-accent-foreground' : ''}
+                data-state={active ? 'selected' : undefined}
               >
-                <TableCell title={`${option} (${result.optionId ?? ''})`}><div className="max-w-[260px] truncate">{option}</div></TableCell>
+                <TableCell title={`${option} (${result.optionId ?? ''})`}>
+                  <Button
+                    type="button"
+                    variant="link"
+                    aria-pressed={active}
+                    onClick={() => onSelect(result)}
+                    className="h-auto max-w-[260px] justify-start p-0"
+                  >
+                    <span className="truncate">{option}</span>
+                  </Button>
+                </TableCell>
                 <TableCell title={`${members.join(', ')} (${memberIds(result).join(', ')})`}><div className="max-w-[220px] truncate text-muted-foreground">{members.join(', ')}</div></TableCell>
                 <TableCell title={`${group} (${result.coordinationGroupId ?? ''})`}><div className="max-w-[220px] truncate">{group}</div></TableCell>
                 <TableCell><code className="font-mono text-sm">{shape}</code></TableCell>
-                <TableCell className="text-right"><code className="font-mono text-sm">{Number.isFinite(size) ? size : ''}</code></TableCell>
+                <TableCell><div className="text-right"><code className="font-mono text-sm">{Number.isFinite(size) ? size : ''}</code></div></TableCell>
                 <TableCell><code className="font-mono text-sm">{result.sectionId}</code></TableCell>
-                <TableCell className="text-right"><code className="font-mono text-sm">{formatNumber(metrics.momentKnm, 2)}</code></TableCell>
-                <TableCell className="text-right"><code className="font-mono text-sm">{formatNumber(metrics.shearKn, 2)}</code></TableCell>
-                <TableCell className="text-right"><code className="font-mono text-sm">{formatNumber(metrics.deflectionMm, 3)}</code></TableCell>
-                <TableCell className="text-right"><code className="font-mono text-sm">{formatNumber(metrics.stressMpa, 2)}</code></TableCell>
-                <TableCell className="text-right"><code className="font-mono text-sm">{formatNumber(metrics.reactionKn, 2)}</code></TableCell>
+                <TableCell><div className="text-right"><code className="font-mono text-sm">{formatNumber(metrics.momentKnm, 2)}</code></div></TableCell>
+                <TableCell><div className="text-right"><code className="font-mono text-sm">{formatNumber(metrics.shearKn, 2)}</code></div></TableCell>
+                <TableCell><div className="text-right"><code className="font-mono text-sm">{formatNumber(metrics.deflectionMm, 3)}</code></div></TableCell>
+                <TableCell><div className="text-right"><code className="font-mono text-sm">{formatNumber(metrics.stressMpa, 2)}</code></div></TableCell>
+                <TableCell><div className="text-right"><code className="font-mono text-sm">{formatNumber(metrics.reactionKn, 2)}</code></div></TableCell>
                 <TableCell><code className="font-mono text-sm">{statusText(result)}</code></TableCell>
                 <TableCell><code className="font-mono text-sm">{exitCode(result) ?? ''}</code></TableCell>
               </TableRow>
@@ -385,7 +405,9 @@ function CandidateTable({ results, selected, labels, onSelect }: { results: RawS
           }) : (
             <TableRow>
               <TableCell colSpan={13}>
-                <p className="py-8 text-center text-muted-foreground">No raw CalculiX candidates found.</p>
+                <Empty className="min-h-28">
+                  <EmptyDescription>No raw CalculiX candidates found.</EmptyDescription>
+                </Empty>
               </TableCell>
             </TableRow>
           )}

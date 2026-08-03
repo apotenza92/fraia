@@ -2,6 +2,8 @@ import { AlertTriangle, Play, SquareStack } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Empty, EmptyDescription } from '@/components/ui/empty';
+import { cn } from '@/lib/utils';
 import { useState } from 'react';
 import type { AgentSession, EngineeringScheme, WorkbenchState } from '../../lib/types';
 import { normalizeWorkbenchState, planningRequestFromState, projectDirOf } from '../../lib/defaultProject';
@@ -133,7 +135,7 @@ export function AnalysisWorkspace({
                 )}
               </div>
               <Button onClick={() => { const next = { kind: 'all' } as const; setScope(next); runSupportedAnalysis(next); }} disabled={busy || (schemeCount > 0 && blockersByScheme.size > 0)}>
-                <Play />
+                <Play data-icon="inline-start" />
                 {busy && scope.kind === 'all' ? 'Running' : schemeCount ? 'Analyse all options' : 'Check readiness'}
               </Button>
             </CardContent>
@@ -148,11 +150,11 @@ export function AnalysisWorkspace({
                 return (
                   <div
                     key={scheme.id}
-                    className={['border-b p-3 last:border-b-0', selected ? 'bg-accent text-accent-foreground' : ''].filter(Boolean).join(' ')}
+                    className={cn('border-b p-3 last:border-b-0', selected && 'bg-accent text-accent-foreground')}
                   >
                     <div className="flex flex-nowrap items-center justify-between gap-4">
                     <div className="min-w-0 flex-1">
-                      <Button onClick={() => setScope(nextScope)} variant="link" className="h-auto max-w-full justify-start p-0 font-medium">
+                      <Button onClick={() => setScope(nextScope)} variant="link" className="h-auto max-w-full justify-start p-0">
                         {scheme.name}
                       </Button>
                       <p className="truncate text-sm text-muted-foreground">{scheme.comparison.supportStrategy} - {scheme.comparison.connectionImplication}</p>
@@ -172,7 +174,9 @@ export function AnalysisWorkspace({
                 );
               })}
               {!schemes.length && (
-                <p className="p-6 text-center text-muted-foreground">No design options are available yet.</p>
+                <Empty className="min-h-32">
+                  <EmptyDescription>No design options are available yet.</EmptyDescription>
+                </Empty>
               )}
             </CardContent>
           </Card>

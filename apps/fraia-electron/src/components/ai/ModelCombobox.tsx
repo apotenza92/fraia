@@ -36,7 +36,7 @@ export function ModelCombobox({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         render={(
-          <Button type="button" variant="outline" role="combobox" aria-expanded={open} disabled={disabled} className="w-full justify-between font-normal" />
+          <Button type="button" variant="outline" role="combobox" aria-expanded={open} disabled={disabled} className="w-full justify-between" />
         )}
       >
         <span className="truncate">{selected ? modelName(selected) : modelId || 'Choose a model'}</span>

@@ -40,29 +40,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { ModelTabBar } from "@/components/layout/ModelWorkspaceChrome"
 
 describe("shadcn wrapper accessibility contracts", () => {
-  it("links the current-model tab to the application workspace", () => {
-    render(
-      <>
-        <ModelTabBar workspaceName="Test project" />
-        <main>
-          <div
-            id="fraia-current-model-panel"
-            role="tabpanel"
-            aria-labelledby="fraia-current-model-tab"
-          />
-        </main>
-      </>,
-    )
-
-    const tab = screen.getByRole("tab", { name: "Test project" })
-    const panel = screen.getByRole("tabpanel")
-    expect(tab).toHaveAttribute("aria-controls", panel.id)
-    expect(panel).toHaveAttribute("aria-labelledby", tab.id)
-  })
-
   it("toggles a labelled checkbox from the keyboard", async () => {
     const user = userEvent.setup()
     const onCheckedChange = vi.fn()
@@ -95,7 +74,7 @@ describe("shadcn wrapper accessibility contracts", () => {
           <DialogDescription>
             Preliminary analysis for the selected revision.
           </DialogDescription>
-          <button type="button">Acknowledge</button>
+          <Button type="button">Acknowledge</Button>
         </DialogContent>
       </Dialog>,
     )
@@ -141,6 +120,13 @@ describe("shadcn wrapper accessibility contracts", () => {
     expect(assumptionsTab).toHaveFocus()
     expect(assumptionsTab).toHaveAttribute("aria-selected", "true")
     expect(document.getElementById(assumptionsTab.getAttribute("aria-controls") ?? "")).toHaveTextContent("Assumption summary")
+
+    await user.keyboard("{End}")
+    expect(evidenceTab).toHaveFocus()
+    expect(evidenceTab).toHaveAttribute("aria-selected", "true")
+    await user.keyboard("{Home}")
+    expect(assumptionsTab).toHaveFocus()
+    expect(assumptionsTab).toHaveAttribute("aria-selected", "true")
   })
 
   it("shows Select item labels and reports keyboard selection", async () => {
@@ -226,7 +212,7 @@ describe("shadcn wrapper accessibility contracts", () => {
             <TooltipContent>Configure snap behavior</TooltipContent>
           </Tooltip>
           <PopoverContent>
-            <button type="button">Toggle intersections</button>
+            <Button type="button">Toggle intersections</Button>
           </PopoverContent>
         </Popover>
       </TooltipProvider>,
@@ -255,7 +241,7 @@ describe("shadcn wrapper accessibility contracts", () => {
         <Popover>
           <PopoverTrigger>Option filters</PopoverTrigger>
           <PopoverContent>
-            <button type="button">Reset filters</button>
+            <Button type="button">Reset filters</Button>
           </PopoverContent>
         </Popover>
         <Menubar aria-label="Application menu">

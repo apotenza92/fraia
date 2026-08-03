@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { Card } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -221,8 +222,8 @@ export function SchemeGroupsPanelContent({ scene }: { scene: RenderScene }) {
 
 export function SchemeGroupsOverlay({ scene }: { scene: RenderScene }) {
   return (
-    <aside className="absolute right-2 top-2 max-h-[min(460px,calc(100%-1rem))] w-[min(420px,calc(100%-1rem))] overflow-hidden rounded-xl border bg-card text-card-foreground shadow-xl">
+    <Card className="absolute right-2 top-2 max-h-[min(460px,calc(100%-1rem))] w-[min(420px,calc(100%-1rem))] overflow-hidden py-0">
       <SchemeGroupsPanelContent scene={scene} />
-    </aside>
+    </Card>
   );
 }

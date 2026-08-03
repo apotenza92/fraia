@@ -1,20 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
-import { ArrowDown, Circle, Eye, FileSearch, Layers, LoaderCircle, Magnet, MousePointer2, Move, PanelRightOpen, PencilLine, Play, Scissors, Settings2, Sparkles, Triangle } from 'lucide-react';
+import { ArrowDown, Circle, Eye, FileSearch, Layers, Magnet, MousePointer2, Move, PanelRightOpen, PencilLine, Play, Scissors, Settings2, Sparkles, Triangle } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Spinner } from '@/components/ui/spinner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Toggle } from '@/components/ui/toggle';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { cn } from '@/lib/utils';
 import type { AgentTarget, RenderMember, RenderScene, WorkbenchState } from '../../lib/types';
 import { buildSchemeWorkspace } from '../../lib/scene';
 import { Viewport3D, type ViewportEditOverlay, type ViewportLabelVisibility, type ViewportPointerInfo, type ViewportSelectionGesture } from '../viewport/Viewport3D';
-import { ModelTabBar, ModelWorkspaceChrome } from './ModelWorkspaceChrome';
+import { ModelWorkspaceChrome } from './ModelWorkspaceChrome';
 import { DesignOptionsPanel, type ActiveView, type WorkspacePanel } from './ModelWorkspaceSidebar';
 import { BaseChatPanel } from '../panels/BaseChatPanel';
 import { sceneHasSchemeGroups, SchemeGroupsPanelContent } from '../viewport/SchemeGroupsOverlay';
@@ -29,6 +35,8 @@ import { DesignOptionInspector } from '../options/DesignOptionInspector';
 import { DevelopmentPanel } from '../options/DevelopmentPanel';
 import { WorkflowStageBar } from './WorkflowStageBar';
 import { initialWorkflowStage, runtimeWorkflowStage, workflowJourneyFrom, type WorkflowStage } from '../../lib/workflowJourney';
+import { ResizeHandle } from '../domain-ui/ResizeHandle';
+import { DocumentTabBar, documentTabTriggerId, type DocumentTab } from '../domain-ui/DocumentTabBar';
 
 const WORKSPACE_PANEL_MIN_RATIO = 0.22;
 const WORKSPACE_PANEL_MAX_RATIO = 0.4;
@@ -46,6 +54,7 @@ const AUTO_COLLAPSE_WIDTH = 1180;
 const DEFAULT_CHAT_WIDTH_RATIO = 0.4;
 const START_GEOMETRY_ONLY = import.meta.env.VITE_FRAIA_GEOMETRY_ONLY === '1';
 const OPTION_INSPECTOR_WIDTH = 340;
+const DOCUMENT_PANEL_ID = 'fraia-current-model-panel';
 
 const DEFAULT_LABEL_VISIBILITY: ViewportLabelVisibility = {
   node: false,
@@ -314,25 +323,11 @@ const ALL_HIDDEN_LABEL_VISIBILITY: ViewportLabelVisibility = {
 type WorkspaceSidebarProps = {
   width: number;
   onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
-  onResizeReset: () => void;
+  onResizeValue: (width: number) => void;
+  resizeMin: number;
+  resizeMax: number;
   children: ReactNode;
 };
-
-function workspaceName(state: WorkbenchState | null) {
-  const overview = state?.overview;
-  const explicitName = overview?.fileName ?? overview?.file_name ?? overview?.workspaceName ?? overview?.workspace_name ?? overview?.projectName ?? overview?.project_name;
-  if (typeof explicitName === 'string' && explicitName.trim()) return explicitName;
-
-  const projectDir = overview?.projectDir ?? overview?.project_dir ?? state?.projectDir ?? state?.project_dir;
-  if (typeof projectDir === 'string' && projectDir.trim()) {
-    const parts = projectDir.split(/[\\/]/).filter(Boolean);
-    return parts[parts.length - 1] ?? 'Current Model';
-  }
-
-  const stateName = overview?.name ?? state?.name;
-  if (typeof stateName === 'string' && stateName.trim() && stateName !== 'Fraia Electron Workbench') return stateName;
-  return 'Current Model';
-}
 
 function pointDistance(a: Point3, b: Point3) {
   return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
@@ -568,22 +563,20 @@ function ViewportShortcutHints({ hints }: { hints: ViewportShortcutHint[] }) {
   return (
     <div className="flex max-w-full flex-row flex-wrap justify-center gap-1.5">
       {hints.map((hint) => (
-        <div
+        <Badge
           key={hint.key}
-          className="flex items-center gap-1.5 rounded-full border border-border/70 bg-background/80 px-2 py-0.5 text-[11px] font-medium text-muted-foreground shadow-sm backdrop-blur"
+          variant="outline"
         >
-          <span className="flex items-center gap-0.5">
+          <KbdGroup>
             {hint.keys.map((keyLabel, index) => (
               <span key={`${hint.key}-${keyLabel}`} className="contents">
                 {index > 0 ? <span className="text-muted-foreground/70">/</span> : null}
-                <kbd className="min-w-4 rounded border border-border/80 bg-muted/80 px-1 py-px text-center font-mono text-[10px] font-semibold leading-none text-foreground">
-                  {keyLabel}
-                </kbd>
+                <Kbd>{keyLabel}</Kbd>
               </span>
             ))}
-          </span>
+          </KbdGroup>
           <span>{hint.label}</span>
-        </div>
+        </Badge>
       ))}
     </div>
   );
@@ -1511,12 +1504,14 @@ function DockedSidePanel({
   showDivider = true,
   showResizeHandle = true,
   onResizeStart,
-  onResizeReset,
+  onResizeValue,
+  resizeMin,
+  resizeMax,
   children,
 }: WorkspaceSidebarProps & { side: 'left' | 'right'; resizeLabel: string; showDivider?: boolean; showResizeHandle?: boolean }) {
   return (
     <aside
-      className={['relative h-full min-h-0 shrink-0', showDivider ? side === 'left' ? 'border-r' : 'border-l' : ''].filter(Boolean).join(' ')}
+      className={cn('relative h-full min-h-0 shrink-0', showDivider && (side === 'left' ? 'border-r' : 'border-l'))}
       style={{ width, minWidth: width, maxWidth: width }}
       data-render-sidebar
     >
@@ -1524,17 +1519,18 @@ function DockedSidePanel({
         <div className="min-h-0 flex-1">{children}</div>
       </div>
       {showResizeHandle ? (
-        <div
-          onDoubleClick={onResizeReset}
+        <ResizeHandle
+          label={resizeLabel}
+          min={resizeMin}
+          max={resizeMax}
+          value={width}
           onPointerDown={onResizeStart}
-          className="absolute top-0 h-full cursor-col-resize"
-          style={{
+          onValueChange={onResizeValue}
+          handleStyle={{
             width: CHROME.splitHitZoneWidth,
             right: side === 'left' ? -CHROME.splitHitZoneWidth : undefined,
             left: side === 'right' ? -CHROME.splitHitZoneWidth : undefined,
           }}
-          aria-label={resizeLabel}
-          title="Double-click to reset"
         />
       ) : null}
     </aside>
@@ -1593,18 +1589,22 @@ function SettingsCheckboxRow({
   onCheckedChange: (checked: boolean) => void;
 }) {
   return (
-    <div className={['flex h-8 items-center gap-2 rounded-sm px-2 text-sm', disabled ? 'opacity-50' : ''].filter(Boolean).join(' ')}>
+    <Field
+      orientation="horizontal"
+      data-disabled={disabled || undefined}
+      className="h-8 gap-2 px-2"
+    >
       <Checkbox
         id={id}
         checked={checked}
         disabled={disabled}
         onCheckedChange={(value) => onCheckedChange(value === true)}
       />
-      <label htmlFor={id} className="flex min-w-0 flex-1 cursor-default items-center gap-2">
+      <FieldLabel htmlFor={id} className="min-w-0 cursor-default items-center">
         {icon}
         <span className="truncate">{label}</span>
-      </label>
-    </div>
+      </FieldLabel>
+    </Field>
   );
 }
 
@@ -1626,7 +1626,7 @@ function SnapSettingInput({
   onValue: (value: number) => void;
 }) {
   return (
-    <label className="flex h-8 min-w-0 items-center gap-1.5">
+    <div className="flex min-w-0 items-center gap-1.5">
       <Input
         aria-label={label}
         disabled={disabled}
@@ -1636,10 +1636,10 @@ function SnapSettingInput({
         value={value}
         onFocus={(event) => event.currentTarget.select()}
         onChange={(event) => onValue(Number(event.currentTarget.value))}
-        className="h-7 w-16 px-2 py-0 text-right text-sm tabular-nums"
+        className="h-7 w-16"
       />
       <span className="w-7 text-xs text-muted-foreground">{unit}</span>
-    </label>
+    </div>
   );
 }
 
@@ -1712,7 +1712,12 @@ function ViewportSettingsMenu({
           render={(
             <PopoverTrigger
               render={(
-                <Button aria-label="Toolbar settings" variant="ghost" size="icon-sm">
+                <Button
+                  aria-label="Toolbar settings"
+                  aria-expanded={open}
+                  variant="outline"
+                  size="icon-sm"
+                >
                   <Settings2 />
                 </Button>
               )}
@@ -1726,10 +1731,12 @@ function ViewportSettingsMenu({
           <PopoverTitle>Viewport settings</PopoverTitle>
           <PopoverDescription>Drawing aids and model annotations.</PopoverDescription>
         </PopoverHeader>
-        {viewMode === 'base' ? (
-          <>
-            <div>
-              <div className="px-2 py-1 text-xs font-medium text-muted-foreground">Member drawing</div>
+        <FieldGroup className="gap-3">
+          {viewMode === 'base' ? (
+            <>
+            <FieldSet className="gap-1">
+              <FieldLegend variant="label" className="mb-0 px-2 py-1">Member drawing</FieldLegend>
+              <FieldGroup className="gap-1">
               <SettingsCheckboxRow
                 id="member-polygon-mode"
                 label="Continuous drawing"
@@ -1737,35 +1744,41 @@ function ViewportSettingsMenu({
                 disabled={disabled}
                 onCheckedChange={(checked) => onDrawingOptions({ ...drawingOptions, polygonMode: checked })}
               />
-            </div>
+              </FieldGroup>
+            </FieldSet>
             <Separator />
-            <div>
-              <div className="px-2 py-1 text-xs font-medium text-muted-foreground">Snapping</div>
+            <FieldSet className="gap-1">
+              <FieldLegend variant="label" className="mb-0 px-2 py-1">Snapping</FieldLegend>
+              <FieldGroup className="gap-1">
               <SettingsCheckboxRow id="snap-endpoints" label="Endpoints" checked={snapOptions.endpoints} disabled={disabled} onCheckedChange={(checked) => setSnap({ endpoints: checked })} />
               <SettingsCheckboxRow id="snap-midpoints" label="Midpoints" checked={snapOptions.midpoints} disabled={disabled} onCheckedChange={(checked) => setSnap({ midpoints: checked })} />
               <SettingsCheckboxRow id="snap-nearest" label="Nearest on member" checked={snapOptions.nearest} disabled={disabled} onCheckedChange={(checked) => setSnap({ nearest: checked })} />
-              <div className="flex h-8 items-center gap-2 px-2">
+              <Field orientation="horizontal" data-disabled={disabled || undefined} className="h-8 gap-2 px-2">
                 <Checkbox id="snap-angles" checked={snapOptions.angles} disabled={disabled} onCheckedChange={(checked) => setSnap({ angles: checked === true })} />
-                <label htmlFor="snap-angles" className="min-w-0 flex-1 truncate text-sm">Angle snap</label>
+                <FieldLabel htmlFor="snap-angles" className="min-w-0 truncate">Angle snap</FieldLabel>
                 <SnapSettingInput label="Angle increment" disabled={disabled} min={1} step={1} unit="deg" value={snapOptions.angleIncrement} onValue={(value) => setSnap({ angleIncrement: Math.max(1, Number.isFinite(value) ? value : 15) })} />
-              </div>
+              </Field>
               <SettingsCheckboxRow id="snap-axes" label="Axis snap" checked={snapOptions.axes} disabled={disabled || !snapOptions.angles} onCheckedChange={(checked) => setSnap({ axes: checked })} />
-              <div className="flex h-8 items-center gap-2 px-2">
+              <Field orientation="horizontal" data-disabled={disabled || undefined} className="h-8 gap-2 px-2">
                 <Checkbox id="snap-dimension" checked={snapOptions.grid} disabled={disabled} onCheckedChange={(checked) => setSnap({ grid: checked === true })} />
-                <label htmlFor="snap-dimension" className="min-w-0 flex-1 truncate text-sm">Dimension snap</label>
+                <FieldLabel htmlFor="snap-dimension" className="min-w-0 truncate">Dimension snap</FieldLabel>
                 <SnapSettingInput label="Dimension increment" disabled={disabled} min={1} step={10} unit="mm" value={Math.round(snapOptions.gridSize * 1000)} onValue={(value) => setSnap({ gridSize: Math.max(0.001, Number.isFinite(value) ? value / 1000 : 0.1) })} />
-              </div>
-            </div>
+              </Field>
+              </FieldGroup>
+            </FieldSet>
             <Separator />
-          </>
-        ) : null}
-        <div>
-          <div className="px-2 py-1 text-xs font-medium text-muted-foreground">Labels</div>
-          <SettingsCheckboxRow id="visibility-node-labels" label="Node labels" icon={<Circle className="text-muted-foreground" />} checked={visibility.node} onCheckedChange={(checked) => setVisibility('node', checked)} />
-          <SettingsCheckboxRow id="visibility-member-labels" label="Member labels" icon={<PencilLine className="text-muted-foreground" />} checked={visibility.member} onCheckedChange={(checked) => setVisibility('member', checked)} />
-          <SettingsCheckboxRow id="visibility-support-labels" label="Support labels" icon={<Triangle className="text-muted-foreground" />} checked={visibility.support} onCheckedChange={(checked) => setVisibility('support', checked)} />
-          <SettingsCheckboxRow id="visibility-load-labels" label="Load labels" icon={<ArrowDown className="text-muted-foreground" />} checked={visibility.load} onCheckedChange={(checked) => setVisibility('load', checked)} />
-        </div>
+            </>
+          ) : null}
+        <FieldSet className="gap-1">
+          <FieldLegend variant="label" className="mb-0 px-2 py-1">Labels</FieldLegend>
+          <FieldGroup className="gap-1">
+          <SettingsCheckboxRow id="visibility-node-labels" label="Node labels" icon={<Circle />} checked={visibility.node} onCheckedChange={(checked) => setVisibility('node', checked)} />
+          <SettingsCheckboxRow id="visibility-member-labels" label="Member labels" icon={<PencilLine />} checked={visibility.member} onCheckedChange={(checked) => setVisibility('member', checked)} />
+          <SettingsCheckboxRow id="visibility-support-labels" label="Support labels" icon={<Triangle />} checked={visibility.support} onCheckedChange={(checked) => setVisibility('support', checked)} />
+          <SettingsCheckboxRow id="visibility-load-labels" label="Load labels" icon={<ArrowDown />} checked={visibility.load} onCheckedChange={(checked) => setVisibility('load', checked)} />
+          </FieldGroup>
+        </FieldSet>
+        </FieldGroup>
       </PopoverContent>
     </Popover>
   );
@@ -1858,30 +1871,32 @@ export function ContextualWorkspaceToolbar({
             })}
           </ToggleGroup>
           <Separator orientation="vertical" className="mx-1 h-6" />
-          <ToolbarToggle label="Snaps" pressed={snapsActive} disabled={editPending} onPressedChange={(pressed) => {
-            if (pressed !== snapsActive) onToggleSnap();
-          }}>
-            <Magnet data-icon="inline-start" />
-            <span className="hidden xl:inline">Snaps</span>
-          </ToolbarToggle>
-          <ToolbarToggle label="Labels" pressed={labelsActive} onPressedChange={(pressed) => {
-            if (pressed !== labelsActive) onToggleLabelVisibility();
-          }}>
-            <Eye data-icon="inline-start" />
-            <span className="hidden xl:inline">Labels</span>
-          </ToolbarToggle>
-          <ViewportSettingsMenu
-            open={openToolbarMenu === 'viewport-settings'}
-            viewMode={viewMode}
-            snapOptions={snapOptions}
-            drawingOptions={memberDrawingOptions}
-            visibility={labelVisibility}
-            disabled={editPending}
-            onSnapOptions={onSnapOptions}
-            onDrawingOptions={onMemberDrawingOptions}
-            onVisibility={onLabelVisibility}
-            onOpenChange={(open) => onToolbarMenuOpen(open ? 'viewport-settings' : null)}
-          />
+          <ButtonGroup aria-label="Viewport display controls">
+            <ToolbarToggle label="Snaps" pressed={snapsActive} disabled={editPending} onPressedChange={(pressed) => {
+              if (pressed !== snapsActive) onToggleSnap();
+            }}>
+              <Magnet data-icon="inline-start" />
+              <span className="hidden xl:inline">Snaps</span>
+            </ToolbarToggle>
+            <ToolbarToggle label="Labels" pressed={labelsActive} onPressedChange={(pressed) => {
+              if (pressed !== labelsActive) onToggleLabelVisibility();
+            }}>
+              <Eye data-icon="inline-start" />
+              <span className="hidden xl:inline">Labels</span>
+            </ToolbarToggle>
+            <ViewportSettingsMenu
+              open={openToolbarMenu === 'viewport-settings'}
+              viewMode={viewMode}
+              snapOptions={snapOptions}
+              drawingOptions={memberDrawingOptions}
+              visibility={labelVisibility}
+              disabled={editPending}
+              onSnapOptions={onSnapOptions}
+              onDrawingOptions={onMemberDrawingOptions}
+              onVisibility={onLabelVisibility}
+              onOpenChange={(open) => onToolbarMenuOpen(open ? 'viewport-settings' : null)}
+            />
+          </ButtonGroup>
         </>
       ) : (
         <>
@@ -1890,23 +1905,25 @@ export function ContextualWorkspaceToolbar({
               <Layers />
             </RenderRailButton>
           ) : null}
-          <ToolbarToggle label="Labels" pressed={labelsActive} onPressedChange={(pressed) => {
-            if (pressed !== labelsActive) onToggleLabelVisibility();
-          }}>
-            <Eye data-icon="inline-start" />
-            <span className="hidden xl:inline">Labels</span>
-          </ToolbarToggle>
-          <ViewportSettingsMenu
-            open={openToolbarMenu === 'viewport-settings'}
-            viewMode={viewMode}
-            snapOptions={snapOptions}
-            drawingOptions={memberDrawingOptions}
-            visibility={labelVisibility}
-            onSnapOptions={onSnapOptions}
-            onDrawingOptions={onMemberDrawingOptions}
-            onVisibility={onLabelVisibility}
-            onOpenChange={(open) => onToolbarMenuOpen(open ? 'viewport-settings' : null)}
-          />
+          <ButtonGroup aria-label="Viewport display controls">
+            <ToolbarToggle label="Labels" pressed={labelsActive} onPressedChange={(pressed) => {
+              if (pressed !== labelsActive) onToggleLabelVisibility();
+            }}>
+              <Eye data-icon="inline-start" />
+              <span className="hidden xl:inline">Labels</span>
+            </ToolbarToggle>
+            <ViewportSettingsMenu
+              open={openToolbarMenu === 'viewport-settings'}
+              viewMode={viewMode}
+              snapOptions={snapOptions}
+              drawingOptions={memberDrawingOptions}
+              visibility={labelVisibility}
+              onSnapOptions={onSnapOptions}
+              onDrawingOptions={onMemberDrawingOptions}
+              onVisibility={onLabelVisibility}
+              onOpenChange={(open) => onToolbarMenuOpen(open ? 'viewport-settings' : null)}
+            />
+          </ButtonGroup>
         </>
       )}
     </div>
@@ -2122,11 +2139,11 @@ function ViewportRegion({
     };
   }
 
-  function resetPanelWidth() {
+  function setPanelWidthFromKeyboard(nextWidth: number) {
     stopResize();
-    panelWidthRatioRef.current = DEFAULT_CHAT_WIDTH_RATIO;
-    setPanelWidthMode('default');
-    setPanelWidth(defaultGroupsPanelWidth(groupsPanelSizingBase(renderAreaWidth)));
+    panelWidthRatioRef.current = groupsPanelRatioForWidth(nextWidth, renderAreaWidth);
+    setPanelWidthMode('manual');
+    setPanelWidth(nextWidth);
   }
 
   function togglePanel(panel: 'groups') {
@@ -2389,12 +2406,12 @@ function ViewportRegion({
         >
           <div className="flex max-w-full flex-row flex-wrap justify-center gap-1.5">
             {viewportStatusBubbles.map((item) => (
-              <div
+              <Badge
                 key={item.key}
-                className="rounded-full border border-border/80 bg-background/90 px-2.5 py-1 text-xs font-medium text-foreground shadow-sm backdrop-blur"
+                variant="outline"
               >
                 {coloredAxisLabel(item.label)}
-              </div>
+              </Badge>
             ))}
           </div>
         </div>
@@ -2428,7 +2445,9 @@ function ViewportRegion({
             side="right"
             width={panelWidth}
             onResizeStart={startPanelResize}
-            onResizeReset={resetPanelWidth}
+            onResizeValue={setPanelWidthFromKeyboard}
+            resizeMin={GROUPS_PANEL_MIN}
+            resizeMax={groupsPanelMaxWidth(renderAreaWidth)}
             resizeLabel="Resize render sidebar"
           >
             <SchemeGroupsPanelContent scene={scene} />
@@ -2444,11 +2463,29 @@ export function AppShell({
   onState,
   themeMode,
   onThemeModeChange,
+  documentTabs,
+  activeDocumentId,
+  onDocumentSelect,
+  onDocumentClose,
+  onDocumentReorder,
+  onOpenDocument,
+  onNewBlankModel,
+  documentActionPending,
+  documentError,
 }: {
   state: WorkbenchState | null;
   onState: (s: WorkbenchState) => void;
   themeMode: ThemeMode;
   onThemeModeChange: (mode: ThemeMode) => void;
+  documentTabs: DocumentTab[];
+  activeDocumentId: string;
+  onDocumentSelect: (id: string) => void;
+  onDocumentClose: (id: string) => void;
+  onDocumentReorder: (orderedIds: string[]) => void;
+  onOpenDocument: () => void;
+  onNewBlankModel: () => void;
+  documentActionPending: boolean;
+  documentError: string | null;
 }) {
   const workspace = useMemo(() => buildSchemeWorkspace(state), [state]);
   const [active, setActive] = useState<ActiveView>({ kind: 'base' });
@@ -2469,8 +2506,6 @@ export function AppShell({
   const [workspaceAreaWidth, setWorkspaceAreaWidth] = useState(measuredWorkspaceWidthFallback);
   const [workspacePanelWidth, setWorkspacePanelWidth] = useState(defaultWorkspacePanelWidth);
   const [workspacePanelWidthMode, setWorkspacePanelWidthMode] = useState<'default' | 'manual'>('default');
-  const [workspaceSplitHover, setWorkspaceSplitHover] = useState(false);
-  const [workspaceSplitActive, setWorkspaceSplitActive] = useState(false);
   const [generatingOptions, setGeneratingOptions] = useState(false);
   const [decisionBusy, setDecisionBusy] = useState(false);
   const [analysisBusy, setAnalysisBusy] = useState(false);
@@ -2847,7 +2882,6 @@ export function AppShell({
   const stopResize = useCallback(() => {
     resizeCleanupRef.current?.();
     resizeCleanupRef.current = null;
-    setWorkspaceSplitActive(false);
   }, []);
 
   function startResize(
@@ -2881,16 +2915,8 @@ export function AppShell({
     };
   }
 
-  const resetWorkspacePanelWidth = () => {
-    stopResize();
-    workspacePanelRatioRef.current = WORKSPACE_PANEL_DEFAULT_RATIO;
-    setWorkspacePanelWidthMode('default');
-    setWorkspacePanelWidth(defaultWorkspacePanelWidth(workspaceAreaWidth));
-  };
-
   const startWorkspacePanelResize = (event: ReactPointerEvent<HTMLDivElement>) => {
     const bounds = workspacePanelBounds(workspaceAreaWidth);
-    setWorkspaceSplitActive(true);
     startResize(
       event,
       workspacePanelWidth,
@@ -2905,6 +2931,13 @@ export function AppShell({
         workspacePanelRatioRef.current = workspacePanelRatioForWidth(nextWidth, workspaceAreaWidth);
       },
     );
+  };
+
+  const setWorkspacePanelWidthFromKeyboard = (nextWidth: number) => {
+    stopResize();
+    workspacePanelRatioRef.current = workspacePanelRatioForWidth(nextWidth, workspaceAreaWidth);
+    setWorkspacePanelWidthMode('manual');
+    setWorkspacePanelWidth(nextWidth);
   };
 
   function workspacePanelTitle() {
@@ -2983,9 +3016,22 @@ export function AppShell({
 
   return (
     <div className="grid h-screen w-screen grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden bg-background text-foreground">
-      <header className="border-b" style={{ height: APP_HEADER_HEIGHT }}>
+      <header style={{ height: APP_HEADER_HEIGHT }}>
         <AppMenuBar />
-        <ModelTabBar workspaceName={workspaceName(state)} />
+        <div className="shrink-0" style={{ height: CHROME.tabHeight }}>
+          <DocumentTabBar
+            tabs={documentTabs}
+            value={activeDocumentId}
+            panelId={DOCUMENT_PANEL_ID}
+            onValueChange={onDocumentSelect}
+            onClose={onDocumentClose}
+            onReorder={onDocumentReorder}
+            onOpen={onOpenDocument}
+            openDisabled={documentActionPending}
+            onNewBlankModel={onNewBlankModel}
+            newBlankModelDisabled={documentActionPending}
+          />
+        </div>
       </header>
       <WorkflowStageBar
         currentStage={journey.currentStage}
@@ -2994,60 +3040,28 @@ export function AppShell({
       />
       <main className="min-h-0 min-w-0">
         <div
-          id="fraia-current-model-panel"
+          id={DOCUMENT_PANEL_ID}
           role="tabpanel"
-          aria-labelledby="fraia-current-model-tab"
+          aria-labelledby={documentTabTriggerId(activeDocumentId)}
           ref={workspaceAreaRef}
           className="relative flex h-full min-h-0 min-w-0 flex-col gap-0"
         >
           {workspacePanelOpen ? (
-            <>
-              <div
-                className={[
-                  'pointer-events-none absolute top-0 z-20 transition-colors',
-                  workspaceSplitHover || workspaceSplitActive ? 'bg-ring' : 'bg-border',
-                ].join(' ')}
-                style={{
-                  bottom: 0,
-                  width: CHROME.splitLineWidth,
-                  left: workspacePanelWidth,
-                }}
-              />
-              <div
-                className="absolute top-0 z-30 cursor-col-resize"
-                style={{
-                  bottom: 0,
+            <ResizeHandle
+              label="Resize workspace split"
+              min={workspacePanelBounds(workspaceAreaWidth).min}
+              max={workspacePanelBounds(workspaceAreaWidth).max}
+              value={workspacePanelWidth}
+              separatorStyle={{
+                left: workspacePanelWidth,
+              }}
+              handleStyle={{
                   width: CHROME.splitHitZoneWidth,
                   left: workspacePanelWidth,
-                }}
-                onDoubleClick={resetWorkspacePanelWidth}
-                onPointerDown={startWorkspacePanelResize}
-                onPointerEnter={() => setWorkspaceSplitHover(true)}
-                onPointerLeave={() => setWorkspaceSplitHover(false)}
-                onKeyDown={(event) => {
-                  const bounds = workspacePanelBounds(workspaceAreaWidth);
-                  let nextWidth: number | null = null;
-                  if (event.key === 'ArrowLeft') nextWidth = workspacePanelWidth - 16;
-                  if (event.key === 'ArrowRight') nextWidth = workspacePanelWidth + 16;
-                  if (event.key === 'Home') nextWidth = bounds.min;
-                  if (event.key === 'End') nextWidth = bounds.max;
-                  if (nextWidth == null) return;
-                  event.preventDefault();
-                  const clampedWidth = clampWorkspacePanelWidth(nextWidth, workspaceAreaWidth);
-                  workspacePanelRatioRef.current = workspacePanelRatioForWidth(clampedWidth, workspaceAreaWidth);
-                  setWorkspacePanelWidthMode('manual');
-                  setWorkspacePanelWidth(clampedWidth);
-                }}
-                role="separator"
-                aria-orientation="vertical"
-                aria-label="Resize workspace split"
-                aria-valuemin={Math.round(workspacePanelBounds(workspaceAreaWidth).min)}
-                aria-valuemax={Math.round(workspacePanelBounds(workspaceAreaWidth).max)}
-                aria-valuenow={Math.round(workspacePanelWidth)}
-                tabIndex={0}
-                title="Double-click to reset"
-              />
-            </>
+              }}
+              onPointerDown={startWorkspacePanelResize}
+              onValueChange={setWorkspacePanelWidthFromKeyboard}
+            />
           ) : null}
           <ModelWorkspaceChrome
             title={evidenceActive ? 'Engineering evidence' : workspacePanelTitle()}
@@ -3065,7 +3079,7 @@ export function AppShell({
                 size="sm"
                 title="Generate a traceable design-option batch from the current Base Model brief"
               >
-                {generatingOptions ? <LoaderCircle data-icon="inline-start" className="animate-spin" /> : <Sparkles data-icon="inline-start" />}
+                {generatingOptions ? <Spinner data-icon="inline-start" /> : <Sparkles data-icon="inline-start" />}
                 {generatingOptions ? 'Generating options…' : workspace.schemes.length ? 'Generate new option set' : 'Generate options'}
               </Button>
             ) : workflowStage === 'analysis' ? (
@@ -3081,7 +3095,7 @@ export function AppShell({
                   disabled={analysisBusy || activeBatch?.status !== 'active' || !journey.includedOptionIds.length || journey.hasExactCurrentAnalysis}
                   size="sm"
                 >
-                  {analysisBusy ? <LoaderCircle data-icon="inline-start" className="animate-spin" /> : <Play data-icon="inline-start" />}
+                  {analysisBusy ? <Spinner data-icon="inline-start" /> : <Play data-icon="inline-start" />}
                   {analysisBusy ? 'Analysing…' : journey.hasExactCurrentAnalysis ? 'Analysis current' : journey.missingOrStaleOptionIds.length ? 'Analyse options' : 'Refresh comparison'}
                 </Button>
               </div>
@@ -3115,8 +3129,17 @@ export function AppShell({
             ) : null}
           </ModelWorkspaceChrome>
           {workflowError ? (
-            <div role="alert" className="shrink-0 border-y border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {workflowError}
+            <div className="shrink-0 px-3 py-2">
+              <Alert variant="destructive">
+                <AlertDescription>{workflowError}</AlertDescription>
+              </Alert>
+            </div>
+          ) : null}
+          {documentError ? (
+            <div className="shrink-0 px-3 py-2">
+              <Alert variant="destructive">
+                <AlertDescription>{documentError}</AlertDescription>
+              </Alert>
             </div>
           ) : null}
           <WorkspaceBody>
@@ -3127,7 +3150,9 @@ export function AppShell({
                 showDivider={false}
                 showResizeHandle={false}
                 onResizeStart={startWorkspacePanelResize}
-                onResizeReset={resetWorkspacePanelWidth}
+                onResizeValue={setWorkspacePanelWidthFromKeyboard}
+                resizeMin={workspacePanelBounds(workspaceAreaWidth).min}
+                resizeMax={workspacePanelBounds(workspaceAreaWidth).max}
                 resizeLabel="Resize workspace panel"
               >
                 {workspacePanelContent()}

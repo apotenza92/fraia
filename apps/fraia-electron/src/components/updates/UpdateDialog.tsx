@@ -2,7 +2,6 @@ import {
   CheckCircle2,
   CircleAlert,
   Download,
-  LoaderCircle,
   PackageCheck,
   RefreshCw,
   ShieldCheck,
@@ -19,8 +18,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Field, FieldContent, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { Progress, ProgressLabel, ProgressValue } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Spinner } from '@/components/ui/spinner';
 import {
   Select,
   SelectContent,
@@ -37,6 +38,9 @@ import {
   type UpdateFrequency,
   type UpdateStatus,
 } from '@/lib/updateStatus';
+
+const UPDATE_FREQUENCY_ITEMS = (Object.entries(UPDATE_FREQUENCY_LABELS) as Array<[UpdateFrequency, string]>)
+  .map(([value, label]) => ({ value, label }));
 
 type UpdateDialogProps = {
   checking: boolean;
@@ -55,7 +59,7 @@ function UpdateState({ status }: { status: UpdateStatus }) {
   if (status.phase === 'checking' || status.phase === 'initializing') {
     return (
       <Alert>
-        <LoaderCircle className="animate-spin" />
+        <Spinner />
         <AlertTitle>{status.phase === 'initializing' ? 'Starting the updater' : 'Checking for updates'}</AlertTitle>
         <AlertDescription>
           Fraia is securely checking the {status.channel ?? 'current'} channel.
@@ -117,7 +121,7 @@ function UpdateState({ status }: { status: UpdateStatus }) {
   if (status.phase === 'installing') {
     return (
       <Alert>
-        <LoaderCircle className="animate-spin" />
+        <Spinner />
         <AlertTitle>Installing the update</AlertTitle>
         <AlertDescription>Fraia will close and reopen when installation is complete.</AlertDescription>
       </Alert>
@@ -212,7 +216,7 @@ export function UpdateDialog({
         <div aria-live="polite">
           {status ? <UpdateState status={status} /> : (
             <Alert>
-              <LoaderCircle className="animate-spin" />
+              <Spinner />
               <AlertTitle>Loading update status</AlertTitle>
               <AlertDescription>Fraia is reading the updater configuration.</AlertDescription>
             </Alert>
@@ -220,14 +224,15 @@ export function UpdateDialog({
         </div>
 
         {enabled ? (
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-sm font-medium">Automatic checks</span>
-              <span className="text-xs text-muted-foreground">
+          <Field orientation="horizontal">
+            <FieldContent>
+              <FieldLabel htmlFor="automatic-update-frequency">Automatic checks</FieldLabel>
+              <FieldDescription>
                 {formatLastChecked(status?.lastSuccessfulCheckAt)}
-              </span>
-            </div>
+              </FieldDescription>
+            </FieldContent>
             <Select
+              items={UPDATE_FREQUENCY_ITEMS}
               value={status?.frequency ?? 'daily'}
               onValueChange={(value) => {
                 if (typeof value === 'string' && value in UPDATE_FREQUENCY_LABELS) {
@@ -235,7 +240,7 @@ export function UpdateDialog({
                 }
               }}
             >
-              <SelectTrigger aria-label="Automatic update frequency">
+              <SelectTrigger id="automatic-update-frequency" aria-label="Automatic update frequency">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -246,7 +251,7 @@ export function UpdateDialog({
                 </SelectGroup>
               </SelectContent>
             </Select>
-          </div>
+          </Field>
         ) : null}
 
         <p className="text-xs text-muted-foreground">
@@ -260,14 +265,14 @@ export function UpdateDialog({
                 Install when Fraia closes
               </Button>
               <Button type="button" onClick={onInstall} disabled={installing}>
-                {installing ? <LoaderCircle data-icon="inline-start" className="animate-spin" /> : <RefreshCw data-icon="inline-start" />}
+                {installing ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
                 Restart and update
               </Button>
             </>
           ) : enabled ? (
             <Button type="button" onClick={onCheck} disabled={checking || installing || status?.phase === 'downloading'}>
               {checking
-                ? <LoaderCircle data-icon="inline-start" className="animate-spin" />
+                ? <Spinner data-icon="inline-start" />
                 : <RefreshCw data-icon="inline-start" />}
               {checking ? 'Checking…' : status?.phase === 'downloading' ? 'Downloading…' : 'Check now'}
             </Button>

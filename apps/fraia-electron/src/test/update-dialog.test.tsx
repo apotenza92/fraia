@@ -50,6 +50,14 @@ describe('UpdateDialog', () => {
     expect(screen.getByText('48%')).toBeVisible();
     expect(screen.getByText('48 MB of 100 MB')).toBeVisible();
     expect(screen.getByText('2.0 MB/s · About 2 minutes remaining')).toBeVisible();
+    expect(screen.getByRole('status')).toBeVisible();
+  });
+
+  it('uses the official accessible spinner while checking', () => {
+    renderDialog({ ...baseStatus, phase: 'checking' }, { checking: true });
+
+    expect(screen.getAllByRole('status', { name: 'Loading' })).toHaveLength(2);
+    expect(screen.getByText('Checking for updates')).toBeVisible();
   });
 
   it('makes deferred installation explicit and keeps restart available', async () => {

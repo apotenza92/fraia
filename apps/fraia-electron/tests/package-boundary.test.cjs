@@ -21,14 +21,17 @@ test('production uses the reviewed low-level Pi runtime without coding-agent shr
   assert.deepEqual(Object.keys(packageJson.dependencies).sort(), [
     '@earendil-works/pi-agent-core',
     '@earendil-works/pi-ai',
+    '@fontsource-variable/geist',
+    '@shadcn/react',
     'electron-updater',
     'tuf-js',
     'typebox',
   ]);
   for (const dependency of Object.keys(packageJson.dependencies)) {
+    const expectedLicense = dependency === '@fontsource-variable/geist' ? 'OFL-1.1' : 'MIT';
     assert.equal(
       packageLock.packages[`node_modules/${dependency}`]?.license,
-      'MIT',
+      expectedLicense,
       `${dependency} must retain reviewed licence metadata`,
     );
   }
@@ -156,4 +159,15 @@ test('the package matrix is deliberately limited to native desktop targets', () 
     packagedCalculixPath('/resources', 'win32', 'arm64'),
     path.join('/resources', 'runtimes', 'calculix', 'win32-arm64', 'ccx.exe'),
   );
+});
+
+test('the renderer opens independent Fraia projects through the canonical manifest picker', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf8');
+
+  assert.match(main, /ipcMain\.handle\(['"]fraia:pickProjectFile/);
+  assert.match(main, /properties: \['openFile'\]/);
+  assert.match(main, /path\.basename\(projectFile\) !== 'fraia\.project\.json'/);
+  assert.match(main, /return path\.dirname\(projectFile\)/);
+  assert.match(preload, /pickProjectFile: \(\) => ipcRenderer\.invoke\(['"]fraia:pickProjectFile/);
 });

@@ -1,12 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { LoaderCircle, Send } from 'lucide-react';
+import { Send } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Empty, EmptyContent, EmptyDescription, EmptyTitle } from '@/components/ui/empty';
+import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field';
+import { Message, MessageContent } from '@/components/ui/message';
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from '@/components/ui/message-scroller';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Spinner } from '@/components/ui/spinner';
+import { Separator } from '@/components/ui/separator';
 import { EstimatedAgentProgress, type AgentProgressStage, useEstimatedAgentProgress } from '../chat/AgentProgressIndicator';
 import { ChatMessageText } from '../chat/ChatMessageText';
 import type { AgentProviderStatus, AgentSession, EngineeringScheme, WorkbenchState } from '../../lib/types';
@@ -89,10 +103,10 @@ function CheckboxRow({
 }) {
   const id = `scheme-reply-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
   return (
-    <label htmlFor={id} className="flex items-center gap-2 text-sm">
+    <Field orientation="horizontal" data-disabled={disabled || undefined} className="gap-2">
       <Checkbox id={id} checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} />
-      <span>{label}</span>
-    </label>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+    </Field>
   );
 }
 
@@ -107,10 +121,6 @@ export function SchemeChatPanel({ state, scheme, surface, onState }: { state: Wo
   const [sendError, setSendError] = useState<string | null>(null);
   const [groupedSelections, setGroupedSelections] = useState<Record<string, string[]>>({});
   const [groupedNotes, setGroupedNotes] = useState<Record<string, string>>({});
-  const chatScrollRef = useRef<HTMLDivElement | null>(null);
-  const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const latestMessageKeyRef = useRef<string | null>(null);
-  const chatPinnedRef = useRef(true);
   const activeRequestIdRef = useRef<string | null>(null);
   const activeRequestTextRef = useRef<string | null>(null);
   const cancelledRequestIdsRef = useRef<Set<string>>(new Set());
@@ -173,7 +183,6 @@ export function SchemeChatPanel({ state, scheme, surface, onState }: { state: Wo
     setSendError(null);
     setPendingUserText(trimmed);
     setDraft('');
-    pinChatToBottom();
     try {
       const response = await window.fraia.agentRespondSession({ projectDir, surface, sessionId: session?.id, requestId, text: withSchemeContext(scheme, trimmed), selectedOptionIds: [] });
       if (cancelledRequestIdsRef.current.has(requestId)) return;
@@ -262,48 +271,6 @@ export function SchemeChatPanel({ state, scheme, surface, onState }: { state: Wo
   const messages = (session?.messages ?? []).filter((message) => !['deterministic', 'local'].includes(message.mode ?? ''));
   const visibleMessages = messages;
 
-  function scrollChatToBottom() {
-    window.requestAnimationFrame(() => {
-      const element = chatScrollRef.current;
-      if (element) element.scrollTop = element.scrollHeight;
-    });
-  }
-
-  function scrollMessageToTop(messageKey: string) {
-    window.requestAnimationFrame(() => {
-      const container = chatScrollRef.current;
-      const messageElement = messageRefs.current[messageKey];
-      if (!container || !messageElement) return;
-      const containerRect = container.getBoundingClientRect();
-      const messageRect = messageElement.getBoundingClientRect();
-      container.scrollTop += messageRect.top - containerRect.top - 10;
-    });
-  }
-
-  function pinChatToBottom() {
-    chatPinnedRef.current = true;
-    scrollChatToBottom();
-  }
-
-  function updateChatPinnedState() {
-    const element = chatScrollRef.current;
-    if (!element) return;
-    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
-    chatPinnedRef.current = distanceFromBottom < 48;
-  }
-
-  useEffect(() => {
-    const latest = visibleMessages[visibleMessages.length - 1];
-    const latestKey = latest ? agentMessageKey(latest, visibleMessages.length - 1) : null;
-    const isNewMessage = latestKey !== latestMessageKeyRef.current;
-    latestMessageKeyRef.current = latestKey;
-    if (isNewMessage && latest?.author === 'assistant' && latestKey) {
-      chatPinnedRef.current = false;
-      scrollMessageToTop(latestKey);
-      return;
-    }
-    if (chatPinnedRef.current) scrollChatToBottom();
-  }, [messages.length, pendingUserText, busy]);
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-0">
@@ -335,36 +302,43 @@ export function SchemeChatPanel({ state, scheme, surface, onState }: { state: Wo
         )}
       </div>
 
-      <div ref={chatScrollRef} onScroll={updateChatPinnedState} className="min-h-0 flex-1 overflow-auto p-2">
-        <div className="flex flex-col gap-2">
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <MessageScrollerProvider>
+          <MessageScroller>
+            <MessageScrollerViewport>
+              <MessageScrollerContent className="gap-2 p-2">
           {scheme.status === 'superseded' && (
-            <Alert>
+            <MessageScrollerItem><Alert>
               <AlertDescription>
                 This design option has been superseded{scheme.supersededBy ? ` by ${scheme.supersededBy}` : ''}. {scheme.supersededReason ?? 'Keep it for review history and compare the replacement option instead.'}
               </AlertDescription>
-            </Alert>
+            </Alert></MessageScrollerItem>
           )}
           {scheme.status === 'rejected' && (
-            <Alert variant="destructive">
+            <MessageScrollerItem><Alert variant="destructive">
               <AlertDescription>
                 This design option has been rejected as an active comparison option. {scheme.supersededReason ?? 'Keep it for review history only.'}
               </AlertDescription>
-            </Alert>
+            </Alert></MessageScrollerItem>
           )}
           {!visibleMessages.length && (
-            <Card>
-              <CardContent>
-              <div className="font-medium">{analysing ? 'Analysing design option...' : 'No option analysis is available yet.'}</div>
-              <p className="mt-1 text-sm text-muted-foreground">Run option analysis to create the first assistant message for {scheme.name}.</p>
+            <MessageScrollerItem>
               {analysing ? (
-                <div className="mt-2">
-                  <EstimatedAgentProgress percent={analysisProgress.percent} stageLabel={analysisProgress.stageLabel} />
-                </div>
+                <Card>
+                  <CardContent>
+                    <EstimatedAgentProgress percent={analysisProgress.percent} stageLabel={analysisProgress.stageLabel} />
+                  </CardContent>
+                </Card>
               ) : (
-                <Button onClick={analyseOption} disabled={!aiReady} className="mt-2" size="sm">Run option analysis</Button>
+                <Empty>
+                  <EmptyTitle>No option analysis is available yet.</EmptyTitle>
+                  <EmptyDescription>Run option analysis to create the first assistant message for {scheme.name}.</EmptyDescription>
+                  <EmptyContent>
+                    <Button onClick={analyseOption} disabled={!aiReady} size="sm">Run option analysis</Button>
+                  </EmptyContent>
+                </Empty>
               )}
-              </CardContent>
-            </Card>
+            </MessageScrollerItem>
           )}
           {visibleMessages.map((message, index) => {
             const replies = message.author === 'assistant' ? messageReplies(message) : [];
@@ -372,11 +346,15 @@ export function SchemeChatPanel({ state, scheme, surface, onState }: { state: Wo
             const messageKey = agentMessageKey(message, index);
             const userMessage = message.author === 'user';
             return (
-              <div
-                ref={(element) => { messageRefs.current[messageKey] = element; }}
+              <MessageScrollerItem
                 key={messageKey}
-                className={['rounded-md p-2', userMessage ? 'ml-auto max-w-[84%] border shadow-xs' : ''].filter(Boolean).join(' ')}
+                messageId={messageKey}
+                scrollAnchor={userMessage}
               >
+                <Message align={userMessage ? 'end' : 'start'}>
+                  <MessageContent>
+                    <Bubble variant={userMessage ? 'outline' : 'ghost'}>
+                      <BubbleContent>
                 <ChatMessageText text={displayMessageText(message.text)} />
                 {!!replyGroups.length && (
                   <div className="mt-2 flex flex-col gap-2">
@@ -385,10 +363,11 @@ export function SchemeChatPanel({ state, scheme, surface, onState }: { state: Wo
                       const selected = groupedSelections[groupKey] ?? group.defaultReplies;
                       return (
                       <Card key={`${group.title}-${group.prompt ?? ''}-${groupIndex}`}>
-                        <CardContent className="flex flex-col gap-1">
-                        <div className="font-semibold">{group.title}</div>
-                        {group.prompt && <p className="text-sm">{group.prompt}</p>}
-                        <div className="mt-2 flex flex-col gap-1">
+                        <CardContent>
+                        <FieldSet className="gap-2">
+                        <FieldLegend className="mb-0">{group.title}</FieldLegend>
+                        {group.prompt && <FieldDescription>{group.prompt}</FieldDescription>}
+                        <FieldGroup className="gap-1">
                           {group.replies.map((reply, replyIndex) => (
                             <CheckboxRow
                               key={`${reply}-${replyIndex}`}
@@ -398,15 +377,19 @@ export function SchemeChatPanel({ state, scheme, surface, onState }: { state: Wo
                                 onCheckedChange={() => toggleGroupedReply(groupKey, reply, group.defaultReplies)}
                             />
                           ))}
-                        </div>
+                        </FieldGroup>
+                        <Field>
+                        <FieldLabel htmlFor={`${groupKey}-note`} className="sr-only">Other answer or note for {group.title}</FieldLabel>
                         <Textarea
+                          id={`${groupKey}-note`}
                           value={groupedNotes[groupKey] ?? ''}
                           placeholder="Add your own answer or note for this issue..."
                           disabled={busy || !aiReady}
-                          className="mt-2"
                           rows={2}
                           onChange={(event) => setGroupedNotes((current) => ({ ...current, [groupKey]: event.target.value }))}
                         />
+                        </Field>
+                        </FieldSet>
                         </CardContent>
                       </Card>
                       );
@@ -455,16 +438,26 @@ export function SchemeChatPanel({ state, scheme, surface, onState }: { state: Wo
                     ))}
                   </div>
                 )}
-              </div>
+                      </BubbleContent>
+                    </Bubble>
+                  </MessageContent>
+                </Message>
+              </MessageScrollerItem>
             );
           })}
           {pendingUserText && (
             <>
-              <div className="ml-auto max-w-[84%] rounded-md border p-3 shadow-xs">
-                <ChatMessageText text={pendingUserText} />
-              </div>
-              <Alert>
-                <LoaderCircle />
+              <MessageScrollerItem scrollAnchor>
+                <Message align="end">
+                  <MessageContent>
+                    <Bubble variant="outline">
+                      <BubbleContent><ChatMessageText text={pendingUserText} /></BubbleContent>
+                    </Bubble>
+                  </MessageContent>
+                </Message>
+              </MessageScrollerItem>
+              <MessageScrollerItem><Alert>
+                <Spinner />
                 <AlertTitle>Agent is thinking</AlertTitle>
                 <AlertDescription>
                   <Button onClick={confirmCancelAgentTurn} variant="secondary" size="sm">
@@ -472,14 +465,22 @@ export function SchemeChatPanel({ state, scheme, surface, onState }: { state: Wo
                   </Button>
                 <EstimatedAgentProgress percent={replyProgress.percent} stageLabel={replyProgress.stageLabel} />
                 </AlertDescription>
-              </Alert>
+              </Alert></MessageScrollerItem>
             </>
           )}
-        </div>
+              </MessageScrollerContent>
+            </MessageScrollerViewport>
+            <MessageScrollerButton />
+          </MessageScroller>
+        </MessageScrollerProvider>
       </div>
 
-      <div className="flex shrink-0 flex-col gap-2 border-t p-2">
+      <Separator />
+      <FieldGroup className="shrink-0 gap-2 p-2">
+        <Field>
+        <FieldLabel htmlFor="scheme-chat-reply" className="sr-only">Ask about {scheme.name}</FieldLabel>
         <Textarea
+          id="scheme-chat-reply"
           value={draft}
           placeholder={`Ask about ${scheme.name}...`}
           rows={2}
@@ -489,11 +490,12 @@ export function SchemeChatPanel({ state, scheme, surface, onState }: { state: Wo
             if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) respond(draft);
           }}
         />
+        </Field>
         <Button onClick={() => respond(draft)} disabled={busy || !draft.trim() || !aiReady} className="w-full">
-          <Send />
+          {busy ? <Spinner data-icon="inline-start" /> : <Send data-icon="inline-start" />}
           {busy ? 'Sending...' : 'Send'}
         </Button>
-      </div>
+      </FieldGroup>
     </div>
   );
 }

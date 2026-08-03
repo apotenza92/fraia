@@ -1,6 +1,6 @@
 export const CHROME = {
   menuHeight: 32,
-  tabHeight: 42,
+  tabHeight: 49,
   workspaceToolbarHeight: 48,
   railWidth: 44,
   bottomToolbarHeight: 44,

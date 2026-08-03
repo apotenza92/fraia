@@ -144,14 +144,14 @@ export function ChatMessageText({ text }: { text: string }) {
         }
         if (block.kind === 'bulletList') {
           return (
-            <ul key={index} className="list-disc space-y-1 pl-5 text-sm">
+            <ul key={index} className="flex list-disc flex-col gap-1 pl-5 text-sm">
               {block.items.map((item, itemIndex) => <li key={itemIndex}>{inlineMarkdown(item)}</li>)}
             </ul>
           );
         }
         if (block.kind === 'orderedList') {
           return (
-            <ol key={index} className="list-decimal space-y-1 pl-5 text-sm">
+            <ol key={index} className="flex list-decimal flex-col gap-1 pl-5 text-sm">
               {block.items.map((item, itemIndex) => <li key={itemIndex}>{inlineMarkdown(item)}</li>)}
             </ol>
           );
