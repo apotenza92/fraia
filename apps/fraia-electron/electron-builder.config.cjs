@@ -93,6 +93,7 @@ module.exports = {
     'release-contract.cjs',
     'tuf-update-feed.cjs',
     'update-manager.cjs',
+    'window-geometry.cjs',
     'scripts/perf-budgets.cjs',
     'package.json',
   ],
