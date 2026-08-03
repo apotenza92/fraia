@@ -276,6 +276,7 @@ test('each publication atomically advances only higher-SemVer identity-isolated 
   );
   assert.match(workflow, /APPROVAL='stable-release and beta-release'/);
   assert.match(workflow, /printf 'Publication: tag workflow, after explicit %s approval\\n' "\$APPROVAL"/);
+  assert.match(workflow, /rm -rf feed-publication\n\s+mkdir -p feed-publication\n\s+touch feed-publication\/\.nojekyll/);
   assert.match(workflow, /mkdir -p "feed-publication\/feed\/\$CHANNEL"/);
   assert.match(workflow, /rm -rf "update-site\/\$CHANNEL"/);
   assert.match(workflow, /git add -- "\$\{PATHS\[@\]\}"/);

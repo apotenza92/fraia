@@ -895,6 +895,7 @@ jobs:
           PRIMARY_CHANNEL="${{ needs.prepare.outputs.channel }}"
           IFS=, read -r -a CHANNELS <<< "${{ needs.prepare.outputs.channels_csv }}"
           rm -rf feed-publication
+          mkdir -p feed-publication
           touch feed-publication/.nojekyll
           for CHANNEL in "${CHANNELS[@]}"; do
             mkdir -p "feed-publication/feed/$CHANNEL"
