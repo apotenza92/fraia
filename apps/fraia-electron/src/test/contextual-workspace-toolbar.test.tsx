@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { render, screen } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
@@ -29,13 +29,19 @@ function ToolbarHarness({
   onTool = vi.fn(),
   onToggleSnap = vi.fn(),
   onToggleLabelVisibility = vi.fn(),
+  onMemberDrawingOptions = vi.fn(),
+  onSnapOptions = vi.fn(),
+  onLabelVisibility = vi.fn(),
 }: {
   activeTool?: "select" | "node" | "member" | "move" | "split"
   onTool?: (tool: "select" | "node" | "member" | "move" | "split") => void
   onToggleSnap?: () => void
   onToggleLabelVisibility?: () => void
+  onMemberDrawingOptions?: (options: { polygonMode: boolean }) => void
+  onSnapOptions?: (options: typeof snapOptions) => void
+  onLabelVisibility?: (visibility: typeof hiddenLabels) => void
 }) {
-  const [openMenu, setOpenMenu] = useState<"viewport-settings" | null>(null)
+  const [openMenu, setOpenMenu] = useState<"member-settings" | "snap-settings" | "label-settings" | null>(null)
 
   return (
     <TooltipProvider>
@@ -51,10 +57,10 @@ function ToolbarHarness({
         groupsAvailable={false}
         openToolbarMenu={openMenu}
         onTool={onTool}
-        onSnapOptions={vi.fn()}
+        onSnapOptions={onSnapOptions}
         onToggleSnap={onToggleSnap}
-        onMemberDrawingOptions={vi.fn()}
-        onLabelVisibility={vi.fn()}
+        onMemberDrawingOptions={onMemberDrawingOptions}
+        onLabelVisibility={onLabelVisibility}
         onToggleLabelVisibility={onToggleLabelVisibility}
         onToolbarMenuOpen={setOpenMenu}
         onTogglePanel={vi.fn()}
@@ -64,15 +70,19 @@ function ToolbarHarness({
 }
 
 describe("ContextualWorkspaceToolbar", () => {
-  it("uses one exclusive editing group with professional UI labels", async () => {
+  it("uses separate icon-only controls for the exclusive editing modes", async () => {
     const user = userEvent.setup()
     const onTool = vi.fn()
     render(<ToolbarHarness onTool={onTool} />)
 
     const modes = ["Select", "Joint", "Member", "Move", "Split"]
     for (const name of modes) {
-      expect(screen.getByRole("button", { name })).toBeInTheDocument()
+      const control = screen.getByRole("button", { name })
+      expect(control).toBeInTheDocument()
+      expect(control).toHaveTextContent("")
+      expect(control.querySelector("svg")).toBeInTheDocument()
     }
+    expect(screen.getByRole("group", { name: "Editing mode" })).toHaveAttribute("data-spacing", "2")
     expect(screen.getByRole("button", { name: "Select" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.getByRole("button", { name: "Joint" })).toHaveAttribute("aria-pressed", "false")
 
@@ -96,7 +106,36 @@ describe("ContextualWorkspaceToolbar", () => {
     expect(onTool).toHaveBeenCalledWith("node")
   })
 
-  it("keeps Snaps and Labels independent and provides one settings surface", async () => {
+  it("opens Member settings from an inactive split control without selecting Member", async () => {
+    const user = userEvent.setup()
+    const onTool = vi.fn()
+    const onMemberDrawingOptions = vi.fn()
+    render(<ToolbarHarness onTool={onTool} onMemberDrawingOptions={onMemberDrawingOptions} />)
+
+    const member = screen.getByRole("button", { name: "Member" })
+    const settings = screen.getByRole("button", { name: "Member settings" })
+    expect(screen.getByRole("group", { name: "Member controls" })).toContainElement(member)
+    expect(screen.getByRole("group", { name: "Member controls" })).toContainElement(settings)
+    expect(member).toHaveAttribute("aria-pressed", "false")
+    expect(settings).toHaveAttribute("aria-expanded", "false")
+
+    await user.click(settings)
+    expect(settings).toHaveAttribute("aria-expanded", "true")
+    expect(await screen.findByText("Configure continuous member drawing.")).toBeVisible()
+    expect(member).toHaveAttribute("aria-pressed", "false")
+    expect(onTool).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole("checkbox", { name: "Continuous drawing" }))
+    expect(onMemberDrawingOptions).toHaveBeenCalledWith({ polygonMode: true })
+
+    await user.keyboard("{Escape}")
+    await waitFor(() => {
+      expect(settings).toHaveFocus()
+      expect(settings).toHaveAttribute("aria-expanded", "false")
+    })
+  })
+
+  it("keeps Snap and Label state and settings independent", async () => {
     const user = userEvent.setup()
     const onToggleSnap = vi.fn()
     const onToggleLabelVisibility = vi.fn()
@@ -111,6 +150,8 @@ describe("ContextualWorkspaceToolbar", () => {
     const labels = screen.getByRole("button", { name: "Labels" })
     expect(snaps).toHaveAttribute("aria-pressed", "true")
     expect(labels).toHaveAttribute("aria-pressed", "false")
+    expect(snaps).toHaveTextContent("")
+    expect(labels).toHaveTextContent("")
 
     await user.click(snaps)
     expect(onToggleSnap).toHaveBeenCalledOnce()
@@ -119,23 +160,29 @@ describe("ContextualWorkspaceToolbar", () => {
     await user.click(labels)
     expect(onToggleLabelVisibility).toHaveBeenCalledOnce()
 
-    expect(screen.queryByRole("button", { name: "Snap settings" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Label settings" })).not.toBeInTheDocument()
-    expect(screen.getAllByRole("button", { name: "Toolbar settings" })).toHaveLength(1)
-    expect(screen.getByRole("group", { name: "Viewport display controls" })).toBeVisible()
+    const snapSettings = screen.getByRole("button", { name: "Snap settings" })
+    const labelSettings = screen.getByRole("button", { name: "Label settings" })
+    expect(screen.getByRole("group", { name: "Snap controls" })).toContainElement(snapSettings)
+    expect(screen.getByRole("group", { name: "Label controls" })).toContainElement(labelSettings)
+    expect(snapSettings).toHaveAttribute("aria-expanded", "false")
+    expect(labelSettings).toHaveAttribute("aria-expanded", "false")
 
-    const settings = screen.getByRole("button", { name: "Toolbar settings" })
-    expect(settings).toHaveAttribute("aria-expanded", "false")
     onToggleSnap.mockClear()
     onToggleLabelVisibility.mockClear()
-    await user.click(settings)
-    expect(settings).toHaveAttribute("aria-expanded", "true")
-    expect(await screen.findByText("Viewport settings")).toBeVisible()
-    expect(screen.getByText("Member drawing")).toBeVisible()
+    await user.click(snapSettings)
+    expect(snapSettings).toHaveAttribute("aria-expanded", "true")
+    expect(await screen.findByText("Snap settings")).toBeVisible()
     expect(screen.getByText("Snapping")).toBeVisible()
-    expect(screen.getAllByText("Labels").some((element) => element.className.includes("font-medium"))).toBe(true)
-    expect(screen.getByRole("checkbox", { name: "Continuous drawing" })).toBeVisible()
+    expect(screen.queryByRole("checkbox", { name: "Continuous drawing" })).not.toBeInTheDocument()
     expect(onToggleSnap).not.toHaveBeenCalled()
+    expect(onToggleLabelVisibility).not.toHaveBeenCalled()
+
+    await user.keyboard("{Escape}")
+    await user.click(labelSettings)
+    expect(labelSettings).toHaveAttribute("aria-expanded", "true")
+    expect(await screen.findByText("Choose model annotations shown in the viewport.")).toBeVisible()
+    expect(screen.getByRole("checkbox", { name: "Node labels" })).toBeVisible()
+    expect(screen.queryByText("Snapping")).not.toBeInTheDocument()
     expect(onToggleLabelVisibility).not.toHaveBeenCalled()
   })
 

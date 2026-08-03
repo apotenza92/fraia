@@ -117,8 +117,10 @@ describe("DocumentTabBar", () => {
       "bg-background!",
       "hover:bg-muted!",
     )
-    expect(newBlankModel).toHaveTextContent("New Blank Model")
-    expect(newBlankModel).toHaveClass("h-8", "border-border", "bg-background!", "hover:bg-muted!")
+    expect(newBlankModel).toHaveAttribute("data-slot", "tooltip-trigger")
+    expect(newBlankModel.querySelector("svg")).toHaveClass("lucide-file-plus-corner")
+    expect(newBlankModel).toHaveTextContent("")
+    expect(newBlankModel).toHaveClass("size-8", "border-border", "bg-background!", "hover:bg-muted!")
     expect(tabList).toHaveClass("group-data-horizontal/tabs:h-8")
     expect(separator).toHaveAttribute("data-document-tab-actions-separator")
     expect(separator?.nextElementSibling).toBe(openTab)

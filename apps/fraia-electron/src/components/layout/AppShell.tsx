@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
-import { ArrowDown, Circle, Eye, FileSearch, Layers, Magnet, MousePointer2, Move, PanelRightOpen, PencilLine, Play, Scissors, Settings2, Sparkles, Triangle } from 'lucide-react';
+import { ArrowDown, ChevronDown, Circle, Eye, FileSearch, Layers, Magnet, MousePointer2, Move, PanelRightOpen, PencilLine, Play, Scissors, Sparkles, Triangle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
@@ -37,6 +37,7 @@ import { WorkflowStageBar } from './WorkflowStageBar';
 import { initialWorkflowStage, runtimeWorkflowStage, workflowJourneyFrom, type WorkflowStage } from '../../lib/workflowJourney';
 import { ResizeHandle } from '../domain-ui/ResizeHandle';
 import { DocumentTabBar, documentTabTriggerId, type DocumentTab } from '../domain-ui/DocumentTabBar';
+import { SplitButtonSegment } from '../domain-ui/SplitButtonSegment';
 
 const WORKSPACE_PANEL_MIN_RATIO = 0.22;
 const WORKSPACE_PANEL_MAX_RATIO = 0.4;
@@ -66,7 +67,7 @@ const DEFAULT_LABEL_VISIBILITY: ViewportLabelVisibility = {
 type RenderPanel = 'groups' | null;
 type BaseEditTool = 'select' | 'node' | 'member' | 'move' | 'split';
 type ViewportViewMode = 'base' | 'scheme';
-type ToolbarMenuId = 'viewport-settings';
+type ToolbarMenuId = 'member-settings' | 'snap-settings' | 'label-settings';
 type Point3 = { x: number; y: number; z: number };
 type AxisId = 'x' | 'y' | 'z';
 type WorldPlane = 'xy' | 'xz' | 'yz';
@@ -1666,7 +1667,7 @@ function ToolbarToggle({
             disabled={disabled}
             onPressedChange={onPressedChange}
             variant="outline"
-            size="sm"
+            size="default"
           >
             {children}
           </Toggle>
@@ -1677,9 +1678,12 @@ function ToolbarToggle({
   );
 }
 
-function ViewportSettingsMenu({
+type ToolbarSettingsSection = 'member' | 'snap' | 'label';
+
+function ToolbarSettingsMenu({
+  section,
   open,
-  viewMode,
+  selected,
   snapOptions,
   drawingOptions,
   visibility,
@@ -1689,8 +1693,9 @@ function ViewportSettingsMenu({
   onVisibility,
   onOpenChange,
 }: {
+  section: ToolbarSettingsSection;
   open: boolean;
-  viewMode: ViewportViewMode;
+  selected: boolean;
   snapOptions: SnapOptions;
   drawingOptions: MemberDrawingOptions;
   visibility: ViewportLabelVisibility;
@@ -1700,6 +1705,7 @@ function ViewportSettingsMenu({
   onVisibility: (visibility: ViewportLabelVisibility) => void;
   onOpenChange: (open: boolean) => void;
 }) {
+  const label = section === 'member' ? 'Member' : section === 'snap' ? 'Snap' : 'Label';
   const setSnap = (patch: Partial<SnapOptions>) => onSnapOptions({ ...snapOptions, ...patch });
   const setVisibility = (key: keyof ViewportLabelVisibility, checked: boolean) => {
     onVisibility({ ...visibility, [key]: checked });
@@ -1712,28 +1718,35 @@ function ViewportSettingsMenu({
           render={(
             <PopoverTrigger
               render={(
-                <Button
-                  aria-label="Toolbar settings"
+                <SplitButtonSegment
+                  aria-label={`${label} settings`}
                   aria-expanded={open}
+                  disabled={disabled}
+                  selected={selected}
                   variant="outline"
-                  size="icon-sm"
+                  size="icon"
                 >
-                  <Settings2 />
-                </Button>
+                  <ChevronDown />
+                </SplitButtonSegment>
               )}
             />
           )}
         />
-        <TooltipContent side="bottom">Toolbar settings</TooltipContent>
+        <TooltipContent side="bottom">{label} settings</TooltipContent>
       </Tooltip>
-      <PopoverContent align="end" className="max-h-[min(36rem,calc(100vh-8rem))] w-72 overflow-y-auto p-3">
+      <PopoverContent align="start" className="max-h-[min(36rem,calc(100vh-8rem))] w-72 overflow-y-auto p-3">
         <PopoverHeader>
-          <PopoverTitle>Viewport settings</PopoverTitle>
-          <PopoverDescription>Drawing aids and model annotations.</PopoverDescription>
+          <PopoverTitle>{label} settings</PopoverTitle>
+          <PopoverDescription>
+            {section === 'member'
+              ? 'Configure continuous member drawing.'
+              : section === 'snap'
+                ? 'Choose model snapping targets and increments.'
+                : 'Choose model annotations shown in the viewport.'}
+          </PopoverDescription>
         </PopoverHeader>
         <FieldGroup className="gap-3">
-          {viewMode === 'base' ? (
-            <>
+          {section === 'member' ? (
             <FieldSet className="gap-1">
               <FieldLegend variant="label" className="mb-0 px-2 py-1">Member drawing</FieldLegend>
               <FieldGroup className="gap-1">
@@ -1746,7 +1759,8 @@ function ViewportSettingsMenu({
               />
               </FieldGroup>
             </FieldSet>
-            <Separator />
+          ) : null}
+          {section === 'snap' ? (
             <FieldSet className="gap-1">
               <FieldLegend variant="label" className="mb-0 px-2 py-1">Snapping</FieldLegend>
               <FieldGroup className="gap-1">
@@ -1766,18 +1780,18 @@ function ViewportSettingsMenu({
               </Field>
               </FieldGroup>
             </FieldSet>
-            <Separator />
-            </>
           ) : null}
-        <FieldSet className="gap-1">
-          <FieldLegend variant="label" className="mb-0 px-2 py-1">Labels</FieldLegend>
-          <FieldGroup className="gap-1">
-          <SettingsCheckboxRow id="visibility-node-labels" label="Node labels" icon={<Circle />} checked={visibility.node} onCheckedChange={(checked) => setVisibility('node', checked)} />
-          <SettingsCheckboxRow id="visibility-member-labels" label="Member labels" icon={<PencilLine />} checked={visibility.member} onCheckedChange={(checked) => setVisibility('member', checked)} />
-          <SettingsCheckboxRow id="visibility-support-labels" label="Support labels" icon={<Triangle />} checked={visibility.support} onCheckedChange={(checked) => setVisibility('support', checked)} />
-          <SettingsCheckboxRow id="visibility-load-labels" label="Load labels" icon={<ArrowDown />} checked={visibility.load} onCheckedChange={(checked) => setVisibility('load', checked)} />
-          </FieldGroup>
-        </FieldSet>
+          {section === 'label' ? (
+            <FieldSet className="gap-1">
+              <FieldLegend variant="label" className="mb-0 px-2 py-1">Labels</FieldLegend>
+              <FieldGroup className="gap-1">
+                <SettingsCheckboxRow id="visibility-node-labels" label="Node labels" icon={<Circle />} checked={visibility.node} onCheckedChange={(checked) => setVisibility('node', checked)} />
+                <SettingsCheckboxRow id="visibility-member-labels" label="Member labels" icon={<PencilLine />} checked={visibility.member} onCheckedChange={(checked) => setVisibility('member', checked)} />
+                <SettingsCheckboxRow id="visibility-support-labels" label="Support labels" icon={<Triangle />} checked={visibility.support} onCheckedChange={(checked) => setVisibility('support', checked)} />
+                <SettingsCheckboxRow id="visibility-load-labels" label="Load labels" icon={<ArrowDown />} checked={visibility.load} onCheckedChange={(checked) => setVisibility('load', checked)} />
+              </FieldGroup>
+            </FieldSet>
+          ) : null}
         </FieldGroup>
       </PopoverContent>
     </Popover>
@@ -1850,43 +1864,56 @@ export function ContextualWorkspaceToolbar({
             }}
             disabled={editPending}
             variant="outline"
-            size="sm"
-            spacing={0}
+            size="default"
+            spacing={2}
           >
             {baseTools.map((tool) => {
               const tooltipLabel = tool.id === 'member' ? memberToolLabel : tool.label;
-              return (
+              const toolToggle = (
                 <Tooltip key={tool.id}>
                   <TooltipTrigger
                     render={(
                       <ToggleGroupItem aria-label={tool.label} value={tool.id}>
                         {tool.icon}
-                        <span className="hidden xl:inline">{tool.label}</span>
                       </ToggleGroupItem>
                     )}
                   />
                   <TooltipContent side="bottom">{tooltipLabel}</TooltipContent>
                 </Tooltip>
               );
+              if (tool.id !== 'member') return toolToggle;
+
+              return (
+                <ButtonGroup key={tool.id} aria-label="Member controls">
+                  {toolToggle}
+                  <ToolbarSettingsMenu
+                    section="member"
+                    open={openToolbarMenu === 'member-settings'}
+                    selected={activeTool === 'member'}
+                    snapOptions={snapOptions}
+                    drawingOptions={memberDrawingOptions}
+                    visibility={labelVisibility}
+                    disabled={editPending}
+                    onSnapOptions={onSnapOptions}
+                    onDrawingOptions={onMemberDrawingOptions}
+                    onVisibility={onLabelVisibility}
+                    onOpenChange={(open) => onToolbarMenuOpen(open ? 'member-settings' : null)}
+                  />
+                </ButtonGroup>
+              );
             })}
           </ToggleGroup>
           <Separator orientation="vertical" className="mx-1 h-6" />
-          <ButtonGroup aria-label="Viewport display controls">
+          <ButtonGroup aria-label="Snap controls">
             <ToolbarToggle label="Snaps" pressed={snapsActive} disabled={editPending} onPressedChange={(pressed) => {
               if (pressed !== snapsActive) onToggleSnap();
             }}>
               <Magnet data-icon="inline-start" />
-              <span className="hidden xl:inline">Snaps</span>
             </ToolbarToggle>
-            <ToolbarToggle label="Labels" pressed={labelsActive} onPressedChange={(pressed) => {
-              if (pressed !== labelsActive) onToggleLabelVisibility();
-            }}>
-              <Eye data-icon="inline-start" />
-              <span className="hidden xl:inline">Labels</span>
-            </ToolbarToggle>
-            <ViewportSettingsMenu
-              open={openToolbarMenu === 'viewport-settings'}
-              viewMode={viewMode}
+            <ToolbarSettingsMenu
+              section="snap"
+              open={openToolbarMenu === 'snap-settings'}
+              selected={snapsActive}
               snapOptions={snapOptions}
               drawingOptions={memberDrawingOptions}
               visibility={labelVisibility}
@@ -1894,7 +1921,26 @@ export function ContextualWorkspaceToolbar({
               onSnapOptions={onSnapOptions}
               onDrawingOptions={onMemberDrawingOptions}
               onVisibility={onLabelVisibility}
-              onOpenChange={(open) => onToolbarMenuOpen(open ? 'viewport-settings' : null)}
+              onOpenChange={(open) => onToolbarMenuOpen(open ? 'snap-settings' : null)}
+            />
+          </ButtonGroup>
+          <ButtonGroup aria-label="Label controls">
+            <ToolbarToggle label="Labels" pressed={labelsActive} onPressedChange={(pressed) => {
+              if (pressed !== labelsActive) onToggleLabelVisibility();
+            }}>
+              <Eye data-icon="inline-start" />
+            </ToolbarToggle>
+            <ToolbarSettingsMenu
+              section="label"
+              open={openToolbarMenu === 'label-settings'}
+              selected={labelsActive}
+              snapOptions={snapOptions}
+              drawingOptions={memberDrawingOptions}
+              visibility={labelVisibility}
+              onSnapOptions={onSnapOptions}
+              onDrawingOptions={onMemberDrawingOptions}
+              onVisibility={onLabelVisibility}
+              onOpenChange={(open) => onToolbarMenuOpen(open ? 'label-settings' : null)}
             />
           </ButtonGroup>
         </>
@@ -1905,23 +1951,23 @@ export function ContextualWorkspaceToolbar({
               <Layers />
             </RenderRailButton>
           ) : null}
-          <ButtonGroup aria-label="Viewport display controls">
+          <ButtonGroup aria-label="Label controls">
             <ToolbarToggle label="Labels" pressed={labelsActive} onPressedChange={(pressed) => {
               if (pressed !== labelsActive) onToggleLabelVisibility();
             }}>
               <Eye data-icon="inline-start" />
-              <span className="hidden xl:inline">Labels</span>
             </ToolbarToggle>
-            <ViewportSettingsMenu
-              open={openToolbarMenu === 'viewport-settings'}
-              viewMode={viewMode}
+            <ToolbarSettingsMenu
+              section="label"
+              open={openToolbarMenu === 'label-settings'}
+              selected={labelsActive}
               snapOptions={snapOptions}
               drawingOptions={memberDrawingOptions}
               visibility={labelVisibility}
               onSnapOptions={onSnapOptions}
               onDrawingOptions={onMemberDrawingOptions}
               onVisibility={onLabelVisibility}
-              onOpenChange={(open) => onToolbarMenuOpen(open ? 'viewport-settings' : null)}
+              onOpenChange={(open) => onToolbarMenuOpen(open ? 'label-settings' : null)}
             />
           </ButtonGroup>
         </>

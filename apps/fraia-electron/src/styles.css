@@ -140,6 +140,8 @@
   body {
     @apply bg-background text-foreground;
     background: var(--viewport-background);
+    font-size: 13px;
+    letter-spacing: 0;
   }
 
   html {

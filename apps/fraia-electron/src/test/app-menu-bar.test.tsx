@@ -41,40 +41,13 @@ describe('AppMenuBar application identity', () => {
     const appMenu = await screen.findByRole('menuitem', { name: 'Fraia' });
     expect(screen.getAllByRole('menuitem')[0]).toHaveTextContent('Fraia');
     expect(screen.queryByRole('menuitem', { name: 'Settings' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Developer' })).not.toBeInTheDocument();
     await waitFor(() => expect(document.title).toBe('Fraia'));
     await user.click(appMenu);
-    expect(await screen.findByRole('menuitem', { name: 'Fraia AI…' })).toBeVisible();
+    expect(screen.queryByRole('menuitem', { name: 'Fraia AI…' })).not.toBeInTheDocument();
     await user.click(await screen.findByRole('menuitem', { name: 'Quit Fraia' }));
 
     expect(quitApp).toHaveBeenCalledOnce();
-  });
-
-  it('opens Fraia AI from the Fraia application menu', async () => {
-    Object.defineProperty(window, 'fraia', {
-      configurable: true,
-      value: {
-        applicationMetadata: vi.fn().mockResolvedValue({
-          channel: 'stable',
-          productName: 'Fraia',
-        }),
-        aiProviders: vi.fn().mockResolvedValue({
-          providers: [],
-          models: [],
-          catalogue: { refreshedAt: '2026-07-27T00:00:00Z', stale: false, source: 'test' },
-          secureCredentialStorageAvailable: true,
-        }),
-        aiRefreshCatalog: vi.fn(),
-        onAiRuntimeStatus: vi.fn(() => () => {}),
-      },
-    });
-
-    const user = userEvent.setup();
-    render(<AppMenuBar />);
-
-    await user.click(await screen.findByRole('menuitem', { name: 'Fraia' }));
-    await user.click(await screen.findByRole('menuitem', { name: 'Fraia AI…' }));
-
-    expect(await screen.findByRole('dialog', { name: 'Fraia AI' })).toBeVisible();
   });
 
   it('runs a manual update check in the Fraia menu and always shows the result', async () => {

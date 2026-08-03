@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {
+  DEFAULT_UPDATE_FREQUENCY,
   UPDATE_FREQUENCY_MS,
   UPDATE_RETRY_MS,
   configureAutoUpdates,
@@ -57,10 +58,10 @@ test('macOS stable updater is automatic and configurable', async () => {
   assert.equal(updater.autoDownload, true);
   assert.equal(updater.autoInstallOnAppQuit, true);
   assert.equal(updater.allowPrerelease, false);
-  assert.equal(result.frequency, 'daily');
+  assert.equal(result.frequency, 'weekly');
   assert.deepEqual(scheduled, [['timeout', 30_000]]);
   await timeoutCallbacks[0]();
-  assert.deepEqual(scheduled.at(-1), ['interval', UPDATE_FREQUENCY_MS.daily]);
+  assert.deepEqual(scheduled.at(-1), ['interval', UPDATE_FREQUENCY_MS.weekly]);
   updater.emit('update-not-available', { version: '0.1.0' });
   result.setFrequency('daily');
   assert.equal(result.frequency, 'daily');
@@ -90,6 +91,7 @@ test('beta updater stays on the isolated beta feed and accepts prereleases', () 
     },
   });
   assert.equal(result.channel, 'beta');
+  assert.equal(result.frequency, 'daily');
   assert.equal(updater.allowPrerelease, true);
   assert.deepEqual(updater.feed, {
     provider: 'generic',
@@ -304,16 +306,17 @@ test('release-note normalization handles updater string, array, and empty forms'
   assert.match(normalizeReleaseNotes(undefined), /reliability and compatibility/);
 });
 
-test('stable defaults daily and persisted frequency survives restart', () => {
+test('new users receive channel defaults and persisted frequency survives restart', () => {
+  assert.deepEqual(DEFAULT_UPDATE_FREQUENCY, { stable: 'weekly', beta: 'daily' });
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-updater-settings-'));
   const schedule = { clearInterval() {}, clearTimeout() {}, setInterval() { return 1; }, setTimeout() { return 2; } };
   const app = { isPackaged: true, getPath: () => userData, getVersion: () => '0.1.0' };
   const metadata = { fraiaReleaseChannel: 'stable', fraiaUpdateFeedUrl: 'https://example.invalid/stable/darwin/arm64' };
   const first = configureAutoUpdates({ app, autoUpdater: updaterDouble(), packageMetadata: metadata, platform: 'darwin', schedule });
-  assert.equal(first.frequency, 'daily');
-  first.setFrequency('weekly');
+  assert.equal(first.frequency, 'weekly');
+  first.setFrequency('twelveHours');
   const second = configureAutoUpdates({ app, autoUpdater: updaterDouble(), packageMetadata: metadata, platform: 'darwin', schedule });
-  assert.equal(second.frequency, 'weekly');
+  assert.equal(second.frequency, 'twelveHours');
   fs.rmSync(userData, { recursive: true, force: true });
 });
 

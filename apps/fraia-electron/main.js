@@ -9,6 +9,7 @@ const { FakeFraiaAiRuntime, FraiaAiRuntime, publicFraiaCatalogue } = require('./
 const { resolveApplicationMetadata, resolveUserDataDirectory } = require('./application-metadata.cjs');
 const { nativePlatformArch, resolveCalculixRuntime, resolveSidecarLaunch } = require('./package-boundary.cjs');
 const { configureAutoUpdates } = require('./update-manager.cjs');
+const { MAIN_WINDOW_GEOMETRY, resolveMainWindowGeometry } = require('./window-geometry.cjs');
 const packageMetadata = require('./package.json');
 const developmentChannel = process.env.FRAIA_RELEASE_CHANNEL
   || (packageMetadata.version.includes('-beta.') ? 'beta' : 'stable');
@@ -145,11 +146,21 @@ function electronMetricsSampleIntervalMs() {
 }
 
 function electronCaptureBounds() {
-  const width = Number.parseInt(process.env.FRAIA_ELECTRON_CAPTURE_WIDTH || '1440', 10);
-  const height = Number.parseInt(process.env.FRAIA_ELECTRON_CAPTURE_HEIGHT || '900', 10);
+  const width = Number.parseInt(
+    process.env.FRAIA_ELECTRON_CAPTURE_WIDTH || String(MAIN_WINDOW_GEOMETRY.width),
+    10,
+  );
+  const height = Number.parseInt(
+    process.env.FRAIA_ELECTRON_CAPTURE_HEIGHT || String(MAIN_WINDOW_GEOMETRY.height),
+    10,
+  );
   return {
-    width: Number.isFinite(width) && width >= 980 ? width : 1440,
-    height: Number.isFinite(height) && height >= 640 ? height : 900,
+    width: Number.isFinite(width) && width >= MAIN_WINDOW_GEOMETRY.minWidth
+      ? width
+      : MAIN_WINDOW_GEOMETRY.width,
+    height: Number.isFinite(height) && height >= MAIN_WINDOW_GEOMETRY.minHeight
+      ? height
+      : MAIN_WINDOW_GEOMETRY.height,
   };
 }
 
@@ -305,7 +316,7 @@ function isUsableBounds(bounds) {
   if (![x, y, width, height].every((value) => Number.isFinite(value))) {
     return false;
   }
-  if (width < 980 || height < 640) {
+  if (width < MAIN_WINDOW_GEOMETRY.minWidth || height < MAIN_WINDOW_GEOMETRY.minHeight) {
     return false;
   }
 
@@ -740,7 +751,7 @@ function installApplicationMenu() {
     daily: 'Daily',
     weekly: 'Weekly',
   };
-  const updateSubmenu = updateController?.enabled ? [
+  const updateMenuItems = updateController?.enabled ? [
     {
       label: 'Check for Updates…',
       click: () => {
@@ -748,42 +759,25 @@ function installApplicationMenu() {
         void updateController.checkNow().catch(() => {});
       },
     },
-    { type: 'separator' },
-    ...Object.entries(frequencyLabels).map(([frequency, label]) => ({
-      label,
-      type: 'radio',
-      checked: updateController.frequency === frequency,
-      click: () => {
-        updateController.setFrequency(frequency);
-        installApplicationMenu();
-      },
-    })),
+    {
+      label: 'Automatic Checks',
+      submenu: Object.entries(frequencyLabels).map(([frequency, label]) => ({
+        label,
+        type: 'radio',
+        checked: updateController.frequency === frequency,
+        click: () => {
+          updateController.setFrequency(frequency);
+          installApplicationMenu();
+        },
+      })),
+    },
   ] : [];
   const template = [
     {
       label: applicationMetadata.productName,
       submenu: [
-        ...(updateSubmenu.length ? [{ label: 'Updates', submenu: updateSubmenu }, { type: 'separator' }] : []),
+        ...(updateMenuItems.length ? [...updateMenuItems, { type: 'separator' }] : []),
         { label: `Quit ${applicationMetadata.productName}`, role: 'quit' },
-      ],
-    },
-    {
-      label: 'Developer',
-      submenu: [
-        {
-          label: 'Reload Window',
-          accelerator: 'CmdOrCtrl+R',
-          click: (_menuItem, browserWindow) => {
-            reloadWindow(browserWindow);
-          },
-        },
-        {
-          label: 'Force Reload Window',
-          accelerator: 'CmdOrCtrl+Shift+R',
-          click: (_menuItem, browserWindow) => {
-            reloadWindow(browserWindow, true);
-          },
-        },
       ],
     },
   ];
@@ -801,9 +795,7 @@ function createWindow() {
     ? { bounds: electronCaptureBounds(), maximized: false }
     : readMainWindowState();
   mainWindow = new BrowserWindow({
-    ...(windowState.bounds ?? {}),
-    minWidth: 980,
-    minHeight: 640,
+    ...resolveMainWindowGeometry(windowState.bounds),
     show: !isElectronCaptureMode(),
     title: applicationMetadata.productName,
     backgroundColor: windowBackgroundColor(),

@@ -9,6 +9,10 @@ const UPDATE_FREQUENCY_MS = Object.freeze({
   daily: 24 * 60 * 60 * 1000,
   weekly: 7 * 24 * 60 * 60 * 1000,
 });
+const DEFAULT_UPDATE_FREQUENCY = Object.freeze({
+  stable: 'weekly',
+  beta: 'daily',
+});
 const UPDATE_FREQUENCIES = Object.freeze(['never', 'startup', ...Object.keys(UPDATE_FREQUENCY_MS)]);
 const UPDATE_RETRY_MS = Object.freeze([5 * 60 * 1000, 15 * 60 * 1000, 60 * 60 * 1000, 6 * 60 * 60 * 1000]);
 
@@ -251,7 +255,7 @@ function activateUpdater({
   const userData = app.getPath('userData');
   const frequencyPath = path.join(userData, 'update-frequency.json');
   const lastCheckPath = path.join(userData, 'last-update-check.json');
-  const defaultFrequency = 'daily';
+  const defaultFrequency = DEFAULT_UPDATE_FREQUENCY[channel];
   let frequency = testMode ? 'sixHours' : readFrequency(frequencyPath, defaultFrequency);
   let checkHistory = readCheckHistory(lastCheckPath);
   let status = {
@@ -482,6 +486,7 @@ function activateUpdater({
 }
 
 module.exports = {
+  DEFAULT_UPDATE_FREQUENCY,
   UPDATE_FREQUENCIES,
   UPDATE_FREQUENCY_MS,
   UPDATE_RETRY_MS,

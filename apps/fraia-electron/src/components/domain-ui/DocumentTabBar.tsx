@@ -234,19 +234,25 @@ export function DocumentTabBar({
             />
             <TooltipContent>Open Fraia model</TooltipContent>
           </Tooltip>
-          <Button
-            data-document-tab-new-blank
-            type="button"
-            variant="outline"
-            aria-label="New blank model"
-            title="New blank model"
-            disabled={newBlankModelDisabled}
-            className="shrink-0 bg-background! hover:bg-muted!"
-            onClick={onNewBlankModel}
-          >
-            <FilePlus2 data-icon="inline-start" />
-            New Blank Model
-          </Button>
+          <Tooltip>
+            <TooltipTrigger
+              render={(
+                <Button
+                  data-document-tab-new-blank
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  aria-label="New blank model"
+                  disabled={newBlankModelDisabled}
+                  className="shrink-0 bg-background! hover:bg-muted!"
+                  onClick={onNewBlankModel}
+                >
+                  <FilePlus2 />
+                </Button>
+              )}
+            />
+            <TooltipContent>New blank model</TooltipContent>
+          </Tooltip>
         </div>
       </Tabs>
       <p role="status" className="sr-only" aria-live="polite" aria-atomic="true">

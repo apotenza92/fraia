@@ -33,7 +33,7 @@ export type WorkflowStageBarProps = {
 
 type EdgeButtonProps = {
   direction: 'previous' | 'next';
-  destination: WorkflowStage | null;
+  destination: WorkflowStage;
   destinationState: WorkflowStageNavigationState | undefined;
   descriptionId: string;
   onNavigate: (stage: WorkflowStage) => void;
@@ -48,8 +48,7 @@ function EdgeButton({
 }: EdgeButtonProps) {
   const isPrevious = direction === 'previous';
   const label = isPrevious ? 'Previous' : 'Next';
-  const isEndpoint = destination == null;
-  const isGated = !isEndpoint && !destinationState?.available;
+  const isGated = !destinationState?.available;
   const gateReason = isGated
     ? destinationState?.gateReason
       ?? `${WORKFLOW_STAGE_LABELS[destination]} is not available yet.`
@@ -60,11 +59,10 @@ function EdgeButton({
       type="button"
       variant="outline"
       size="sm"
-      disabled={isEndpoint}
       aria-disabled={isGated || undefined}
       aria-describedby={gateReason ? descriptionId : undefined}
       onClick={() => {
-        if (!destination || isGated) return;
+        if (isGated) return;
         onNavigate(destination);
       }}
     >
@@ -110,13 +108,15 @@ export function WorkflowStageBar({
       className={cn('grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 px-2 pt-1.5', className)}
     >
       <div className="pb-1.5">
-        <EdgeButton
-          direction="previous"
-          destination={previousStage}
-          destinationState={previousStage ? stageStateById.get(previousStage) : undefined}
-          descriptionId={previousGateDescriptionId}
-          onNavigate={onNavigate}
-        />
+        {previousStage ? (
+          <EdgeButton
+            direction="previous"
+            destination={previousStage}
+            destinationState={stageStateById.get(previousStage)}
+            descriptionId={previousGateDescriptionId}
+            onNavigate={onNavigate}
+          />
+        ) : null}
       </div>
 
       <div
@@ -157,13 +157,15 @@ export function WorkflowStageBar({
       </div>
 
       <div className="justify-self-end pb-1.5">
-        <EdgeButton
-          direction="next"
-          destination={nextStage}
-          destinationState={nextStage ? stageStateById.get(nextStage) : undefined}
-          descriptionId={nextGateDescriptionId}
-          onNavigate={onNavigate}
-        />
+        {nextStage ? (
+          <EdgeButton
+            direction="next"
+            destination={nextStage}
+            destinationState={stageStateById.get(nextStage)}
+            descriptionId={nextGateDescriptionId}
+            onNavigate={onNavigate}
+          />
+        ) : null}
       </div>
 
       <span className="sr-only" aria-live="polite" aria-atomic="true">
