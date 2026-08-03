@@ -36,6 +36,7 @@ test("desktop shell preserves keyboard and accessibility contracts", async () =>
     env: {
       ...process.env,
       FRAIA_DEFAULT_PROJECT_DIR: projectDir,
+      FRAIA_USER_DATA_DIR: userDataDir,
     },
   })
 
@@ -53,6 +54,7 @@ test("desktop shell preserves keyboard and accessibility contracts", async () =>
 
     await page.waitForLoadState("domcontentloaded")
     await expect(page.locator("[data-slot=menubar]")).toBeVisible()
+    await expect(page.locator("body")).toHaveCSS("font-size", "13px")
     await expect(page.locator('canvas[data-fraia-canvas-role="viewport-webgl"]')).toHaveCount(1)
     await expect(page.locator('canvas[data-fraia-canvas-role="selection-overlay"]')).toHaveCount(1)
     await expect(page.locator("canvas")).toHaveCount(2)
@@ -62,7 +64,7 @@ test("desktop shell preserves keyboard and accessibility contracts", async () =>
     await expect(workflow.locator('[aria-current="step"]')).toHaveText("Base Model")
     await expect(workflow.getByText("Design Options", { exact: true })).toHaveAttribute("aria-disabled", "true")
     await expect(workflow.getByText("Analysis & Comparison", { exact: true })).toHaveAttribute("aria-disabled", "true")
-    await expect(workflow.getByRole("button", { name: "Previous" })).toBeDisabled()
+    await expect(workflow.getByRole("button", { name: "Previous" })).toHaveCount(0)
     await expect(page.getByRole("button", { name: "Brief incomplete" })).toHaveCount(0)
     const gatedNext = workflow.getByRole("button", { name: "Next" })
     await expect(gatedNext).toHaveAttribute("aria-disabled", "true")
@@ -83,8 +85,8 @@ test("desktop shell preserves keyboard and accessibility contracts", async () =>
       BrowserWindow.getAllWindows()[0]?.setBounds({
         x: 20,
         y: 20,
-        width: 980,
-        height: 640,
+        width: 900,
+        height: 600,
       })
     })
     await expect(page.locator("[data-slot=menubar]")).toBeVisible()
@@ -143,24 +145,19 @@ test("fake Pi runtime signs in with ChatGPT, uses Luna, completes, cancels, and 
       FRAIA_USER_DATA_DIR: userDataDir,
     },
   })
-  const openProviders = async (page: Page) => {
-    await page.getByRole("menuitem", { name: "Fraia" }).click()
-    await page.getByRole("menuitem", { name: "Fraia AI…" }).click()
-    await expect(page.getByRole("dialog", { name: "Fraia AI" })).toBeVisible()
-  }
-
   let electronApp = await launch()
   try {
     let page = await electronApp.firstWindow()
     await page.waitForLoadState("domcontentloaded")
-    await openProviders(page)
-
-    await expect(page.getByText("GPT-5.6 Luna · Low reasoning", { exact: true })).toBeVisible()
+    expect(await electronApp.evaluate(({ Menu }) => (
+      Menu.getApplicationMenu()?.items.map((item) => item.label) ?? []
+    ))).not.toContain("Developer")
+    await expect(page.getByRole("menuitem", { name: "Developer" })).toHaveCount(0)
+    await expect(page.getByRole("menuitem", { name: "Fraia AI…" })).toHaveCount(0)
     await expect(page.getByLabel(/API key/i)).toHaveCount(0)
     await expect(page.getByRole("combobox")).toHaveCount(0)
-    await page.getByRole("button", { name: "Sign in with ChatGPT" }).click()
-    await expect(page.getByRole("dialog", { name: "Fraia AI" }).getByText("Ready", { exact: true })).toBeVisible()
-    await page.getByRole("button", { name: "Close" }).click()
+    await page.getByRole("button", { name: "Sign in required" }).click()
+    await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible()
 
     await expect(page.getByText("GPT-5.6 Luna", { exact: true }).first()).toBeVisible()
     await expect(page.getByRole("combobox")).toHaveCount(0)
@@ -183,10 +180,11 @@ test("fake Pi runtime signs in with ChatGPT, uses Luna, completes, cancels, and 
     electronApp = await launch(5_000)
     page = await electronApp.firstWindow()
     await page.waitForLoadState("domcontentloaded")
-    await openProviders(page)
-    await expect(page.getByRole("dialog", { name: "Fraia AI" }).getByText("Ready", { exact: true })).toBeVisible()
-    await expect(page.getByText("Encrypted ChatGPT test authorization", { exact: true })).toBeVisible()
-    await page.getByRole("button", { name: "Close" }).click()
+    await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible()
+    await page.getByRole("button", { name: "Sign out" }).click()
+    await expect(page.getByRole("button", { name: "Sign in required" })).toBeVisible()
+    await page.getByRole("button", { name: "Sign in required" }).click()
+    await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible()
 
     const reply = page.getByPlaceholder("Reply to the Base Model Guide...")
     await reply.fill("Please continue the model brief.")

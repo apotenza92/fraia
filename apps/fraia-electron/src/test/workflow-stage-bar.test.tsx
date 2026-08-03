@@ -66,6 +66,20 @@ describe('WorkflowStageBar', () => {
     expect(onNavigate.mock.calls).toEqual([['base'], ['analysis']]);
   });
 
+  it('omits Previous on the first stage', () => {
+    renderStageBar({ currentStage: 'base' });
+
+    expect(screen.queryByRole('button', { name: 'Previous' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next' })).toBeVisible();
+  });
+
+  it('omits Next on the last stage', () => {
+    renderStageBar({ currentStage: 'analysis' });
+
+    expect(screen.getByRole('button', { name: 'Previous' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Next' })).not.toBeInTheDocument();
+  });
+
   it('keeps a gated Next focusable, explains the gate, and suppresses activation', async () => {
     const user = userEvent.setup();
     const onNavigate = vi.fn();

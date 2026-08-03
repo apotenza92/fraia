@@ -5,10 +5,24 @@ All notable user-facing changes to Fraia are documented here. Fraia follows
 workflow uses the matching version section below as the authoritative GitHub
 release notes and macOS updater notes.
 
-## [0.0.5] - 2026-07-31
+## [0.0.5] - 2026-08-04
 
 ### Changed
 
+- The desktop shell now uses the Base UI Nova component system and Geist type,
+  with document tabs, model tools, menu controls, and panel density aligned to
+  the Butter Paper desktop family.
+- First launch now uses a 1200 by 800 window with a 900 by 600 minimum. Fraia
+  continues to restore a user's later window size, position, and maximized
+  state.
+- The Base Model panel now signs in to ChatGPT directly from its required-sign-in
+  button and changes that control to Sign out after authentication, allowing
+  users to switch accounts without opening a separate provider window.
+- Member, snap, and label tools now use compact Nova split controls with their
+  settings attached directly to the relevant action.
+- The Fraia menu now exposes Check for Updates directly and groups persisted
+  automatic-check frequencies under Automatic Checks. The developer menu and
+  separate Fraia AI menu item have been removed from release builds.
 - The Fraia menu now reports checking, up-to-date, downloading, ready,
   installing, and retryable error states instead of leaving manual checks
   silent. Downloads show percentage, transferred and total size, speed, and

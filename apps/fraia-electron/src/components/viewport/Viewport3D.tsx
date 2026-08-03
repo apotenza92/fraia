@@ -7,6 +7,7 @@ import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { ViewportGizmo, type GizmoOptions } from 'three-viewport-gizmo';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import type { AgentTarget, RenderLoad, RenderRelease, RenderScene, RenderSupport } from '../../lib/types';
 import { displayMembersFor, type DisplayMember } from '../../lib/renderMembers';
 import { formatQuantity, metricStructuralUnitProfile, unitProfileFrom } from '../../lib/units';
@@ -4809,16 +4810,16 @@ export function Viewport3D({
     <div className="relative h-full w-full">
       <div ref={ref} className="h-full w-full" />
       {(scene.releases?.length ?? 0) > 0 && (
-        <div
-          className="absolute rounded-md border bg-card p-2 text-xs text-card-foreground shadow-xs"
+        <Alert
+          className="absolute w-fit max-w-[min(32rem,calc(100%-1.5rem))]"
           style={{
             left: `${Math.max(12, fitInsetLeft + 12)}px`,
             bottom: `${Math.max(12, fitInsetBottom + 12)}px`,
           }}
           title="End releases use member-local axes. Red, green, and blue are local X, Y, and Z. Positive local axis ticks indicate translational releases; negative local axis ticks indicate rotational releases."
         >
-          End releases: X/Y/Z colours use local axes; + = translation, - = rotation
-        </div>
+          <AlertDescription>End releases: X/Y/Z colours use local axes; + = translation, - = rotation</AlertDescription>
+        </Alert>
       )}
     </div>
   );

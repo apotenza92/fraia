@@ -1,13 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { ClipboardCheck, LoaderCircle, RotateCcw, Send } from 'lucide-react';
+import { ClipboardCheck, ExternalLink, LogOut, RotateCcw, Send } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
+import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { Message, MessageContent } from '@/components/ui/message';
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from '@/components/ui/message-scroller';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Spinner } from '@/components/ui/spinner';
+import { Separator } from '@/components/ui/separator';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { EstimatedAgentProgress, type AgentProgressStage, useEstimatedAgentProgress } from '../chat/AgentProgressIndicator';
 import { ChatMessageText } from '../chat/ChatMessageText';
 import type { AgentProviderStatus, AgentSession, BaseModelBrief, WorkbenchState } from '../../lib/types';
@@ -24,6 +38,18 @@ import { CHROME } from '../layout/chromeMetrics';
 
 const SURFACE = 'pre_solve';
 const CHAT_INPUT_MAX_LINES = 4;
+
+type AuthenticationEvent = {
+  kind?: string;
+  flowId?: string;
+  providerId?: string;
+  type?: string;
+  message?: string;
+  url?: string;
+  userCode?: string;
+  verificationUri?: string;
+  prompt?: { type?: string; message?: string; options?: Array<{ id: string; label: string }> };
+};
 
 const BASE_GUIDE_START_STAGES: AgentProgressStage[] = [
   { label: 'Reading node and member labels', durationMs: 1200 },
@@ -100,10 +126,10 @@ function CheckboxRow({
 }) {
   const id = `base-reply-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
   return (
-    <label htmlFor={id} className="flex items-center gap-2 text-sm">
+    <Field orientation="horizontal" data-disabled={disabled || undefined} className="gap-2">
       <Checkbox id={id} checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} />
-      <span>{label}</span>
-    </label>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+    </Field>
   );
 }
 
@@ -123,15 +149,15 @@ export function BaseChatPanel({
   const [pendingUserText, setPendingUserText] = useState<string | null>(null);
   const [provider, setProvider] = useState<AgentProviderStatus | null>(null);
   const [providerError, setProviderError] = useState<string | null>(null);
+  const [authenticationAction, setAuthenticationAction] = useState<'sign-in' | 'sign-out' | null>(null);
+  const [authenticationError, setAuthenticationError] = useState<string | null>(null);
+  const [authenticationEvent, setAuthenticationEvent] = useState<AuthenticationEvent | null>(null);
+  const [authenticationPromptAnswer, setAuthenticationPromptAnswer] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [groupedSelections, setGroupedSelections] = useState<Record<string, string[]>>({});
   const [groupedNotes, setGroupedNotes] = useState<Record<string, string>>({});
   const startInFlightRef = useRef(false);
-  const chatScrollRef = useRef<HTMLDivElement | null>(null);
-  const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const latestMessageKeyRef = useRef<string | null>(null);
-  const chatPinnedRef = useRef(true);
   const activeRequestIdRef = useRef<string | null>(null);
   const activeRequestTextRef = useRef<string | null>(null);
   const cancelledRequestIdsRef = useRef<Set<string>>(new Set());
@@ -143,9 +169,27 @@ export function BaseChatPanel({
   const settingsModelId = settings?.modelId ?? settings?.model_id ?? settings?.model ?? FRAIA_AI_MODEL_ID;
   const selectedModel = selectedAgentModel(provider, settingsProviderId, settingsModelId);
   const aiReady = agentRuntimeReady(provider, selectedModel);
+  const chatGptProvider = provider?.providers.find((candidate) => candidate.id === FRAIA_AI_PROVIDER_ID);
+  const chatGptState = chatGptProvider?.authState ?? chatGptProvider?.auth_state ?? 'disconnected';
+  const signedIn = chatGptState === 'connected' || chatGptState === 'configured';
+  const oauth = chatGptProvider?.authentication.find((method) => method.type === 'oauth');
+  const secureCredentialStorage = provider?.secureCredentialStorageAvailable ?? provider?.secure_credential_storage_available;
+  const authenticationInProgress = Boolean(
+    authenticationEvent
+    && !['complete', 'error'].includes(authenticationEvent.type ?? ''),
+  );
+  const modelUnavailable = signedIn && !aiReady;
   const messages = (session?.messages ?? []).filter(messageIsRenderable);
   const guideStarted = messages.some(messageStartedGuide);
-  const showStatus = Boolean(startError) || (guideStarted && (!aiReady || Boolean(providerError || sendError)));
+  const showStatus = Boolean(
+    authenticationError
+    || authenticationEvent
+    || secureCredentialStorage === false
+    || modelUnavailable
+    || startError
+    || providerError
+    || sendError,
+  );
   const brief = state?.baseModelBrief ?? state?.base_model_brief ?? null;
   const visibleMessages = briefReady(brief)
     ? messages.filter((message) => !isBriefReadyHandoffMessage(message))
@@ -170,6 +214,71 @@ export function BaseChatPanel({
     void refreshProvider();
     return subscribeToAgentModelCatalogRefresh(() => { void refreshProvider(); });
   }, [refreshProvider]);
+
+  useEffect(() => {
+    const unsubscribe: unknown = window.fraia.onAiRuntimeStatus?.((event: AuthenticationEvent) => {
+      if (event.kind !== 'authentication' || event.providerId !== FRAIA_AI_PROVIDER_ID) return;
+      if (event.type === 'complete') {
+        setAuthenticationEvent(null);
+        void refreshProvider();
+      } else {
+        setAuthenticationEvent(event);
+      }
+    });
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, [refreshProvider]);
+
+  async function changeAuthentication() {
+    if (authenticationAction || authenticationInProgress) return;
+    setAuthenticationError(null);
+    setAuthenticationPromptAnswer(null);
+    setAuthenticationEvent(null);
+
+    if (signedIn) {
+      setAuthenticationAction('sign-out');
+      try {
+        await window.fraia.aiDisconnect({ providerId: FRAIA_AI_PROVIDER_ID });
+        await refreshProvider();
+      } catch (error: any) {
+        setAuthenticationError(error?.message || 'Could not sign out of ChatGPT.');
+      } finally {
+        setAuthenticationAction(null);
+      }
+      return;
+    }
+
+    setAuthenticationAction('sign-in');
+    setAuthenticationEvent({
+      kind: 'authentication',
+      providerId: FRAIA_AI_PROVIDER_ID,
+      type: 'progress',
+      message: 'Starting ChatGPT sign-in.',
+    });
+    try {
+      await window.fraia.aiStartOAuth({ providerId: FRAIA_AI_PROVIDER_ID });
+    } catch (error: any) {
+      setAuthenticationEvent(null);
+      setAuthenticationError(error?.message || 'Could not start ChatGPT sign-in.');
+    } finally {
+      setAuthenticationAction(null);
+    }
+  }
+
+  async function answerAuthenticationPrompt(event: AuthenticationEvent) {
+    if (!event.flowId) return;
+    setAuthenticationError(null);
+    try {
+      await window.fraia.aiAnswerAuthPrompt({
+        flowId: event.flowId,
+        value: authenticationPromptAnswer ?? '',
+      });
+      setAuthenticationPromptAnswer(null);
+    } catch (error: any) {
+      setAuthenticationError(error?.message || 'Could not continue ChatGPT sign-in.');
+    }
+  }
 
   async function startBaseModelGuide() {
     if (!state || !projectDir || guideStarted || startInFlightRef.current) return;
@@ -204,8 +313,6 @@ export function BaseChatPanel({
       setPendingUserText(null);
       setGroupedSelections({});
       setGroupedNotes({});
-      latestMessageKeyRef.current = null;
-      chatPinnedRef.current = true;
       activeRequestIdRef.current = null;
       activeRequestTextRef.current = null;
     } catch (error: any) {
@@ -225,7 +332,6 @@ export function BaseChatPanel({
     setSendError(null);
     setPendingUserText(trimmed);
     setDraft('');
-    pinChatToBottom();
     try {
       const response = await window.fraia.agentRespondSession({ projectDir, surface: SURFACE, sessionId: session?.id, requestId, text: trimmed, selectedOptionIds: [] });
       if (cancelledRequestIdsRef.current.has(requestId)) return;
@@ -311,48 +417,6 @@ export function BaseChatPanel({
     if (text.trim()) respond(text);
   }
 
-  function scrollChatToBottom() {
-    window.requestAnimationFrame(() => {
-      const element = chatScrollRef.current;
-      if (element) element.scrollTop = element.scrollHeight;
-    });
-  }
-
-  function scrollMessageToTop(messageKey: string) {
-    window.requestAnimationFrame(() => {
-      const container = chatScrollRef.current;
-      const messageElement = messageRefs.current[messageKey];
-      if (!container || !messageElement) return;
-      const containerRect = container.getBoundingClientRect();
-      const messageRect = messageElement.getBoundingClientRect();
-      container.scrollTop += messageRect.top - containerRect.top - 10;
-    });
-  }
-
-  function pinChatToBottom() {
-    chatPinnedRef.current = true;
-    scrollChatToBottom();
-  }
-
-  function updateChatPinnedState() {
-    const element = chatScrollRef.current;
-    if (!element) return;
-    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
-    chatPinnedRef.current = distanceFromBottom < 48;
-  }
-
-  useEffect(() => {
-    const latest = visibleMessages[visibleMessages.length - 1];
-    const latestKey = latest ? agentMessageKey(latest, visibleMessages.length - 1) : null;
-    const isNewMessage = latestKey !== latestMessageKeyRef.current;
-    latestMessageKeyRef.current = latestKey;
-    if (isNewMessage && latest?.author === 'assistant' && latestKey) {
-      chatPinnedRef.current = false;
-      scrollMessageToTop(latestKey);
-      return;
-    }
-    if (chatPinnedRef.current) scrollChatToBottom();
-  }, [visibleMessages.length, pendingUserText, busy]);
 
   const statusBanner = (
     <div className="flex shrink-0 flex-col gap-2 border-b p-2">
@@ -361,11 +425,120 @@ export function BaseChatPanel({
           <span className="text-sm font-medium">Fraia AI</span>
           <span className="truncate text-xs text-muted-foreground">{FRAIA_AI_MODEL_NAME}</span>
         </div>
-        <Badge variant={aiReady ? 'secondary' : 'outline'}>{aiReady ? 'Ready' : 'Sign in required'}</Badge>
+        <Button
+          type="button"
+          size="sm"
+          variant={signedIn ? 'outline' : 'default'}
+          onClick={changeAuthentication}
+          disabled={
+            authenticationAction !== null
+            || authenticationInProgress
+            || (!signedIn && (!provider || secureCredentialStorage === false || !oauth))
+          }
+        >
+          {authenticationAction || authenticationInProgress
+            ? <Spinner data-icon="inline-start" />
+            : signedIn
+              ? <LogOut data-icon="inline-start" />
+              : <ExternalLink data-icon="inline-start" />}
+          {authenticationAction === 'sign-out'
+            ? 'Signing out...'
+            : authenticationAction === 'sign-in' || authenticationInProgress
+              ? 'Waiting for ChatGPT'
+              : signedIn
+                ? 'Sign out'
+                : 'Sign in required'}
+        </Button>
       </div>
       {showStatus && (
         <div className="flex flex-col gap-1.5">
-      {!aiReady && guideStarted && <Alert><AlertDescription>Open Fraia → Fraia AI and sign in with ChatGPT.</AlertDescription></Alert>}
+      {secureCredentialStorage === false && (
+        <Alert variant="destructive">
+          <AlertTitle>Secure sign-in unavailable</AlertTitle>
+          <AlertDescription>Operating-system credential encryption is unavailable, so Fraia cannot store a ChatGPT authorization.</AlertDescription>
+        </Alert>
+      )}
+      {authenticationError && (
+        <Alert variant="destructive">
+          <AlertTitle>ChatGPT account action failed</AlertTitle>
+          <AlertDescription>{authenticationError}</AlertDescription>
+        </Alert>
+      )}
+      {authenticationEvent?.type === 'auth_url' && (
+        <Alert>
+          <ExternalLink />
+          <AlertTitle>Continue in your browser</AlertTitle>
+          <AlertDescription>Fraia opened ChatGPT sign-in in your default browser and will update when authorization finishes.</AlertDescription>
+        </Alert>
+      )}
+      {authenticationEvent?.type === 'device_code' && (
+        <Alert>
+          <ExternalLink />
+          <AlertTitle>Finish signing in with ChatGPT</AlertTitle>
+          <AlertDescription>
+            Open {authenticationEvent.verificationUri} and enter code <strong>{authenticationEvent.userCode}</strong>.
+          </AlertDescription>
+        </Alert>
+      )}
+      {authenticationEvent?.type === 'progress' && (
+        <p className="text-sm text-muted-foreground" role="status">{authenticationEvent.message}</p>
+      )}
+      {authenticationEvent?.type === 'error' && (
+        <Alert variant="destructive">
+          <AlertTitle>ChatGPT sign-in failed</AlertTitle>
+          <AlertDescription>{authenticationEvent.message}</AlertDescription>
+        </Alert>
+      )}
+      {modelUnavailable && (
+        <Alert variant="destructive">
+          <AlertTitle>{FRAIA_AI_MODEL_NAME} is unavailable</AlertTitle>
+          <AlertDescription>Sign out and reconnect ChatGPT before starting another AI turn.</AlertDescription>
+        </Alert>
+      )}
+      {authenticationEvent?.type === 'prompt' && authenticationEvent.flowId && (
+        <form onSubmit={(event) => { event.preventDefault(); void answerAuthenticationPrompt(authenticationEvent); }}>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="base-chat-auth-prompt">
+                {authenticationEvent.prompt?.message ?? 'Authentication response'}
+              </FieldLabel>
+              {authenticationEvent.prompt?.type === 'select' ? (
+                <Select
+                  value={authenticationPromptAnswer}
+                  items={[
+                    { value: null, label: 'Choose an option' },
+                    ...(authenticationEvent.prompt.options ?? []).map((option) => ({ value: option.id, label: option.label })),
+                  ]}
+                  onValueChange={(value) => {
+                    if (typeof value === 'string') setAuthenticationPromptAnswer(value);
+                  }}
+                >
+                  <SelectTrigger id="base-chat-auth-prompt" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value={null}>Choose an option</SelectItem>
+                      {(authenticationEvent.prompt.options ?? []).map((option) => (
+                        <SelectItem key={option.id} value={option.id}>{option.label}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  id="base-chat-auth-prompt"
+                  type={authenticationEvent.prompt?.type === 'secret' ? 'password' : 'text'}
+                  autoComplete="off"
+                  value={authenticationPromptAnswer ?? ''}
+                  onChange={(event) => setAuthenticationPromptAnswer(event.target.value)}
+                />
+              )}
+              <Button type="submit" size="sm" disabled={!authenticationPromptAnswer?.trim()}>Continue</Button>
+            </Field>
+          </FieldGroup>
+        </form>
+      )}
       {startError && (
         <Alert variant="destructive">
           <AlertDescription>{startError}</AlertDescription>
@@ -391,7 +564,7 @@ export function BaseChatPanel({
       className="w-full"
       title="Clear the Base Model Guide chat and brief, while keeping the current model geometry"
     >
-      {resettingGuide ? <LoaderCircle /> : <RotateCcw />}
+      {resettingGuide ? <Spinner data-icon="inline-start" /> : <RotateCcw data-icon="inline-start" />}
       {resettingGuide ? 'Resetting...' : 'Reset guide'}
     </Button>
   ) : null, [busy, guideStarted, resetBaseModelGuide, resettingGuide, starting]);
@@ -404,17 +577,22 @@ export function BaseChatPanel({
   const startGuideButton = (
     <Button
       onClick={startBaseModelGuide}
-      disabled={!state || starting}
+      disabled={!state || starting || !aiReady}
       className="w-full max-w-[430px]"
     >
-      {starting ? <LoaderCircle /> : <ClipboardCheck />}
+      {starting ? <Spinner data-icon="inline-start" /> : <ClipboardCheck data-icon="inline-start" />}
       {starting ? 'Starting Base Model Guide...' : visibleMessages.length ? 'Retry Base Model Guide' : 'Start the Base Model Guide'}
     </Button>
   );
 
   const composer = (
-    <div className="flex shrink-0 flex-col gap-2 border-t p-2">
+    <>
+    <Separator />
+    <FieldGroup className="shrink-0 gap-2 p-2">
+      <Field>
+      <FieldLabel htmlFor="base-chat-reply" className="sr-only">Reply to the Base Model Guide</FieldLabel>
       <Textarea
+        id="base-chat-reply"
         value={draft}
         placeholder="Reply to the Base Model Guide..."
         rows={2}
@@ -424,29 +602,35 @@ export function BaseChatPanel({
           if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) respond(draft);
         }}
       />
+      </Field>
       <div className="grid grid-cols-2 gap-2">
         {resetGuideButton ? <div className="min-w-0">{resetGuideButton}</div> : null}
         <Button className="w-full" onClick={() => respond(draft)} disabled={busy || !draft.trim() || !aiReady}>
-          <Send />
+          {busy ? <Spinner data-icon="inline-start" /> : <Send data-icon="inline-start" />}
           {busy ? 'Sending...' : 'Send'}
         </Button>
       </div>
-    </div>
+    </FieldGroup>
+    </>
   );
 
   const messageList = (
-    <div className="flex flex-col gap-2">
+    <MessageScrollerContent className="gap-2 p-2">
       {visibleMessages.map((message, index) => {
         const replies = message.author === 'assistant' ? messageReplies(message) : [];
         const replyGroups = message.author === 'assistant' ? messageReplyGroups(message) : [];
         const messageKey = agentMessageKey(message, index);
         const userMessage = message.author === 'user';
         return (
-          <div
-            ref={(element) => { messageRefs.current[messageKey] = element; }}
+          <MessageScrollerItem
             key={messageKey}
-            className={['rounded-md p-2', userMessage ? 'ml-auto max-w-[84%] border shadow-xs' : ''].filter(Boolean).join(' ')}
+            messageId={messageKey}
+            scrollAnchor={userMessage}
           >
+            <Message align={userMessage ? 'end' : 'start'}>
+              <MessageContent>
+                <Bubble variant={userMessage ? 'outline' : 'ghost'}>
+                  <BubbleContent>
             <ChatMessageText text={message.text} />
             {!!replyGroups.length && (
               <div className="mt-2 flex flex-col gap-2">
@@ -455,10 +639,11 @@ export function BaseChatPanel({
                   const selected = groupedSelections[groupKey] ?? group.defaultReplies;
                   return (
                   <Card key={`${group.title}-${group.prompt ?? ''}-${groupIndex}`}>
-                    <CardContent className="flex flex-col gap-1">
-                    <div className="font-semibold">{group.title}</div>
-                    {group.prompt && <p className="text-sm">{group.prompt}</p>}
-                    <div className="mt-2 flex flex-col gap-1">
+                    <CardContent>
+                    <FieldSet className="gap-2">
+                    <FieldLegend className="mb-0">{group.title}</FieldLegend>
+                    {group.prompt && <FieldDescription>{group.prompt}</FieldDescription>}
+                    <FieldGroup className="gap-1">
                       {group.replies.map((reply, replyIndex) => (
                         <CheckboxRow
                           key={`${reply}-${replyIndex}`}
@@ -468,15 +653,19 @@ export function BaseChatPanel({
                             onCheckedChange={() => toggleGroupedReply(groupKey, reply, group.defaultReplies)}
                         />
                       ))}
-                    </div>
+                    </FieldGroup>
+                    <Field>
+                    <FieldLabel htmlFor={`${groupKey}-note`} className="sr-only">Other answer or note for {group.title}</FieldLabel>
                     <Textarea
+                      id={`${groupKey}-note`}
                       value={groupedNotes[groupKey] ?? ''}
                       rows={2}
                       placeholder="Add your own answer or note for this issue..."
                       disabled={busy || !aiReady}
-                      className="mt-2"
                       onChange={(event) => setGroupedNotes((current) => ({ ...current, [groupKey]: event.target.value }))}
                     />
+                    </Field>
+                    </FieldSet>
                     </CardContent>
                   </Card>
                   );
@@ -521,16 +710,27 @@ export function BaseChatPanel({
                 ))}
               </div>
             )}
-          </div>
+                  </BubbleContent>
+                </Bubble>
+              </MessageContent>
+            </Message>
+          </MessageScrollerItem>
         );
       })}
       {pendingUserText && (
         <>
-          <div className="ml-auto max-w-[84%] rounded-md border p-3 shadow-xs">
-            <ChatMessageText text={pendingUserText} />
-          </div>
-          <Alert>
-            <LoaderCircle />
+          <MessageScrollerItem scrollAnchor>
+            <Message align="end">
+              <MessageContent>
+                <Bubble variant="outline">
+                  <BubbleContent><ChatMessageText text={pendingUserText} /></BubbleContent>
+                </Bubble>
+              </MessageContent>
+            </Message>
+          </MessageScrollerItem>
+          <MessageScrollerItem>
+            <Alert>
+            <Spinner />
             <AlertTitle>Agent is thinking</AlertTitle>
             <AlertDescription>
               <Button onClick={confirmCancelAgentTurn} variant="secondary" size="sm">
@@ -538,10 +738,20 @@ export function BaseChatPanel({
               </Button>
             <EstimatedAgentProgress percent={replyProgress.percent} stageLabel={replyProgress.stageLabel} />
             </AlertDescription>
-          </Alert>
+            </Alert>
+          </MessageScrollerItem>
         </>
       )}
-    </div>
+    </MessageScrollerContent>
+  );
+
+  const transcript = (
+    <MessageScrollerProvider>
+      <MessageScroller>
+        <MessageScrollerViewport>{messageList}</MessageScrollerViewport>
+        <MessageScrollerButton />
+      </MessageScroller>
+    </MessageScrollerProvider>
   );
 
   if (!guideStarted) {
@@ -551,8 +761,8 @@ export function BaseChatPanel({
         <div className="flex min-h-0 flex-1 items-center justify-center px-8 py-6">
           <div className="flex w-full max-w-[430px] flex-col gap-3">
             {visibleMessages.length > 0 && (
-              <div className="max-h-[42vh] overflow-auto rounded-md border bg-background/80 p-2">
-                {messageList}
+              <div className="h-[42vh] overflow-hidden rounded-md border bg-background/80">
+                {transcript}
               </div>
             )}
             {startGuideButton}
@@ -575,8 +785,8 @@ export function BaseChatPanel({
   return (
     <div className="relative flex h-full min-h-0 flex-col gap-0">
       {statusBanner}
-      <div ref={chatScrollRef} onScroll={updateChatPinnedState} className="min-h-0 flex-1 overflow-auto p-2">
-        {messageList}
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {transcript}
       </div>
       {composer}
     </div>

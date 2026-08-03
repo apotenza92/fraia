@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Empty, EmptyDescription } from '@/components/ui/empty';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { DesignOptionBatchState, DesignOptionRevisionState, EngineeringScheme } from '../../lib/types';
@@ -48,10 +49,10 @@ function DesignOptionItem({
 }) {
   const id = `include-option-${scheme.id.replace(/[^a-z0-9]+/gi, '-')}`;
   return (
-    <Card aria-current={active ? 'true' : undefined} className={active ? 'border-primary/60 bg-accent/40' : undefined}>
+    <Card aria-current={active ? 'true' : undefined}>
       <CardContent className="flex items-start gap-2 p-3">
         <Checkbox id={id} checked={revision.included} disabled={readOnly} aria-label={`Include ${scheme.name} for analysis`} onCheckedChange={(checked) => onIncludedChange(checked === true)} />
-        <Button type="button" onClick={onInspect} variant="ghost" className="h-auto min-w-0 flex-1 flex-col items-stretch justify-start gap-0 rounded-none px-0 py-0 text-left font-normal hover:bg-transparent active:translate-y-0">
+        <Button type="button" onClick={onInspect} variant="ghost" className="h-auto min-w-0 flex-1 flex-col items-stretch justify-start gap-0 p-0">
           <div className="flex items-center gap-2">
             <Badge variant={active ? 'default' : 'secondary'}>{optionNumber}</Badge>
             <div className="truncate font-medium" title={scheme.name}>{conciseSchemeTitle(scheme)}</div>
@@ -116,7 +117,7 @@ export function DesignOptionsPanel({
                       const revisions = historical.optionRevisions ?? historical.option_revisions ?? [];
                       return (
                         <Card key={historical.id}>
-                          <CardContent className="flex flex-col gap-1 p-3 text-sm">
+                          <CardContent className="flex flex-col gap-1 p-3">
                             <div className="flex items-center justify-between gap-2"><span className="truncate font-medium">{historical.id}</span><Badge variant="outline">{historical.status}</Badge></div>
                             <span className="text-xs text-muted-foreground">{revisions.length} option revision{revisions.length === 1 ? '' : 's'} · {historical.generatedAt ?? historical.generated_at}</span>
                           </CardContent>
@@ -137,18 +138,26 @@ export function DesignOptionsPanel({
           {included.map(({ scheme, revision, index }) => (
             <DesignOptionItem key={scheme.id} active={(active.kind === 'scheme' || active.kind === 'development') && (active.kind === 'scheme' ? active.id : active.optionId) === scheme.id} readOnly={stage === 'analysis'} optionNumber={index + 1} scheme={scheme} revision={revision} onInspect={() => onSelectScheme(scheme.id)} onIncludedChange={(checked) => !busy && onIncludedChange(scheme.id, checked)} />
           ))}
-          {!included.length ? <div className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">Include at least one option before moving to Analysis &amp; Comparison.</div> : null}
+          {!included.length ? (
+            <Empty className="min-h-24">
+              <EmptyDescription>Include at least one option before moving to Analysis &amp; Comparison.</EmptyDescription>
+            </Empty>
+          ) : null}
           {excluded.length ? (
-            <Collapsible className="rounded-md border p-2">
-              <CollapsibleTrigger render={<Button variant="ghost" className="w-full justify-start" />}>
-                Excluded options ({excluded.length})
-              </CollapsibleTrigger>
-              <CollapsibleContent className="mt-2 flex flex-col gap-2">
-                {excluded.map(({ scheme, revision, index }) => (
-                  <DesignOptionItem key={scheme.id} active={(active.kind === 'scheme' || active.kind === 'development') && (active.kind === 'scheme' ? active.id : active.optionId) === scheme.id} readOnly={stage === 'analysis'} optionNumber={index + 1} scheme={scheme} revision={revision} onInspect={() => onSelectScheme(scheme.id)} onIncludedChange={(checked) => !busy && onIncludedChange(scheme.id, checked)} />
-                ))}
-              </CollapsibleContent>
-            </Collapsible>
+            <Card>
+              <CardContent className="p-2">
+                <Collapsible>
+                  <CollapsibleTrigger render={<Button variant="ghost" className="w-full justify-start" />}>
+                    Excluded options ({excluded.length})
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="mt-2 flex flex-col gap-2">
+                    {excluded.map(({ scheme, revision, index }) => (
+                      <DesignOptionItem key={scheme.id} active={(active.kind === 'scheme' || active.kind === 'development') && (active.kind === 'scheme' ? active.id : active.optionId) === scheme.id} readOnly={stage === 'analysis'} optionNumber={index + 1} scheme={scheme} revision={revision} onInspect={() => onSelectScheme(scheme.id)} onIncludedChange={(checked) => !busy && onIncludedChange(scheme.id, checked)} />
+                    ))}
+                  </CollapsibleContent>
+                </Collapsible>
+              </CardContent>
+            </Card>
           ) : null}
         </div>
       </ScrollArea>

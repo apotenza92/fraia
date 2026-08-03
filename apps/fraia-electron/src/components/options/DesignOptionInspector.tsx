@@ -89,8 +89,8 @@ export function DesignOptionInspector({
               ) : null}
 
               <Card>
-                <CardHeader><CardTitle className="text-sm">What this option tests</CardTitle></CardHeader>
-                <CardContent className="text-sm text-muted-foreground">{scheme.summary}</CardContent>
+                <CardHeader><CardTitle>What this option tests</CardTitle></CardHeader>
+                <CardContent><p className="text-sm text-muted-foreground">{scheme.summary}</p></CardContent>
               </Card>
 
               {stage === 'analysis' ? <div className="grid grid-cols-2 gap-2">
@@ -101,8 +101,8 @@ export function DesignOptionInspector({
               </div> : null}
 
               <Card>
-                <CardHeader><CardTitle className="text-sm">Key differences and assumptions</CardTitle></CardHeader>
-                <CardContent className="flex flex-col gap-3 text-sm">
+                <CardHeader><CardTitle>Key differences and assumptions</CardTitle></CardHeader>
+                <CardContent className="flex flex-col gap-3">
                   <div><div className="font-medium">Support strategy</div><p className="text-muted-foreground">{scheme.comparison.supportStrategy}</p></div>
                   <div><div className="font-medium">Connection and load path</div><p className="text-muted-foreground">{scheme.comparison.connectionImplication}</p></div>
                   <div><div className="font-medium">Section policy</div><p className="text-muted-foreground">{sectionPolicy}</p></div>
@@ -120,8 +120,8 @@ export function DesignOptionInspector({
 
               {stage === 'analysis' ? (
                 <Card>
-                  <CardHeader><CardTitle className="text-sm">Analysis outputs</CardTitle></CardHeader>
-                  <CardContent className="flex flex-col gap-2 text-sm">
+                  <CardHeader><CardTitle>Analysis outputs</CardTitle></CardHeader>
+                  <CardContent className="flex flex-col gap-2">
                     <p className="text-muted-foreground">
                       {current
                         ? 'A preliminary option summary and its immutable solver evidence are available.'
@@ -136,7 +136,7 @@ export function DesignOptionInspector({
 
               {stage === 'analysis' && developmentPaths.length ? (
                 <Card>
-                  <CardHeader><CardTitle className="text-sm">Preserved option paths</CardTitle></CardHeader>
+                  <CardHeader><CardTitle>Preserved option paths</CardTitle></CardHeader>
                   <CardContent className="flex flex-col gap-2">
                     {developmentPaths.map((path) => {
                       const optionId = optionIdForPath(path);

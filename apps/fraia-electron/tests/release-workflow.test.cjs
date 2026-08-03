@@ -400,6 +400,9 @@ test('native updater menu exposes manual checking and every supported persisted 
   for (const label of ['Never', 'On Startup', 'Hourly', 'Every 6 Hours', 'Every 12 Hours', 'Daily', 'Weekly']) {
     assert.match(mainProcess, new RegExp(label));
   }
+  assert.match(mainProcess, /label: 'Check for Updates…'/);
+  assert.match(mainProcess, /label: 'Automatic Checks'/);
+  assert.doesNotMatch(mainProcess, /label: 'Updates'/);
   assert.match(mainProcess, /checkNow/);
   assert.match(mainProcess, /setFrequency/);
 });

@@ -17,8 +17,8 @@ export function DevelopmentPanel({ scheme, path, onOpenEvidence, onBackToCompari
         </div>
 
         <Card>
-          <CardHeader><CardTitle className="flex items-center gap-2 text-sm"><Route className="size-4" /> Source decision</CardTitle></CardHeader>
-          <CardContent className="flex flex-col gap-2 text-sm">
+          <CardHeader><CardTitle className="flex items-center gap-2"><Route /> Source decision</CardTitle></CardHeader>
+          <CardContent className="flex flex-col gap-2">
             <div className="flex items-center gap-2"><CheckCircle2 className="size-4 text-primary" /><span>Current preliminary analysis attached</span></div>
             <p className="text-muted-foreground">Maximum utilisation {analysis?.maxUtilization?.toFixed(2) ?? '—'} · Deflection {analysis?.maxDeflectionMm?.toFixed(1) ?? '—'} mm</p>
             <p className="text-xs text-muted-foreground">Path {path.id}</p>
@@ -26,8 +26,8 @@ export function DevelopmentPanel({ scheme, path, onOpenEvidence, onBackToCompari
         </Card>
 
         <Card>
-          <CardHeader><CardTitle className="text-sm">Available work</CardTitle></CardHeader>
-          <CardContent className="flex flex-col gap-2 text-sm">
+          <CardHeader><CardTitle>Available work</CardTitle></CardHeader>
+          <CardContent className="flex flex-col gap-2">
             <p>Review the selected sections, grouping, preliminary utilisation, displacement, and governing evidence attached to this path.</p>
             <p className="text-muted-foreground">Code, connection, foundation, and construction-document checks are not yet available and are not implied by this path.</p>
           </CardContent>

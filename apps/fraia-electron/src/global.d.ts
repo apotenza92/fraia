@@ -7,6 +7,7 @@ declare global {
         productName: string;
         userDataDirectoryName: string;
       }>;
+      pickProjectFile: () => Promise<string | null>;
       updateStatus?: () => Promise<import('@/lib/updateStatus').UpdateStatus>;
       checkForUpdates?: () => Promise<import('@/lib/updateStatus').UpdateStatus>;
       setUpdateFrequency?: (frequency: import('@/lib/updateStatus').UpdateFrequency) => Promise<import('@/lib/updateStatus').UpdateStatus>;

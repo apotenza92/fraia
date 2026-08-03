@@ -42,7 +42,7 @@ export function SolvePanel({
         <AlertDescription>{readiness?.summary || status}</AlertDescription>
       </Alert>
       <Button onClick={solve} disabled={busy} className="w-full">
-        <Play />
+        <Play data-icon="inline-start" />
         {busy ? 'Running...' : 'Run solve readiness'}
       </Button>
       <Card>
