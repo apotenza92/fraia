@@ -1,29 +1,29 @@
-version: 0.0.4
+version: 0.0.6
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.4/Fraia-Linux-x64.AppImage
-    sha512: 7RYf+EdSRX93+sDrnX2v0fcbwYcoHEf0gYRTWiSW4bSuMfgmSBsxV4n4W/sBVt3h/n5spHhKEwjqf/VrE3qMpg==
-    size: 107002099
-    blockMapSize: 112903
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.4/Fraia-Linux-x64.deb
-    sha512: GieV3rCYcvjNtCeVmb/SH2Y7inqmUew4K11hQtDYAjiQ43IiCi+DIXTtwldDxIJXNLnGfzbaQJXTc3ecSegjqQ==
-    size: 106569060
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.4/Fraia-Linux-x64.rpm
-    sha512: PxuI9S1Gk2UtLwH+C8Z9t/9G9BdDUoPJtJJPGYAzW2XRPGjoj+sOFQIG/hEAuYeeZjU5jknP7Wv7BN4v32hfSw==
-    size: 93859593
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.4/Fraia-Linux-x64.AppImage
-sha512: 7RYf+EdSRX93+sDrnX2v0fcbwYcoHEf0gYRTWiSW4bSuMfgmSBsxV4n4W/sBVt3h/n5spHhKEwjqf/VrE3qMpg==
-releaseName: Fraia 0.0.4
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.6/Fraia-Linux-x64.AppImage
+    sha512: UAc6aGI/NIkQRMVMPxz5HROIzT5Of+I9QsHqpFIz6ZeDCj91xZWjCKNcVhfFimASSeyuCPsCAjGv9TqTtdDDDg==
+    size: 107046982
+    blockMapSize: 112730
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.6/Fraia-Linux-x64.deb
+    sha512: jitiV0etNIix9h6LgrchMH01UHYj6KOzjt0WxMrfajnXGX+UlJv0iwRd4E52vZyExsHuikPm3/M8F3hymtk9VA==
+    size: 106612560
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.6/Fraia-Linux-x64.rpm
+    sha512: 89JQdnpnQclPB8vzk0a4OIcCJhQ7VyCPcFsugbOdNSCm1wbvTbDwCy2d901Ra3kDire+zGki+sbeldij1mHZLA==
+    size: 93816189
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.6/Fraia-Linux-x64.AppImage
+sha512: UAc6aGI/NIkQRMVMPxz5HROIzT5Of+I9QsHqpFIz6ZeDCj91xZWjCKNcVhfFimASSeyuCPsCAjGv9TqTtdDDDg==
+releaseName: Fraia 0.0.6
 releaseNotes: |-
   ### Changed
 
-  - Stable and beta are now separate, side-by-side applications with isolated
-    application ids, package names, user-data directories, artifacts, update
-    feeds, and release tags.
-  - CalculiX corresponding source now uses GNU's canonical GCC archive endpoint
-    while retaining the reviewed GCC 16.1.0 SHA-256.
+  - The updater-feed publication stage now creates its sealed staging directory
+    before writing and checksumming the feed projection. A deterministic release
+    workflow test protects that ordering.
 
   ### Updating
 
-  - Stable `0.0.4` updates only the `Fraia` application and stable feed. The
-    separately installed `Fraia Beta` application remains on its beta-only feed.
-releaseDate: 2026-07-30T12:27:57.096Z
+  - Stable and Beta installations on the `0.0.4` feeds update directly to their
+    separately packaged `0.0.6` identities. The public `0.0.5` GitHub release
+    remains available for direct download, but its updater-feed projection did
+    not publish after the release assets were made public.
+releaseDate: 2026-08-03T16:10:01.014Z

@@ -1,26 +1,20 @@
-version: 0.0.4-beta.1
+version: 0.0.6
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.4-beta.1/Fraia-Beta-Windows-arm64-Setup.exe
-    sha512: 4HOyXDgEfpY3eI3ZsujqK2KNwrsjxeszjE7R0Pnx9oRzM1S1Y+0pNtNzHMNDssMJ9HP/p70wM/342W8LsvqKyQ==
-    size: 114167291
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.4-beta.1/Fraia-Beta-Windows-arm64-Setup.exe
-sha512: 4HOyXDgEfpY3eI3ZsujqK2KNwrsjxeszjE7R0Pnx9oRzM1S1Y+0pNtNzHMNDssMJ9HP/p70wM/342W8LsvqKyQ==
-releaseName: Fraia Beta 0.0.4-beta.1
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.6/Fraia-Beta-Windows-arm64-Setup.exe
+    sha512: +8UMs+e1cPJb/Zzhu5Eeyi3vyZghEDfyXOz94u5cmPDsLJOyhAXGA8W2hxVho5oiOQyaUlymX0ZS71KS1gdmIg==
+    size: 114212997
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.6/Fraia-Beta-Windows-arm64-Setup.exe
+sha512: +8UMs+e1cPJb/Zzhu5Eeyi3vyZghEDfyXOz94u5cmPDsLJOyhAXGA8W2hxVho5oiOQyaUlymX0ZS71KS1gdmIg==
+releaseName: Fraia Beta 0.0.6
 releaseNotes: "### Changed\r
 
   \r
 
-  - Stable and beta are now separate, side-by-side applications with isolated\r
+  - The updater-feed publication stage now creates its sealed staging directory\r
 
-  \  application ids, package names, user-data directories, artifacts, update\r
+  \  before writing and checksumming the feed projection. A deterministic release\r
 
-  \  feeds, and release tags. Stable uses `vX.Y.Z`; beta uses\r
-
-  \  `vX.Y.Z-beta.N` and is published as a GitHub prerelease.\r
-
-  - CalculiX corresponding source now uses GNU's canonical GCC archive endpoint\r
-
-  \  while retaining the reviewed GCC 16.1.0 SHA-256.\r
+  \  workflow test protects that ordering.\r
 
   \r
 
@@ -28,9 +22,11 @@ releaseNotes: "### Changed\r
 
   \r
 
-  - Each identity accepts updates only from its own channel. Stable releases no\r
+  - Stable and Beta installations on the `0.0.4` feeds update directly to their\r
 
-  \  longer overwrite the beta feed, and beta releases cannot replace stable\r
+  \  separately packaged `0.0.6` identities. The public `0.0.5` GitHub release\r
 
-  \  installations or their settings and projects."
-releaseDate: 2026-07-30T08:13:56.791Z
+  \  remains available for direct download, but its updater-feed projection did\r
+
+  \  not publish after the release assets were made public."
+releaseDate: 2026-08-03T16:13:01.509Z

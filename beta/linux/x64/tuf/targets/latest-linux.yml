@@ -1,31 +1,29 @@
-version: 0.0.4-beta.1
+version: 0.0.6
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.4-beta.1/Fraia-Beta-Linux-x64.AppImage
-    sha512: QFDE2FmZkHgT/uehcgCm4M4EmglFyMZbMLIXYgGeEg3cXTsiBnfKCcq2Gday14hceeGg+iRzvKMA0HK/DjZ1Jg==
-    size: 107014492
-    blockMapSize: 113008
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.4-beta.1/Fraia-Beta-Linux-x64.deb
-    sha512: +iI04wxrfzpctYrtUG9Pe/RF+5eZv4NTX/5jGmN29ktisRzg4ihQChwy08sWbYA61gT8iOCj5B71mDiuEMiMAQ==
-    size: 106579272
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.4-beta.1/Fraia-Beta-Linux-x64.rpm
-    sha512: 8AYRwdVugXv6/MPdu58TPUBU54IEgflEJS/pUThxaB5OCJwidkWcjT/E01vjiKfQ6Pnaw/1/ZoM5uOD7lB5AvQ==
-    size: 93846225
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.4-beta.1/Fraia-Beta-Linux-x64.AppImage
-sha512: QFDE2FmZkHgT/uehcgCm4M4EmglFyMZbMLIXYgGeEg3cXTsiBnfKCcq2Gday14hceeGg+iRzvKMA0HK/DjZ1Jg==
-releaseName: Fraia Beta 0.0.4-beta.1
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.6/Fraia-Beta-Linux-x64.AppImage
+    sha512: BzxOD7iYcCaONF7R9iwzqREOtnStvfX9yL3xO9arHMPHUdc7bx1nf3xV5gujpmlqTu/8FEfgWjpl0LQeOM6vGg==
+    size: 107055180
+    blockMapSize: 112736
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.6/Fraia-Beta-Linux-x64.deb
+    sha512: mAKFhVYrt5CxmyOo7FWKQ8gEKfjyRwWFDG8s/SbE97eVQvppuC6/zW58eg+bh1WWyyMlfG7ibKTIJToLIfOXXA==
+    size: 106622720
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.6/Fraia-Beta-Linux-x64.rpm
+    sha512: qy12U2wgRDKA6OiXrkoWPfAUVPcU2ZTMQIcybZcsee6gzOuUMivE46GwlbSYplxiHhu8Xa+7rP31i96KdZ0/dQ==
+    size: 93819221
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.6/Fraia-Beta-Linux-x64.AppImage
+sha512: BzxOD7iYcCaONF7R9iwzqREOtnStvfX9yL3xO9arHMPHUdc7bx1nf3xV5gujpmlqTu/8FEfgWjpl0LQeOM6vGg==
+releaseName: Fraia Beta 0.0.6
 releaseNotes: |-
   ### Changed
 
-  - Stable and beta are now separate, side-by-side applications with isolated
-    application ids, package names, user-data directories, artifacts, update
-    feeds, and release tags. Stable uses `vX.Y.Z`; beta uses
-    `vX.Y.Z-beta.N` and is published as a GitHub prerelease.
-  - CalculiX corresponding source now uses GNU's canonical GCC archive endpoint
-    while retaining the reviewed GCC 16.1.0 SHA-256.
+  - The updater-feed publication stage now creates its sealed staging directory
+    before writing and checksumming the feed projection. A deterministic release
+    workflow test protects that ordering.
 
   ### Updating
 
-  - Each identity accepts updates only from its own channel. Stable releases no
-    longer overwrite the beta feed, and beta releases cannot replace stable
-    installations or their settings and projects.
-releaseDate: 2026-07-30T08:08:50.787Z
+  - Stable and Beta installations on the `0.0.4` feeds update directly to their
+    separately packaged `0.0.6` identities. The public `0.0.5` GitHub release
+    remains available for direct download, but its updater-feed projection did
+    not publish after the release assets were made public.
+releaseDate: 2026-08-03T16:09:27.485Z

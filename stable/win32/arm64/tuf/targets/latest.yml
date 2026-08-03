@@ -1,24 +1,20 @@
-version: 0.0.4
+version: 0.0.6
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.4/Fraia-Windows-arm64-Setup.exe
-    sha512: EdH0MKyeP2p4kwYn9mYdQPD+StHq0mCLjnO9yKKUDjj26/l+2mhW43w1Vb5ojyqG4VJ1DTrbVOSAyAkA9cYo4A==
-    size: 114162877
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.4/Fraia-Windows-arm64-Setup.exe
-sha512: EdH0MKyeP2p4kwYn9mYdQPD+StHq0mCLjnO9yKKUDjj26/l+2mhW43w1Vb5ojyqG4VJ1DTrbVOSAyAkA9cYo4A==
-releaseName: Fraia 0.0.4
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.6/Fraia-Windows-arm64-Setup.exe
+    sha512: Xg8YbbuUuFJ2TCzuSedTvijo56AS0bdBs4iBMFa1kYpMkgzc1ZPdZkPDMXeMuFEZPAYJpfynLkDYCEA7deFMgA==
+    size: 114207987
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.6/Fraia-Windows-arm64-Setup.exe
+sha512: Xg8YbbuUuFJ2TCzuSedTvijo56AS0bdBs4iBMFa1kYpMkgzc1ZPdZkPDMXeMuFEZPAYJpfynLkDYCEA7deFMgA==
+releaseName: Fraia 0.0.6
 releaseNotes: "### Changed\r
 
   \r
 
-  - Stable and beta are now separate, side-by-side applications with isolated\r
+  - The updater-feed publication stage now creates its sealed staging directory\r
 
-  \  application ids, package names, user-data directories, artifacts, update\r
+  \  before writing and checksumming the feed projection. A deterministic release\r
 
-  \  feeds, and release tags.\r
-
-  - CalculiX corresponding source now uses GNU's canonical GCC archive endpoint\r
-
-  \  while retaining the reviewed GCC 16.1.0 SHA-256.\r
+  \  workflow test protects that ordering.\r
 
   \r
 
@@ -26,7 +22,11 @@ releaseNotes: "### Changed\r
 
   \r
 
-  - Stable `0.0.4` updates only the `Fraia` application and stable feed. The\r
+  - Stable and Beta installations on the `0.0.4` feeds update directly to their\r
 
-  \  separately installed `Fraia Beta` application remains on its beta-only feed."
-releaseDate: 2026-07-30T12:31:28.885Z
+  \  separately packaged `0.0.6` identities. The public `0.0.5` GitHub release\r
+
+  \  remains available for direct download, but its updater-feed projection did\r
+
+  \  not publish after the release assets were made public."
+releaseDate: 2026-08-03T16:13:01.610Z

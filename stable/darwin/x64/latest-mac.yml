@@ -1,25 +1,25 @@
-version: 0.0.4
+version: 0.0.6
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.4/Fraia-macOS-x64.zip
-    sha512: isrA0H7ZAi6TPEDl1qfT9ht4RPsgraO7fIwUXf4HqSNljM6UVimGGSrwGMMl/xNEC/CDvZQNk6wx4no+ZFYYGA==
-    size: 139358950
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.4/Fraia-macOS-x64.dmg
-    sha512: ZH07esanmNryktFSaXxtilkS75hTyX20RNfYihbDWKL76/K8l/lCIuxHCrT72vz+BfujHcFLU6JZZrg3yswiPA==
-    size: 129783932
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.4/Fraia-macOS-x64.zip
-sha512: isrA0H7ZAi6TPEDl1qfT9ht4RPsgraO7fIwUXf4HqSNljM6UVimGGSrwGMMl/xNEC/CDvZQNk6wx4no+ZFYYGA==
-releaseName: Fraia 0.0.4
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.6/Fraia-macOS-x64.zip
+    sha512: zz0TAY4UbVnU/5WufIBv0/XVpX0Yz9ShPV+VHCcGGRDwLB99R8LI3rPsHZEt/naDADeJtD4MwPepP/h/HCjmOw==
+    size: 139400716
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.6/Fraia-macOS-x64.dmg
+    sha512: qfWmgrBkbLQqp+avifpiBNV7jOkyb0iFDu6M7uLX65vjXR8O9oB4GRR+DvqtnaZ3eTm1UijqP/xjudnDBl1ZTA==
+    size: 129556397
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.6/Fraia-macOS-x64.zip
+sha512: zz0TAY4UbVnU/5WufIBv0/XVpX0Yz9ShPV+VHCcGGRDwLB99R8LI3rPsHZEt/naDADeJtD4MwPepP/h/HCjmOw==
+releaseName: Fraia 0.0.6
 releaseNotes: |-
   ### Changed
 
-  - Stable and beta are now separate, side-by-side applications with isolated
-    application ids, package names, user-data directories, artifacts, update
-    feeds, and release tags.
-  - CalculiX corresponding source now uses GNU's canonical GCC archive endpoint
-    while retaining the reviewed GCC 16.1.0 SHA-256.
+  - The updater-feed publication stage now creates its sealed staging directory
+    before writing and checksumming the feed projection. A deterministic release
+    workflow test protects that ordering.
 
   ### Updating
 
-  - Stable `0.0.4` updates only the `Fraia` application and stable feed. The
-    separately installed `Fraia Beta` application remains on its beta-only feed.
-releaseDate: 2026-07-30T12:40:50.610Z
+  - Stable and Beta installations on the `0.0.4` feeds update directly to their
+    separately packaged `0.0.6` identities. The public `0.0.5` GitHub release
+    remains available for direct download, but its updater-feed projection did
+    not publish after the release assets were made public.
+releaseDate: 2026-08-03T16:28:36.604Z
