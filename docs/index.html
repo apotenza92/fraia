@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
-    <meta name="description" content="Download Fraia, a desktop structural engineering workbench for modelling structural schemes, running preliminary analysis, and developing traceable design options." />
+    <meta name="description" content="Fraia is a desktop structural engineering workbench for modelling structural schemes, running preliminary analysis, and developing traceable design options." />
     <title>Download Fraia</title>
     <link rel="icon" type="image/svg+xml" href="assets/icons/icon.svg" />
     <style>
@@ -109,8 +109,29 @@
 
       .early-stage-note {
         font-size: 0.86rem;
-        margin-top: -0.55rem;
         max-width: 500px;
+      }
+
+      .capabilities {
+        max-width: 520px;
+        text-align: left;
+        width: 100%;
+      }
+
+      .capabilities h2 {
+        font-size: 0.92rem;
+        font-weight: 650;
+        margin-bottom: 0.65rem;
+        text-align: center;
+      }
+
+      .capabilities ul {
+        color: var(--text-muted);
+        display: grid;
+        font-size: 0.84rem;
+        gap: 0.42rem;
+        line-height: 1.45;
+        padding-left: 1.2rem;
       }
 
       a {
@@ -372,7 +393,6 @@
       <img id="app-icon" class="icon" src="assets/icons/icon.svg" alt="Fraia icon" />
       <h1 id="page-title">Fraia</h1>
       <p class="subtitle">Fraia is a desktop structural engineering workbench for modelling structural schemes, running preliminary analysis, and developing traceable design options.</p>
-      <p class="early-stage-note">Fraia is early-stage software for preliminary work. It is not code-compliant design software and does not replace project-specific engineering review. Please report issues through <a href="https://github.com/apotenza92/fraia/issues">GitHub Issues</a>.</p>
 
       <section class="hero-download" aria-label="Recommended download">
         <a id="hero-download-button" class="download-button" href="#" aria-disabled="true" tabindex="-1">
@@ -390,9 +410,22 @@
             </svg>
             <span>Open source</span>
           </a>
+          <a class="github-link" href="https://github.com/apotenza92/fraia/issues">Report an issue</a>
           <span id="version-display" class="version-display"></span>
         </div>
       </section>
+
+      <section class="capabilities" aria-labelledby="capabilities-title">
+        <h2 id="capabilities-title">What Fraia does</h2>
+        <ul>
+          <li>Model nodes, members, plates, supports, releases, and loads in a visual workspace.</li>
+          <li>Run preliminary structural analysis and inspect the results.</li>
+          <li>Develop and compare structural options while preserving the reasoning behind them.</li>
+          <li>Keep project models, analysis runs, and outputs organised and traceable.</li>
+        </ul>
+      </section>
+
+      <p class="early-stage-note">Fraia is early-stage software for preliminary work. It does not replace project-specific engineering judgement or code-compliant design.</p>
 
       <p id="unsigned-package-notice" class="unsigned-package-notice" hidden>Windows and Linux installers are currently unsigned. Fraia authenticates automatic updates with TUF, and every release provides public checksums and provenance.</p>
 
