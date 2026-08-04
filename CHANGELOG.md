@@ -9,20 +9,6 @@ release notes and macOS updater notes.
 
 ### Changed
 
-- Stable and Beta now use a clearer low-poly Ionic column icon with a shorter,
-  more legible silhouette and distinct solid channel backgrounds.
-- macOS uses matching light and dark artwork, while Windows and Linux retain
-  the reviewed light variants at every generated application-icon size.
-
-### Updating
-
-- Stable and Beta installations update to separately packaged `0.0.9`
-  application identities on their existing channels.
-
-## [0.0.8] - 2026-08-04
-
-### Changed
-
 - Base Model and Design Options conversations now share a cleaner transcript
   with consistent assistant, user, streaming, and progress presentation.
 - Fraia now follows the system appearance and clears stale manual theme
@@ -35,11 +21,23 @@ release notes and macOS updater notes.
   appearance, with the release desktop test pinned to that appearance.
 - The public download page now provides platform-aware Stable and Beta
   downloads, checksums, provenance, and unsigned-package disclosures.
+- Stable and Beta now use a clearer low-poly Ionic column icon with a shorter,
+  more legible silhouette and distinct solid channel backgrounds.
+- macOS uses matching light and dark artwork, while Windows and Linux retain
+  the reviewed light variants at every generated application-icon size.
 
 ### Updating
 
-- Stable and Beta installations on `0.0.6` update to separately packaged
-  `0.0.8` application identities on their existing channels.
+- Stable and Beta installations update to separately packaged `0.0.9`
+  application identities on their existing channels.
+
+## [0.0.8] - 2026-08-04
+
+### Release status
+
+- The release completed native packaging and verification but remained behind
+  its final approval gate. No release assets or updater feeds were published;
+  `0.0.9` supersedes this tag.
 
 ## [0.0.7] - 2026-08-04
 
