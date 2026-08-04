@@ -33,8 +33,10 @@ test('stable and beta icons retain one shared column geometry', () => {
   for (const fingerprint of sources.slice(1)) {
     assert.deepEqual(fingerprint, sources[0]);
   }
-  assert.equal(sources[0].filter((shape) => shape.startsWith('path:d=M378 452')).length, 2);
-  assert.ok(sources[0].includes('path:d=M328 424H696L682 620H342Z'));
+  assert.ok(sources[0].includes('rect:x=160,y=224,width=192,height=96'));
+  assert.ok(sources[0].includes('rect:x=672,y=224,width=192,height=96'));
+  assert.ok(sources[0].includes('rect:x=352,y=384,width=320,height=288'));
+  assert.ok(sources[0].includes('rect:x=192,y=864,width=640,height=32'));
 });
 
 test('macOS icon bundles select explicit light and dark artwork', () => {
@@ -87,7 +89,7 @@ function geometryFingerprint(svg) {
 }
 
 function extractColumnGroup(svg) {
-  const start = svg.indexOf('<g id="column">');
+  const start = svg.indexOf('<g id="column"');
   assert.notEqual(start, -1, 'icon source must contain the canonical column group');
   const tags = /<\/?g\b[^>]*>/g;
   tags.lastIndex = start;
