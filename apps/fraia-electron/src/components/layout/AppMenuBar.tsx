@@ -4,20 +4,23 @@ import {
   MenubarGroup,
   MenubarItem,
   MenubarMenu,
+  MenubarRadioGroup,
+  MenubarRadioItem,
   MenubarSeparator,
+  MenubarSub,
+  MenubarSubContent,
+  MenubarSubTrigger,
   MenubarTrigger,
 } from '@/components/ui/menubar';
 import { Separator } from '@/components/ui/separator';
 import { UpdateDialog } from '@/components/updates/UpdateDialog';
-import type { UpdateFrequency, UpdateStatus } from '@/lib/updateStatus';
-import { Fragment, useEffect, useState } from 'react';
+import {
+  UPDATE_FREQUENCY_LABELS,
+  type UpdateFrequency,
+  type UpdateStatus,
+} from '@/lib/updateStatus';
+import { useEffect, useState } from 'react';
 import { CHROME } from './chromeMetrics';
-
-type MenuItem = {
-  label: string;
-  onSelect?: () => void;
-  disabled?: boolean;
-};
 
 export function AppMenuBar() {
   const [updateOpen, setUpdateOpen] = useState(false);
@@ -111,28 +114,6 @@ export function AppMenuBar() {
         ? 'Checking for Updates…'
         : 'Check for Updates…';
 
-  const menus: Array<{ key: string; label: string; groups: MenuItem[][] }> = [
-    {
-      key: 'fraia',
-      label: productName,
-      groups: [
-        ...(window.fraia.updateStatus ? [[{
-            label: updateMenuLabel,
-            onSelect: () => {
-              if (['downloading', 'ready', 'installing'].includes(updateStatus?.phase ?? '')) {
-                setUpdateOpen(true);
-              } else {
-                void checkForUpdates();
-              }
-            },
-          }]] : []),
-        [
-          { label: `Quit ${productName}`, onSelect: quitApp },
-        ],
-      ],
-    },
-  ];
-
   return (
     <>
       <div
@@ -141,25 +122,53 @@ export function AppMenuBar() {
         style={{ height: CHROME.menuHeight }}
       >
         <Menubar aria-label="Application menu" className="contents">
-          {menus.map((menu) => (
-            <MenubarMenu key={menu.key}>
-              <MenubarTrigger>{menu.label}</MenubarTrigger>
-              <MenubarContent>
-                {menu.groups.map((group, groupIndex) => (
-                  <Fragment key={`${menu.key}-${groupIndex}`}>
-                    {groupIndex > 0 ? <MenubarSeparator /> : null}
-                    <MenubarGroup>
-                      {group.map((item) => (
-                        <MenubarItem key={item.label} disabled={item.disabled} onClick={item.onSelect}>
-                          {item.label}
-                        </MenubarItem>
-                      ))}
-                    </MenubarGroup>
-                  </Fragment>
-                ))}
-              </MenubarContent>
-            </MenubarMenu>
-          ))}
+          <MenubarMenu>
+            <MenubarTrigger>{productName}</MenubarTrigger>
+            <MenubarContent className="w-max min-w-max whitespace-nowrap">
+              {window.fraia.updateStatus ? (
+                <>
+                  <MenubarGroup>
+                    <MenubarItem
+                      onClick={() => {
+                        if (['downloading', 'ready', 'installing'].includes(updateStatus?.phase ?? '')) {
+                          setUpdateOpen(true);
+                        } else {
+                          void checkForUpdates();
+                        }
+                      }}
+                    >
+                      {updateMenuLabel}
+                    </MenubarItem>
+                    <MenubarSub>
+                      <MenubarSubTrigger disabled={!updateStatus?.enabled}>
+                        Check Automatically
+                      </MenubarSubTrigger>
+                      <MenubarSubContent className="w-max min-w-max whitespace-nowrap">
+                        <MenubarRadioGroup
+                          value={updateStatus?.frequency ?? 'daily'}
+                          onValueChange={(value) => {
+                            if (typeof value === 'string' && value in UPDATE_FREQUENCY_LABELS) {
+                              void setUpdateFrequency(value as UpdateFrequency);
+                            }
+                          }}
+                        >
+                          {(Object.entries(UPDATE_FREQUENCY_LABELS) as Array<[UpdateFrequency, string]>).map(([value, label]) => (
+                            <MenubarRadioItem key={value} value={value}>
+                              {label}
+                            </MenubarRadioItem>
+                          ))}
+                        </MenubarRadioGroup>
+                      </MenubarSubContent>
+                    </MenubarSub>
+                  </MenubarGroup>
+                  <MenubarSeparator />
+                </>
+              ) : null}
+              <MenubarGroup>
+                <MenubarItem onClick={quitApp}>Quit {productName}</MenubarItem>
+              </MenubarGroup>
+            </MenubarContent>
+          </MenubarMenu>
         </Menubar>
         <Separator className="absolute inset-x-0 bottom-0" />
       </div>

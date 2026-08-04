@@ -197,6 +197,18 @@ for (const file of compositionFiles.filter((candidate) => /\.tsx$/.test(candidat
           findings.push(`${relative(file)}:${line}: generated ${node.tagName.text} className must be layout-only (${classes})`)
         }
       }
+      if (
+        !relative(file).startsWith("src/test/")
+        && ["DropdownMenuContent", "DropdownMenuSubContent", "MenubarContent", "MenubarSubContent"].includes(node.tagName.text)
+      ) {
+        const classes = attribute?.initializer && ts.isStringLiteral(attribute.initializer)
+          ? attribute.initializer.text
+          : ""
+        if (!classes.includes("w-max") || !classes.includes("whitespace-nowrap")) {
+          const line = parsed.getLineAndCharacterOfPosition(node.getStart()).line + 1
+          findings.push(`${relative(file)}:${line}: menu content must size to its unwrapped items`)
+        }
+      }
     }
     ts.forEachChild(node, visit)
   }

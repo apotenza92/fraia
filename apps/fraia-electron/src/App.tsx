@@ -9,7 +9,7 @@ import {
   upsertProjectDocument,
   type ProjectDocument,
 } from './lib/projectDocuments';
-import { useThemeMode } from './lib/theme';
+import { useSystemTheme } from './lib/theme';
 import type { WorkbenchState } from './lib/types';
 
 export default function App() {
@@ -17,7 +17,7 @@ export default function App() {
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [documentActionPending, setDocumentActionPending] = useState(false);
-  const { themeMode, setThemeMode } = useThemeMode();
+  useSystemTheme();
   const activeDocument = documents.find((document) => document.id === activeDocumentId) ?? documents[0] ?? null;
 
   useEffect(() => {
@@ -135,8 +135,6 @@ export default function App() {
       key={activeDocument.id}
       state={activeDocument.state}
       onState={updateActiveDocument}
-      themeMode={themeMode}
-      onThemeModeChange={setThemeMode}
       documentTabs={documentTabs}
       activeDocumentId={activeDocument.id}
       onDocumentSelect={setActiveDocumentId}

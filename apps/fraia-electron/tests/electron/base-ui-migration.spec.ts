@@ -62,15 +62,16 @@ test("desktop shell preserves keyboard and accessibility contracts", async () =>
     const workflow = page.getByRole("navigation", { name: "Design workflow" })
     await expect(workflow).toBeVisible()
     await expect(workflow.locator('[aria-current="step"]')).toHaveText("Base Model")
-    await expect(workflow.getByText("Design Options", { exact: true })).toHaveAttribute("aria-disabled", "true")
+    const gatedOptions = workflow.getByText("Design Options", { exact: true })
+    await expect(gatedOptions).toHaveAttribute("aria-disabled", "true")
     await expect(workflow.getByText("Analysis & Comparison", { exact: true })).toHaveAttribute("aria-disabled", "true")
     await expect(workflow.getByRole("button", { name: "Previous" })).toHaveCount(0)
+    await expect(workflow.getByRole("button", { name: "Next" })).toHaveCount(0)
     await expect(page.getByRole("button", { name: "Brief incomplete" })).toHaveCount(0)
-    const gatedNext = workflow.getByRole("button", { name: "Next" })
-    await expect(gatedNext).toHaveAttribute("aria-disabled", "true")
-    await gatedNext.focus()
-    await expect(gatedNext).toBeFocused()
-    await gatedNext.press("Enter")
+    await gatedOptions.hover()
+    await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveText("Generate options from the Base Model to continue.")
+    await page.mouse.move(0, 0)
+    await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveCount(0)
     await expect(workflow.locator('[aria-current="step"]')).toHaveText("Base Model")
 
     const firstMenuTrigger = page.locator("[data-slot=menubar-trigger]").first()
@@ -100,16 +101,14 @@ test("desktop shell preserves keyboard and accessibility contracts", async () =>
       "minimum desktop bounds should not overflow the document",
     ).toEqual({ horizontalOverflow: false, verticalOverflow: false })
 
-    await page.evaluate(() => {
-      localStorage.setItem("fraia:theme-mode", "dark")
-    })
+    await page.evaluate(() => localStorage.setItem("fraia:theme-mode", "dark"))
     await page.reload()
     await expect(page.locator("[data-slot=menubar]")).toBeVisible()
     await expect(page.locator('canvas[data-fraia-canvas-role="viewport-webgl"]')).toHaveCount(1)
     await expect(page.locator('canvas[data-fraia-canvas-role="selection-overlay"]')).toHaveCount(1)
     await expect(page.locator("canvas")).toHaveCount(2)
-    await expect(page.locator("html")).toHaveAttribute("data-theme-mode", "dark")
-    await expect(page.locator("html")).toHaveClass(/\bdark\b/)
+    await expect(page.locator("html")).toHaveAttribute("data-theme-mode", "system")
+    await expect.poll(() => page.evaluate(() => localStorage.getItem("fraia:theme-mode"))).toBeNull()
 
     // Electron cannot create the blank Chromium page used by axe's partial-run
     // mode. Legacy mode runs the same rules in the application page and still

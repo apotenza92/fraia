@@ -13,7 +13,7 @@ vi.mock("@/lib/defaultProject", async (importOriginal) => {
 })
 
 vi.mock("@/lib/theme", () => ({
-  useThemeMode: () => ({ themeMode: "light", setThemeMode: vi.fn() }),
+  useSystemTheme: vi.fn(),
 }))
 
 vi.mock("@/components/layout/AppShell", () => ({
