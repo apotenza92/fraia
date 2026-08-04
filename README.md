@@ -5,11 +5,7 @@
 <h1 align="center">Fraia</h1>
 
 <p align="center">
-  <strong>Explore structural ideas with clarity.</strong>
-</p>
-
-<p align="center">
-  Fraia is a desktop workbench for shaping structural schemes, understanding how they behave, and developing better-informed design options.
+  Fraia is a desktop structural engineering workbench for modelling structural schemes, running preliminary analysis, and developing traceable design options.
 </p>
 
 <p align="center">
@@ -18,21 +14,16 @@
   <a href="https://github.com/apotenza92/fraia/issues">Report an issue</a>
 </p>
 
-## Shape the scheme
+## What Fraia does
 
-Build and refine structural models in a focused visual workspace. Define members, supports, releases, and loads while keeping the engineering model clear and deliberate.
+- Model nodes, members, plates, supports, releases, and loads in a visual workspace.
+- Run preliminary structural analysis and inspect the results.
+- Develop and compare structural options while preserving the reasoning behind them.
+- Keep project models, analysis runs, and outputs organised and traceable.
 
-## Understand the behaviour
+## Purpose
 
-Run preliminary analysis, inspect results, and identify where a scheme needs attention. Fraia helps make structural behaviour easier to see and discuss.
-
-## Develop options with intent
-
-Explore alternatives without losing the reasoning behind them. Models, analysis runs, and outputs stay organised so decisions remain understandable as the project evolves.
-
-## Why Fraia exists
-
-Early structural design is full of judgement, iteration, and trade-offs. Fraia is being built to make that work more visual, traceable, and thoughtful, while keeping the engineer in control.
+Fraia is intended to support early-stage structural design, where engineers need to develop schemes, understand their behaviour, compare alternatives, and explain the decisions that shaped them.
 
 > [!IMPORTANT]
 > Fraia is early-stage software for preliminary work. It does not replace project-specific engineering judgement or code-compliant design.

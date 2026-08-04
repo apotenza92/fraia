@@ -13,7 +13,7 @@ const stableIcon = readFileSync(resolve(root, 'assets/fraia-icon.svg'), 'utf8');
 const publishedStableIcon = readFileSync(resolve(root, 'docs/assets/icons/icon.svg'), 'utf8');
 const betaIcon = readFileSync(resolve(root, 'assets/fraia-icon-beta.svg'), 'utf8');
 const publishedBetaIcon = readFileSync(resolve(root, 'docs/assets/icons/beta/icon.svg'), 'utf8');
-const productDescription = 'Fraia is a desktop workbench for shaping structural schemes, understanding how they behave, and developing better-informed design options.';
+const productDescription = 'Fraia is a desktop structural engineering workbench for modelling structural schemes, running preliminary analysis, and developing traceable design options.';
 
 async function loadDownloadPage({ architecture = '', platform = '', releases = [], userAgent = '' } = {}) {
   const dom = new JSDOM(html, {
