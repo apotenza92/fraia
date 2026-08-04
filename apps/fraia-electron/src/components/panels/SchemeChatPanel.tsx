@@ -2,27 +2,24 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Send } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Empty, EmptyContent, EmptyDescription, EmptyTitle } from '@/components/ui/empty';
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field';
-import { Message, MessageContent } from '@/components/ui/message';
-import {
-  MessageScroller,
-  MessageScrollerButton,
-  MessageScrollerContent,
-  MessageScrollerItem,
-  MessageScrollerProvider,
-  MessageScrollerViewport,
-} from '@/components/ui/message-scroller';
+import { MessageScrollerItem } from '@/components/ui/message-scroller';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Spinner } from '@/components/ui/spinner';
 import { Separator } from '@/components/ui/separator';
 import { EstimatedAgentProgress, type AgentProgressStage, useEstimatedAgentProgress } from '../chat/AgentProgressIndicator';
 import { ChatMessageText } from '../chat/ChatMessageText';
+import {
+  ChatTranscript,
+  ChatTranscriptActivity,
+  ChatTranscriptCancel,
+  ChatTranscriptMessage,
+} from '../chat/ChatTranscript';
 import type { AgentProviderStatus, AgentSession, EngineeringScheme, WorkbenchState } from '../../lib/types';
 import { normalizeWorkbenchState, projectDirOf } from '../../lib/defaultProject';
 import {
@@ -303,10 +300,7 @@ export function SchemeChatPanel({ state, scheme, surface, onState }: { state: Wo
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden">
-        <MessageScrollerProvider>
-          <MessageScroller>
-            <MessageScrollerViewport>
-              <MessageScrollerContent className="gap-2 p-2">
+        <ChatTranscript busy={busy || analysing}>
           {scheme.status === 'superseded' && (
             <MessageScrollerItem><Alert>
               <AlertDescription>
@@ -346,15 +340,11 @@ export function SchemeChatPanel({ state, scheme, surface, onState }: { state: Wo
             const messageKey = agentMessageKey(message, index);
             const userMessage = message.author === 'user';
             return (
-              <MessageScrollerItem
+              <ChatTranscriptMessage
                 key={messageKey}
                 messageId={messageKey}
-                scrollAnchor={userMessage}
+                author={userMessage ? 'user' : 'assistant'}
               >
-                <Message align={userMessage ? 'end' : 'start'}>
-                  <MessageContent>
-                    <Bubble variant={userMessage ? 'outline' : 'ghost'}>
-                      <BubbleContent>
                 <ChatMessageText text={displayMessageText(message.text)} />
                 {!!replyGroups.length && (
                   <div className="mt-2 flex flex-col gap-2">
@@ -438,41 +428,21 @@ export function SchemeChatPanel({ state, scheme, surface, onState }: { state: Wo
                     ))}
                   </div>
                 )}
-                      </BubbleContent>
-                    </Bubble>
-                  </MessageContent>
-                </Message>
-              </MessageScrollerItem>
+              </ChatTranscriptMessage>
             );
           })}
           {pendingUserText && (
             <>
-              <MessageScrollerItem scrollAnchor>
-                <Message align="end">
-                  <MessageContent>
-                    <Bubble variant="outline">
-                      <BubbleContent><ChatMessageText text={pendingUserText} /></BubbleContent>
-                    </Bubble>
-                  </MessageContent>
-                </Message>
-              </MessageScrollerItem>
-              <MessageScrollerItem><Alert>
-                <Spinner />
-                <AlertTitle>Agent is thinking</AlertTitle>
-                <AlertDescription>
-                  <Button onClick={confirmCancelAgentTurn} variant="secondary" size="sm">
-                    Cancel response
-                  </Button>
+              <ChatTranscriptMessage author="user" messageId="pending-scheme-user-message">
+                <ChatMessageText text={pendingUserText} />
+              </ChatTranscriptMessage>
+              <ChatTranscriptActivity label="Fraia AI is thinking">
+                  <ChatTranscriptCancel onClick={confirmCancelAgentTurn} />
                 <EstimatedAgentProgress percent={replyProgress.percent} stageLabel={replyProgress.stageLabel} />
-                </AlertDescription>
-              </Alert></MessageScrollerItem>
+              </ChatTranscriptActivity>
             </>
           )}
-              </MessageScrollerContent>
-            </MessageScrollerViewport>
-            <MessageScrollerButton />
-          </MessageScroller>
-        </MessageScrollerProvider>
+        </ChatTranscript>
       </div>
 
       <Separator />

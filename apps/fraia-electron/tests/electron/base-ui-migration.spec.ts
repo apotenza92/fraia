@@ -169,6 +169,28 @@ test("fake Pi runtime signs in with ChatGPT, uses Luna, completes, cancels, and 
 
     await page.getByRole("button", { name: "Start the Base Model Guide" }).click()
     await expect(page.getByText("Fake Pi response", { exact: true }).first()).toBeVisible()
+    const transcript = page.getByRole("log")
+    const transcriptViewport = page.getByRole("region", { name: "Messages" })
+    await expect(transcript).toHaveAttribute("aria-busy", "false")
+    await expect(page.locator('[data-slot="message"][data-author="assistant"]')).toHaveAttribute("aria-label", "Fraia AI")
+    await expect(page.locator('[data-slot="message"][data-author="assistant"] [data-slot="bubble"]')).toHaveAttribute("data-variant", "ghost")
+    expect(await transcriptViewport.evaluate((element) => {
+      const style = getComputedStyle(element)
+      return {
+        scrollbarWidth: style.scrollbarWidth,
+        scrollbarColor: style.scrollbarColor,
+        scrollbarGutter: style.scrollbarGutter,
+        maskImage: style.maskImage,
+        webkitMaskImage: style.webkitMaskImage,
+      }
+    })).toEqual({
+      scrollbarWidth: "auto",
+      scrollbarColor: "auto",
+      scrollbarGutter: "auto",
+      maskImage: "none",
+      webkitMaskImage: "none",
+    })
+    expect((await new AxeBuilder({ page }).setLegacyMode().analyze()).violations).toEqual([])
     await electronApp.close()
 
     const credentialFile = path.join(userDataDir, "ai", "credentials.bin")
@@ -191,9 +213,15 @@ test("fake Pi runtime signs in with ChatGPT, uses Luna, completes, cancels, and 
     await page.getByRole("button", { name: "Send", exact: true }).click()
     const cancel = page.getByRole("button", { name: "Cancel response" })
     await expect(cancel).toBeVisible()
+    await expect(page.getByRole("log")).toHaveAttribute("aria-busy", "true")
+    await expect(page.locator('[data-slot="marker"]')).toHaveAttribute("role", "status")
+    await expect(page.locator('[data-slot="marker"]')).toContainText("Fraia AI is thinking")
+    await expect(page.locator('[data-slot="message"][data-author="user"] [data-slot="bubble"]')).toHaveAttribute("data-variant", "default")
     page.once("dialog", (dialog) => void dialog.accept())
     await cancel.click()
     await expect(cancel).toHaveCount(0)
+    await expect(page.getByRole("log")).toHaveAttribute("aria-busy", "false")
+    await expect(page.locator('[data-slot="marker"]')).toHaveCount(0)
     await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled()
     await expect(reply).toHaveValue("Please continue the model brief.")
     await expect(page.getByText("Fake Pi response", { exact: true })).toHaveCount(1)
