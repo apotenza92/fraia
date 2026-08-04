@@ -14,12 +14,9 @@
   <a href="https://github.com/apotenza92/fraia/issues">Report an issue</a>
 </p>
 
-## What Fraia does
+Fraia provides a visual workspace for building structural models, applying supports, releases, and loads, and reviewing preliminary analysis results.
 
-- Model nodes, members, plates, supports, releases, and loads in a visual workspace.
-- Run preliminary structural analysis and inspect the results.
-- Develop and compare structural options while preserving the reasoning behind them.
-- Keep project models, analysis runs, and outputs organised and traceable.
+Projects keep models, analysis runs, and outputs organised so structural options can be developed and compared without losing the reasoning behind them.
 
 > [!IMPORTANT]
 > Fraia is early-stage software for preliminary work. It does not replace project-specific engineering judgement or code-compliant design.

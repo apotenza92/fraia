@@ -15,11 +15,9 @@ const betaIcon = readFileSync(resolve(root, 'assets/fraia-icon-beta.svg'), 'utf8
 const publishedBetaIcon = readFileSync(resolve(root, 'docs/assets/icons/beta/icon.svg'), 'utf8');
 const productDescription = 'Fraia is a desktop structural engineering workbench for modelling structural schemes, running preliminary analysis, and developing traceable design options.';
 const earlyStageDisclaimer = 'Fraia is early-stage software for preliminary work. It does not replace project-specific engineering judgement or code-compliant design.';
-const capabilities = [
-  'Model nodes, members, plates, supports, releases, and loads in a visual workspace.',
-  'Run preliminary structural analysis and inspect the results.',
-  'Develop and compare structural options while preserving the reasoning behind them.',
-  'Keep project models, analysis runs, and outputs organised and traceable.'
+const productSummary = [
+  'Fraia provides a visual workspace for building structural models, applying supports, releases, and loads, and reviewing preliminary analysis results.',
+  'Projects keep models, analysis runs, and outputs organised so structural options can be developed and compared without losing the reasoning behind them.'
 ];
 
 async function loadDownloadPage({ architecture = '', platform = '', releases = [], userAgent = '' } = {}) {
@@ -58,15 +56,15 @@ test('keeps the public product description in sync with the README', async () =>
   assert.match(readme, new RegExp(productDescription.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 
-test('keeps current capabilities and the early-stage disclaimer in sync with the README', async () => {
+test('keeps the product summary and early-stage disclaimer in sync with the README', async () => {
   const dom = await loadDownloadPage();
   const document = dom.window.document;
 
   assert.deepEqual(
-    [...document.querySelectorAll('.capabilities li')].map((item) => item.textContent),
-    capabilities
+    [...document.querySelectorAll('.product-summary p')].map((item) => item.textContent),
+    productSummary
   );
-  capabilities.forEach((capability) => assert.ok(readme.includes(capability)));
+  productSummary.forEach((paragraph) => assert.ok(readme.includes(paragraph)));
   assert.equal(document.querySelector('.early-stage-note').textContent, earlyStageDisclaimer);
   assert.ok(readme.includes(earlyStageDisclaimer));
   assert.equal(document.querySelector('a[href="https://github.com/apotenza92/fraia/issues"]').textContent, 'Report an issue');
