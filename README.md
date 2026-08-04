@@ -1,33 +1,38 @@
-# Fraia
+<p align="center">
+  <img src="assets/fraia-icon.svg" width="128" alt="Fraia icon" />
+</p>
 
-Fraia is a Rust-first structural engineering workbench for modelling, preliminary analysis, and traceable option development.
+<h1 align="center">Fraia</h1>
 
-[Download Fraia](https://apotenza92.github.io/fraia/) · [Documentation](docs/documentation-map.md) · [Report an issue](https://github.com/apotenza92/fraia/issues)
+<p align="center">
+  <strong>Explore structural ideas with clarity.</strong>
+</p>
+
+<p align="center">
+  Fraia is a desktop workbench for shaping structural schemes, understanding how they behave, and developing better-informed design options.
+</p>
+
+<p align="center">
+  <a href="https://apotenza92.github.io/fraia/"><strong>Download Fraia</strong></a>
+  ·
+  <a href="https://github.com/apotenza92/fraia/issues">Report an issue</a>
+</p>
+
+## Shape the scheme
+
+Build and refine structural models in a focused visual workspace. Define members, supports, releases, and loads while keeping the engineering model clear and deliberate.
+
+## Understand the behaviour
+
+Run preliminary analysis, inspect results, and identify where a scheme needs attention. Fraia helps make structural behaviour easier to see and discuss.
+
+## Develop options with intent
+
+Explore alternatives without losing the reasoning behind them. Models, analysis runs, and outputs stay organised so decisions remain understandable as the project evolves.
+
+## Why Fraia exists
+
+Early structural design is full of judgement, iteration, and trade-offs. Fraia is being built to make that work more visual, traceable, and thoughtful, while keeping the engineer in control.
 
 > [!IMPORTANT]
-> Fraia is early-stage software for preliminary work. It is not code-compliant design software and does not replace project-specific engineering review.
-
-## What it includes
-
-- A desktop modelling workspace with a Three.js structural viewport
-- A Rust engineering core, local application service, and CLI
-- Preliminary linear elastic 2D frame analysis
-- Traceable project state, validation, and immutable run artefacts
-
-## Run locally
-
-```sh
-cd apps/fraia-electron
-npm install
-npm start
-```
-
-This launches the Electron desktop app and its local Rust service. Use `npm run start:clean` for an isolated launch with disposable app, project, and chat data.
-
-For the Rust workspace:
-
-```sh
-cargo test --workspace --all-features
-```
-
-See the [documentation map](docs/documentation-map.md) for architecture, engineering concepts, knowledge systems, and contributor checks.
+> Fraia is early-stage software for preliminary work. It does not replace project-specific engineering judgement or code-compliant design.
