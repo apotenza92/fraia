@@ -5,6 +5,26 @@ All notable user-facing changes to Fraia are documented here. Fraia follows
 workflow uses the matching version section below as the authoritative GitHub
 release notes and macOS updater notes.
 
+## [0.0.7] - 2026-08-04
+
+### Changed
+
+- Base Model and Design Options conversations now share a cleaner transcript
+  with consistent assistant, user, streaming, and progress presentation.
+- Fraia now follows the system appearance and clears stale manual theme
+  overrides.
+- The Fraia menu now exposes the automatic update schedule directly and keeps
+  menu items wide enough for their labels.
+- Workflow stages are navigated directly from their labels, with unavailable
+  stages explaining what is needed to continue.
+- The public download page now provides platform-aware Stable and Beta
+  downloads, checksums, provenance, and unsigned-package disclosures.
+
+### Updating
+
+- Stable and Beta installations on `0.0.6` update to separately packaged
+  `0.0.7` application identities on their existing channels.
+
 ## [0.0.6] - 2026-08-04
 
 ### Changed
