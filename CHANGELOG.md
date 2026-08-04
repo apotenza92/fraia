@@ -5,6 +5,20 @@ All notable user-facing changes to Fraia are documented here. Fraia follows
 workflow uses the matching version section below as the authoritative GitHub
 release notes and macOS updater notes.
 
+## [0.0.9] - 2026-08-05
+
+### Changed
+
+- Stable and Beta now use a clearer low-poly Ionic column icon with a shorter,
+  more legible silhouette and distinct solid channel backgrounds.
+- macOS uses matching light and dark artwork, while Windows and Linux retain
+  the reviewed light variants at every generated application-icon size.
+
+### Updating
+
+- Stable and Beta installations update to separately packaged `0.0.9`
+  application identities on their existing channels.
+
 ## [0.0.8] - 2026-08-04
 
 ### Changed
