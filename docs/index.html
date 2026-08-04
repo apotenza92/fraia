@@ -1,0 +1,706 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="description" content="Download Fraia, a structural engineering workbench for modelling, preliminary analysis, and traceable option development." />
+    <title>Download Fraia</title>
+    <link rel="icon" type="image/svg+xml" href="assets/icons/icon.svg" />
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        color-scheme: light dark;
+        --accent: #244bc1;
+        --accent-hover: #183895;
+        --action: #244bc1;
+        --background: linear-gradient(140deg, #f8faff 0%, #edf2ff 48%, #f8fafc 100%);
+        --border: #d8dfef;
+        --button-shadow: rgba(36, 75, 193, 0.22);
+        --surface: rgba(255, 255, 255, 0.58);
+        --text: #111827;
+        --text-muted: #5d687c;
+      }
+
+      body.beta-mode {
+        --accent: #6f2aaa;
+        --accent-hover: #55289d;
+        --action: #6f2aaa;
+        --background: linear-gradient(140deg, #fbf8ff 0%, #f3e9ff 48%, #fff8fb 100%);
+        --border: #e4d4ef;
+        --button-shadow: rgba(111, 42, 170, 0.24);
+        --surface: rgba(255, 250, 255, 0.62);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --accent: #315bd8;
+          --accent-hover: #3f65dc;
+          --action: #9bb2ff;
+          --background: linear-gradient(140deg, #050815 0%, #0c1531 50%, #080d1d 100%);
+          --border: #263556;
+          --button-shadow: rgba(72, 111, 225, 0.28);
+          --surface: rgba(17, 28, 54, 0.62);
+          --text: #f6f8ff;
+          --text-muted: #a7b1c6;
+        }
+
+        body.beta-mode {
+          --accent: #7b2fbd;
+          --accent-hover: #8e3bd1;
+          --action: #d9a7ff;
+          --background: linear-gradient(140deg, #0c0617 0%, #1a0c31 50%, #10081e 100%);
+          --border: #43245c;
+          --button-shadow: rgba(163, 60, 221, 0.3);
+          --surface: rgba(36, 15, 58, 0.66);
+        }
+      }
+
+      body {
+        align-items: flex-start;
+        background: var(--background);
+        color: var(--text);
+        display: flex;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        justify-content: center;
+        min-height: 100vh;
+        padding: 3rem 1.25rem;
+      }
+
+      .container {
+        align-items: center;
+        display: flex;
+        flex-direction: column;
+        gap: 1.45rem;
+        max-width: 640px;
+        text-align: center;
+        width: 100%;
+      }
+
+      .icon {
+        border-radius: 22px;
+        height: 104px;
+        width: 104px;
+      }
+
+      h1 {
+        font-size: 1.9rem;
+        font-weight: 650;
+        letter-spacing: -0.025em;
+      }
+
+      .subtitle,
+      .early-stage-note,
+      .unsigned-package-notice,
+      .beta-notice {
+        color: var(--text-muted);
+        line-height: 1.55;
+      }
+
+      .subtitle {
+        font-size: 0.96rem;
+        max-width: 510px;
+      }
+
+      .early-stage-note {
+        font-size: 0.86rem;
+        margin-top: -0.55rem;
+        max-width: 500px;
+      }
+
+      a {
+        color: var(--action);
+      }
+
+      .early-stage-note a,
+      .meta-link,
+      .github-link,
+      summary {
+        font-weight: 600;
+        text-decoration: none;
+      }
+
+      .early-stage-note a:hover,
+      .meta-link:hover,
+      .github-link:hover,
+      summary:hover {
+        text-decoration: underline;
+      }
+
+      .hero-download,
+      .selection-flow,
+      .download-result {
+        align-items: center;
+        display: flex;
+        flex-direction: column;
+        gap: 0.85rem;
+        width: 100%;
+      }
+
+      .download-button {
+        align-items: center;
+        background: var(--accent);
+        border-radius: 9px;
+        box-shadow: 0 9px 24px var(--button-shadow);
+        color: white;
+        display: inline-flex;
+        font-size: 0.94rem;
+        font-weight: 600;
+        gap: 0.65rem;
+        justify-content: center;
+        min-height: 48px;
+        padding: 0.75rem 1.25rem;
+        text-decoration: none;
+        transition: background 160ms ease, transform 160ms ease;
+      }
+
+      .hero-download .download-button {
+        min-width: min(100%, 320px);
+      }
+
+      .download-button:hover {
+        background: var(--accent-hover);
+        text-decoration: none;
+        transform: translateY(-1px);
+      }
+
+      .download-button[aria-disabled="true"] {
+        box-shadow: none;
+        cursor: default;
+        opacity: 0.68;
+        pointer-events: none;
+        transform: none;
+      }
+
+      .download-button svg {
+        height: 17px;
+        width: 17px;
+      }
+
+      .download-copy {
+        align-items: flex-start;
+        display: flex;
+        flex-direction: column;
+        gap: 0.12rem;
+        text-align: left;
+      }
+
+      .download-detail {
+        font-size: 0.72rem;
+        font-weight: 500;
+        opacity: 0.78;
+      }
+
+      .hero-meta,
+      .release-links {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.8rem;
+        justify-content: center;
+      }
+
+      .github-link,
+      .meta-link,
+      .version-display {
+        align-items: center;
+        color: var(--text-muted);
+        display: inline-flex;
+        font-size: 0.8rem;
+        gap: 0.42rem;
+      }
+
+      .github-link svg {
+        height: 20px;
+        width: 20px;
+      }
+
+      .unsigned-package-notice,
+      .beta-notice {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        font-size: 0.8rem;
+        max-width: 500px;
+        padding: 0.72rem 0.9rem;
+      }
+
+      .download-options {
+        width: 100%;
+      }
+
+      summary {
+        color: var(--action);
+        cursor: pointer;
+        display: inline-flex;
+        font-size: 0.84rem;
+        gap: 0.4rem;
+        list-style: none;
+      }
+
+      summary::-webkit-details-marker {
+        display: none;
+      }
+
+      summary::after {
+        content: "⌄";
+        display: inline-block;
+        transition: transform 160ms ease;
+      }
+
+      details[open] summary::after {
+        transform: rotate(180deg);
+      }
+
+      details[open] .selection-flow {
+        margin-top: 1.45rem;
+      }
+
+      .selection-flow {
+        gap: 1.35rem;
+      }
+
+      .toggle {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+
+      .toggle button {
+        align-items: center;
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--text-muted);
+        cursor: pointer;
+        display: inline-flex;
+        font: inherit;
+        font-size: 0.83rem;
+        gap: 0.45rem;
+        min-height: 38px;
+        padding: 0.48rem 0.9rem;
+      }
+
+      .toggle button:first-child {
+        border-radius: 8px 0 0 8px;
+      }
+
+      .toggle button:last-child {
+        border-radius: 0 8px 8px 0;
+      }
+
+      .toggle button:not(:first-child) {
+        margin-left: -1px;
+      }
+
+      .toggle button:hover:not(.active) {
+        border-color: var(--accent);
+        color: var(--action);
+        position: relative;
+      }
+
+      .toggle button.active {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: white;
+        position: relative;
+      }
+
+      .platform-toggle svg {
+        height: 15px;
+        width: 15px;
+      }
+
+      .beta-notice {
+        background: color-mix(in srgb, var(--accent) 10%, transparent);
+        display: none;
+      }
+
+      body.beta-mode .beta-notice {
+        display: block;
+      }
+
+      .release-links {
+        max-width: 520px;
+      }
+
+      .meta-link {
+        color: var(--action);
+      }
+
+      [hidden] {
+        display: none !important;
+      }
+
+      @media (max-width: 520px) {
+        body {
+          padding-top: 1.7rem;
+        }
+
+        .container {
+          gap: 1.25rem;
+        }
+
+        .icon {
+          height: 88px;
+          width: 88px;
+        }
+
+        .platform-toggle,
+        .format-toggle {
+          gap: 0.55rem;
+        }
+
+        .platform-toggle button,
+        .format-toggle button {
+          border-radius: 8px !important;
+          margin-left: 0 !important;
+        }
+
+        .hero-download .download-button {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="container">
+      <img id="app-icon" class="icon" src="assets/icons/icon.svg" alt="Fraia icon" />
+      <h1 id="page-title">Fraia</h1>
+      <p class="subtitle">Fraia is a Rust-first structural engineering workbench for modelling, preliminary analysis, and traceable option development.</p>
+      <p class="early-stage-note">Fraia is early-stage software for preliminary work. It is not code-compliant design software and does not replace project-specific engineering review. Please report issues through <a href="https://github.com/apotenza92/fraia/issues">GitHub Issues</a>.</p>
+
+      <section class="hero-download" aria-label="Recommended download">
+        <a id="hero-download-button" class="download-button" href="#" aria-disabled="true" tabindex="-1">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <path d="m7 10 5 5 5-5" />
+            <path d="M12 15V3" />
+          </svg>
+          <span id="hero-download-label">Choose your download</span>
+        </a>
+        <div class="hero-meta">
+          <a class="github-link" href="https://github.com/apotenza92/fraia" aria-label="View Fraia on GitHub">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M12 .5a12 12 0 0 0-3.8 23.39c.6.11.82-.26.82-.58v-2.22c-3.34.73-4.04-1.42-4.04-1.42-.55-1.4-1.34-1.77-1.34-1.77-1.09-.74.08-.73.08-.73 1.2.09 1.84 1.24 1.84 1.24 1.07 1.83 2.8 1.3 3.49.99.11-.78.42-1.3.76-1.6-2.67-.31-5.47-1.34-5.47-5.94 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.53.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.65.25 2.88.12 3.18.77.84 1.24 1.91 1.24 3.22 0 4.62-2.81 5.63-5.49 5.93.43.38.82 1.11.82 2.24v3.32c0 .32.22.7.83.58A12 12 0 0 0 12 .5Z" />
+            </svg>
+            <span>Open source</span>
+          </a>
+          <span id="version-display" class="version-display"></span>
+        </div>
+      </section>
+
+      <p id="unsigned-package-notice" class="unsigned-package-notice" hidden>Windows and Linux installers are currently unsigned. Fraia authenticates automatic updates with TUF, and every release provides public checksums and provenance.</p>
+
+      <details id="download-options" class="download-options">
+        <summary>Choose another platform or test upcoming updates in beta</summary>
+        <div class="selection-flow">
+          <div class="toggle channel-toggle" aria-label="Release channel">
+            <button id="channel-stable" class="active" data-channel="stable" type="button">Stable</button>
+            <button id="channel-beta" data-channel="beta" type="button">Beta</button>
+          </div>
+
+          <p class="beta-notice">Beta builds use a separate Fraia Beta app and data directory. They can change quickly and may be less stable.</p>
+
+          <div class="toggle platform-toggle" aria-label="Platform">
+            <button id="platform-mac" class="active" data-platform="mac" type="button">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.6 12.6c0-2.2 1.8-3.3 1.9-3.4-1-1.5-2.6-1.7-3.2-1.8-1.4-.1-2.6.8-3.3.8s-1.8-.8-2.9-.8c-1.5 0-2.9.9-3.7 2.2-1.6 2.8-.4 6.9 1.1 9.1.8 1.1 1.7 2.4 2.9 2.3 1.1 0 1.6-.7 3-.7s1.8.7 3 .7c1.2 0 2-1.1 2.8-2.3.9-1.3 1.2-2.5 1.2-2.6 0 0-2.8-1.1-2.8-3.5Z" /><path d="M15.4 5.9c.6-.8 1.1-1.8 1-2.9-1 .1-2 .6-2.7 1.3-.6.7-1.1 1.8-1 2.8 1 .1 2-.5 2.7-1.2Z" /></svg>
+              macOS
+            </button>
+            <button id="platform-windows" data-platform="windows" type="button">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 4.9 10.6 4v7.2H3V4.9Zm8.6-1L21 2.5v8.7h-9.4V3.9ZM3 12.2h7.6v7.3L3 18.5v-6.3Zm8.6 0H21v9.3l-9.4-1.3v-8Z" /></svg>
+              Windows
+            </button>
+            <button id="platform-linux" data-platform="linux" type="button">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2c-2.1 0-3.8 1.8-3.8 4.2 0 1.2.3 2.3.8 3.3-.9 1.2-1.6 2.8-1.8 4.8l-2.3 3.5c-.5.7-.3 1.6.4 2.1.7.5 1.7.3 2.1-.4l1.4-2.1h6.4l1.4 2.1c.5.7 1.4.9 2.1.4.7-.5.9-1.4.4-2.1l-2.3-3.5c-.2-2-.9-3.6-1.8-4.8.5-1 .8-2.1.8-3.3C15.8 3.8 14.1 2 12 2Zm-1.1 4.4c0-.5.3-.9.7-.9s.7.4.7.9-.3.9-.7.9-.7-.4-.7-.9Zm2.6 0c0-.5.3-.9.7-.9s.7.4.7.9-.3.9-.7.9-.7-.4-.7-.9Z" /></svg>
+              Linux
+            </button>
+          </div>
+
+          <div class="toggle arch-toggle" aria-label="Architecture">
+            <button id="arch-arm64" class="active" data-arch="arm64" type="button">ARM64</button>
+            <button id="arch-x64" data-arch="x64" type="button">x64</button>
+          </div>
+
+          <div id="format-toggle" class="toggle format-toggle" aria-label="Package format">
+            <button id="format-dmg" class="active" data-format="dmg" type="button">Disk image (.dmg)</button>
+            <button id="format-zip" data-format="zip" type="button">Archive (.zip)</button>
+          </div>
+
+          <section class="download-result" aria-label="Selected download">
+            <a id="download-button" class="download-button" href="https://github.com/apotenza92/fraia/releases/latest/download/Fraia-macOS-arm64.dmg">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <path d="m7 10 5 5 5-5" />
+                <path d="M12 15V3" />
+              </svg>
+              <span class="download-copy">
+                <span id="download-label">Download Fraia for Apple Silicon Mac</span>
+                <span id="download-detail" class="download-detail" hidden></span>
+              </span>
+            </a>
+            <div class="release-links">
+              <a id="checksums-link" class="meta-link" href="https://github.com/apotenza92/fraia/releases/latest/download/SHA256SUMS">Checksums</a>
+              <a id="release-link" class="meta-link" href="https://github.com/apotenza92/fraia/releases/latest">Release details and provenance</a>
+            </div>
+          </section>
+        </div>
+      </details>
+    </main>
+
+    <script>
+      const repo = "apotenza92/fraia";
+      const repositoryUrl = `https://github.com/${repo}`;
+      const defaultReleaseBase = `${repositoryUrl}/releases/latest/download`;
+      const releaseInfo = {
+        stable: { assets: new Map(), available: true, base: defaultReleaseBase, tag: "" },
+        beta: { assets: new Map(), available: true, base: defaultReleaseBase, tag: "" }
+      };
+      const state = {
+        arch: "arm64",
+        channel: "stable",
+        format: "dmg",
+        manual: false,
+        platform: "mac"
+      };
+
+      const platformFormats = {
+        linux: [
+          { id: "appimage", label: "AppImage" },
+          { id: "deb", label: "Ubuntu / Debian (.deb)" },
+          { id: "rpm", label: "Fedora / RHEL (.rpm)" }
+        ],
+        mac: [
+          { id: "dmg", label: "Disk image (.dmg)" },
+          { id: "zip", label: "Archive (.zip)" }
+        ],
+        windows: []
+      };
+
+      function productName(channel = state.channel) {
+        return channel === "beta" ? "Fraia Beta" : "Fraia";
+      }
+
+      function setAppIcon(channel = state.channel) {
+        const icon = document.getElementById("app-icon");
+        const beta = channel === "beta";
+        icon.onerror = () => {
+          icon.onerror = null;
+          icon.src = beta
+            ? "../assets/fraia-icon-beta.svg"
+            : "../assets/fraia-icon.svg";
+        };
+        icon.src = beta ? "assets/icons/beta/icon.svg" : "assets/icons/icon.svg";
+      }
+
+      function assetName({ arch, channel, format, platform }) {
+        const prefix = channel === "beta" ? "Fraia-Beta" : "Fraia";
+        if (platform === "mac") return `${prefix}-macOS-${arch}.${format}`;
+        if (platform === "windows") return `${prefix}-Windows-${arch}-Setup.exe`;
+        return `${prefix}-Linux-${arch}.${format === "appimage" ? "AppImage" : format}`;
+      }
+
+      function formatSize(bytes) {
+        if (!Number.isFinite(bytes) || bytes <= 0) return "";
+        return `${Math.round(bytes / 1_000_000)} MB`;
+      }
+
+      function labelFor(selection) {
+        const product = productName(selection.channel);
+        const architecture = selection.arch === "arm64" ? "ARM64" : "x64";
+        if (selection.platform === "mac") {
+          const mac = selection.arch === "arm64" ? "Apple Silicon Mac" : "Intel Mac";
+          return `Download ${product} for ${mac}`;
+        }
+        if (selection.platform === "windows") return `Download ${product} for Windows ${architecture}`;
+        const format = selection.format === "appimage" ? "AppImage" : `.${selection.format}`;
+        const distribution = selection.format === "deb" ? "Ubuntu / Debian" : selection.format === "rpm" ? "Fedora / RHEL" : "Linux";
+        return `Download ${product} ${format} for ${distribution} ${architecture}`;
+      }
+
+      function resolveDownload(selection = state) {
+        const release = releaseInfo[selection.channel];
+        const name = assetName(selection);
+        return {
+          available: release.available,
+          href: `${release.base}/${name}`,
+          label: labelFor(selection),
+          name,
+          size: formatSize(release.assets.get(name))
+        };
+      }
+
+      function setActiveButtons(selector, dataName, value) {
+        document.querySelectorAll(selector).forEach((button) => {
+          const active = button.dataset[dataName] === value;
+          button.classList.toggle("active", active);
+          button.setAttribute("aria-pressed", String(active));
+        });
+      }
+
+      function renderFormatToggle() {
+        const toggle = document.getElementById("format-toggle");
+        const formats = platformFormats[state.platform];
+        toggle.hidden = formats.length === 0;
+        toggle.replaceChildren();
+        if (formats.length === 0) return;
+        if (!formats.some((format) => format.id === state.format)) state.format = formats[0].id;
+        formats.forEach((format) => {
+          const button = document.createElement("button");
+          button.id = `format-${format.id}`;
+          button.dataset.format = format.id;
+          button.type = "button";
+          button.textContent = format.label;
+          button.addEventListener("click", () => {
+            state.format = format.id;
+            state.manual = true;
+            updateDownload();
+          });
+          toggle.append(button);
+        });
+      }
+
+      function setLink(link, label, detail, resolved) {
+        link.href = resolved.available ? resolved.href : "#";
+        link.toggleAttribute("aria-disabled", !resolved.available);
+        if (resolved.available) link.removeAttribute("tabindex");
+        else link.setAttribute("tabindex", "-1");
+        label.textContent = resolved.available
+          ? `${resolved.label}${resolved.size ? ` · ${resolved.size}` : ""}`
+          : resolved.label || `${productName()} downloads are not available yet`;
+        if (detail) {
+          const version = releaseInfo[state.channel].tag;
+          detail.textContent = [version, resolved.size].filter(Boolean).join(" · ");
+          detail.hidden = !detail.textContent;
+        }
+      }
+
+      function updateDownload() {
+        renderFormatToggle();
+        setActiveButtons("[data-channel]", "channel", state.channel);
+        setActiveButtons("[data-platform]", "platform", state.platform);
+        setActiveButtons("[data-arch]", "arch", state.arch);
+        setActiveButtons("[data-format]", "format", state.format);
+
+        const resolved = resolveDownload();
+        const downloadButton = document.getElementById("download-button");
+        setLink(downloadButton, document.getElementById("download-label"), document.getElementById("download-detail"), resolved);
+
+        const detected = detectSystem();
+        const heroSelection = state.manual || !detected.platform ? state : { ...state, ...detected };
+        const heroResolved = detected.platform || state.manual ? resolveDownload(heroSelection) : { available: false, label: "Choose your download", size: "" };
+        setLink(document.getElementById("hero-download-button"), document.getElementById("hero-download-label"), null, heroResolved);
+
+        const release = releaseInfo[state.channel];
+        document.getElementById("version-display").textContent = release.tag;
+        document.getElementById("page-title").textContent = productName();
+        document.title = `Download ${productName()}`;
+        setAppIcon();
+        document.body.classList.toggle("beta-mode", state.channel === "beta");
+
+        const selectedPlatform = state.manual ? state.platform : detected.platform;
+        document.getElementById("unsigned-package-notice").hidden = !["windows", "linux"].includes(selectedPlatform);
+        document.getElementById("checksums-link").href = `${release.base}/SHA256SUMS`;
+        document.getElementById("release-link").href = release.tag
+          ? `${repositoryUrl}/releases/tag/${release.tag}`
+          : `${repositoryUrl}/releases/latest`;
+      }
+
+      function detectSystem() {
+        const hints = navigator.userAgentData || {};
+        const rawPlatform = `${hints.platform || ""} ${navigator.platform || ""} ${navigator.userAgent || ""}`.toLowerCase();
+        const rawArch = `${hints.architecture || ""} ${navigator.userAgent || ""}`.toLowerCase();
+        const platform = rawPlatform.includes("win")
+          ? "windows"
+          : rawPlatform.includes("mac")
+            ? "mac"
+            : rawPlatform.includes("linux")
+              ? "linux"
+              : "";
+        const arch = /arm64|aarch64/.test(rawArch) ? "arm64" : /x86|x64|win64|amd64/.test(rawArch) ? "x64" : platform === "mac" ? "arm64" : "x64";
+        const format = platform === "mac" ? "dmg" : platform === "linux" ? "appimage" : "";
+        return { arch, format, platform };
+      }
+
+      function parseSemVer(tag) {
+        const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/.exec(tag || "");
+        if (!match) return null;
+        return { major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]), prerelease: match[4] || "" };
+      }
+
+      function compareSemVer(leftTag, rightTag) {
+        const left = parseSemVer(leftTag);
+        const right = parseSemVer(rightTag);
+        if (!left || !right) return 0;
+        for (const key of ["major", "minor", "patch"]) {
+          if (left[key] !== right[key]) return left[key] - right[key];
+        }
+        if (!left.prerelease && right.prerelease) return 1;
+        if (left.prerelease && !right.prerelease) return -1;
+        return left.prerelease.localeCompare(right.prerelease, undefined, { numeric: true });
+      }
+
+      function highestRelease(releases, predicate) {
+        return releases.filter(predicate).sort((left, right) => compareSemVer(right.tag_name, left.tag_name))[0];
+      }
+
+      function hasAsset(release, name) {
+        return Array.isArray(release?.assets) && release.assets.some((asset) => asset.name === name);
+      }
+
+      function applyRelease(channel, release) {
+        if (!release) return;
+        releaseInfo[channel].available = true;
+        releaseInfo[channel].base = `${repositoryUrl}/releases/download/${encodeURIComponent(release.tag_name)}`;
+        releaseInfo[channel].tag = release.tag_name || "";
+        releaseInfo[channel].assets = new Map((release.assets || []).map((asset) => [asset.name, asset.size]));
+      }
+
+      async function loadReleaseInfo() {
+        try {
+          const response = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=30`);
+          if (!response.ok) return;
+          const releases = (await response.json()).filter((release) => !release.draft && parseSemVer(release.tag_name));
+          const stable = highestRelease(releases, (release) => !release.prerelease && hasAsset(release, "Fraia-macOS-arm64.dmg"));
+          const beta = highestRelease(releases, (release) => hasAsset(release, "Fraia-Beta-macOS-arm64.dmg"));
+          applyRelease("stable", stable);
+          applyRelease("beta", beta);
+        } catch {
+          // Keep release links useful if GitHub's API is unavailable or rate-limited.
+        }
+      }
+
+      document.querySelectorAll("[data-channel]").forEach((button) => {
+        button.addEventListener("click", () => {
+          state.channel = button.dataset.channel;
+          state.manual = true;
+          updateDownload();
+        });
+      });
+      document.querySelectorAll("[data-platform]").forEach((button) => {
+        button.addEventListener("click", () => {
+          state.platform = button.dataset.platform;
+          state.format = state.platform === "mac" ? "dmg" : state.platform === "linux" ? "appimage" : "";
+          state.manual = true;
+          updateDownload();
+        });
+      });
+      document.querySelectorAll("[data-arch]").forEach((button) => {
+        button.addEventListener("click", () => {
+          state.arch = button.dataset.arch;
+          state.manual = true;
+          updateDownload();
+        });
+      });
+
+      const detected = detectSystem();
+      if (detected.platform) Object.assign(state, detected);
+      updateDownload();
+      loadReleaseInfo().then(updateDownload);
+    </script>
+  </body>
+</html>

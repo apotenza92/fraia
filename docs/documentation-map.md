@@ -2,6 +2,10 @@
 
 This map identifies the maintained source for each documentation concern. Update an existing canonical document before creating another one.
 
+## Public product surface
+
+- [`index.html`](index.html) — standalone Fraia desktop download page prepared for publication at `apotenza92.github.io/fraia`.
+
 ## Core architecture
 
 - [`engineering-core.md`](engineering-core.md) — product and engineering architecture.
