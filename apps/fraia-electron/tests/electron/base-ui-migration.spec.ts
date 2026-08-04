@@ -101,6 +101,7 @@ test("desktop shell preserves keyboard and accessibility contracts", async () =>
       "minimum desktop bounds should not overflow the document",
     ).toEqual({ horizontalOverflow: false, verticalOverflow: false })
 
+    await page.emulateMedia({ colorScheme: "light" })
     await page.evaluate(() => localStorage.setItem("fraia:theme-mode", "dark"))
     await page.reload()
     await expect(page.locator("[data-slot=menubar]")).toBeVisible()
@@ -108,6 +109,7 @@ test("desktop shell preserves keyboard and accessibility contracts", async () =>
     await expect(page.locator('canvas[data-fraia-canvas-role="selection-overlay"]')).toHaveCount(1)
     await expect(page.locator("canvas")).toHaveCount(2)
     await expect(page.locator("html")).toHaveAttribute("data-theme-mode", "system")
+    await expect(page.locator("html")).not.toHaveClass(/\bdark\b/)
     await expect.poll(() => page.evaluate(() => localStorage.getItem("fraia:theme-mode"))).toBeNull()
 
     // Electron cannot create the blank Chromium page used by axe's partial-run

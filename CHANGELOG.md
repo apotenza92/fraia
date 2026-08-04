@@ -5,7 +5,7 @@ All notable user-facing changes to Fraia are documented here. Fraia follows
 workflow uses the matching version section below as the authoritative GitHub
 release notes and macOS updater notes.
 
-## [0.0.7] - 2026-08-04
+## [0.0.8] - 2026-08-04
 
 ### Changed
 
@@ -17,13 +17,23 @@ release notes and macOS updater notes.
   menu items wide enough for their labels.
 - Workflow stages are navigated directly from their labels, with unavailable
   stages explaining what is needed to continue.
+- Error and destructive-alert text now meets WCAG AA contrast in the light
+  appearance, with the release desktop test pinned to that appearance.
 - The public download page now provides platform-aware Stable and Beta
   downloads, checksums, provenance, and unsigned-package disclosures.
 
 ### Updating
 
 - Stable and Beta installations on `0.0.6` update to separately packaged
-  `0.0.7` application identities on their existing channels.
+  `0.0.8` application identities on their existing channels.
+
+## [0.0.7] - 2026-08-04
+
+### Release status
+
+- The release gate stopped before native packaging because light-appearance
+  destructive-alert text did not meet WCAG AA contrast. No release assets or
+  updater feeds were published; `0.0.8` supersedes this tag.
 
 ## [0.0.6] - 2026-08-04
 

@@ -1,7 +1,7 @@
 {
   "name": "fraia-electron",
   "private": true,
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "Fraia Electron workbench shell",
   "homepage": "https://github.com/apotenza92/fraia",
   "author": "Alex Potenza",
