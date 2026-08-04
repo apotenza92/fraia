@@ -1,29 +1,40 @@
-version: 0.0.6
+version: 0.0.9
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.6/Fraia-Beta-Linux-x64.AppImage
-    sha512: BzxOD7iYcCaONF7R9iwzqREOtnStvfX9yL3xO9arHMPHUdc7bx1nf3xV5gujpmlqTu/8FEfgWjpl0LQeOM6vGg==
-    size: 107055180
-    blockMapSize: 112736
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.6/Fraia-Beta-Linux-x64.deb
-    sha512: mAKFhVYrt5CxmyOo7FWKQ8gEKfjyRwWFDG8s/SbE97eVQvppuC6/zW58eg+bh1WWyyMlfG7ibKTIJToLIfOXXA==
-    size: 106622720
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.6/Fraia-Beta-Linux-x64.rpm
-    sha512: qy12U2wgRDKA6OiXrkoWPfAUVPcU2ZTMQIcybZcsee6gzOuUMivE46GwlbSYplxiHhu8Xa+7rP31i96KdZ0/dQ==
-    size: 93819221
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.6/Fraia-Beta-Linux-x64.AppImage
-sha512: BzxOD7iYcCaONF7R9iwzqREOtnStvfX9yL3xO9arHMPHUdc7bx1nf3xV5gujpmlqTu/8FEfgWjpl0LQeOM6vGg==
-releaseName: Fraia Beta 0.0.6
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.9/Fraia-Beta-Linux-x64.AppImage
+    sha512: ByAmk86t4dRRZ1Xsppj0kG01mnAbcyj2RfxGRHEIeTx+3pl2QeJCLFKk0i/VnDW7tZuNJ9THcBZxWMgn6gs+ew==
+    size: 106853969
+    blockMapSize: 112229
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.9/Fraia-Beta-Linux-x64.deb
+    sha512: 5vuOQrzo96mH3i0e749Xr5fTx75F9tMyhpJv9/6oANtyFBDicqFL2NpYvsBlGIoEFZkRVIZQrLFVgOAav33H8w==
+    size: 106422984
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.9/Fraia-Beta-Linux-x64.rpm
+    sha512: 0xrkV+Y3aXkdJS7e8qprtUq43r4ZSHNEAA1vd8+3NvwWcpaqwblzbOMkngbqhvdfxPokYdj36eKSwdrI/o7gnA==
+    size: 93603185
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.9/Fraia-Beta-Linux-x64.AppImage
+sha512: ByAmk86t4dRRZ1Xsppj0kG01mnAbcyj2RfxGRHEIeTx+3pl2QeJCLFKk0i/VnDW7tZuNJ9THcBZxWMgn6gs+ew==
+releaseName: Fraia Beta 0.0.9
 releaseNotes: |-
   ### Changed
 
-  - The updater-feed publication stage now creates its sealed staging directory
-    before writing and checksumming the feed projection. A deterministic release
-    workflow test protects that ordering.
+  - Base Model and Design Options conversations now share a cleaner transcript
+    with consistent assistant, user, streaming, and progress presentation.
+  - Fraia now follows the system appearance and clears stale manual theme
+    overrides.
+  - The Fraia menu now exposes the automatic update schedule directly and keeps
+    menu items wide enough for their labels.
+  - Workflow stages are navigated directly from their labels, with unavailable
+    stages explaining what is needed to continue.
+  - Error and destructive-alert text now meets WCAG AA contrast in the light
+    appearance, with the release desktop test pinned to that appearance.
+  - The public download page now provides platform-aware Stable and Beta
+    downloads, checksums, provenance, and unsigned-package disclosures.
+  - Stable and Beta now use a clearer low-poly Ionic column icon with a shorter,
+    more legible silhouette and distinct solid channel backgrounds.
+  - macOS uses matching light and dark artwork, while Windows and Linux retain
+    the reviewed light variants at every generated application-icon size.
 
   ### Updating
 
-  - Stable and Beta installations on the `0.0.4` feeds update directly to their
-    separately packaged `0.0.6` identities. The public `0.0.5` GitHub release
-    remains available for direct download, but its updater-feed projection did
-    not publish after the release assets were made public.
-releaseDate: 2026-08-03T16:09:27.485Z
+  - Stable and Beta installations update to separately packaged `0.0.9`
+    application identities on their existing channels.
+releaseDate: 2026-08-04T16:37:52.095Z

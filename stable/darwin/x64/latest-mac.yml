@@ -1,25 +1,36 @@
-version: 0.0.6
+version: 0.0.9
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.6/Fraia-macOS-x64.zip
-    sha512: zz0TAY4UbVnU/5WufIBv0/XVpX0Yz9ShPV+VHCcGGRDwLB99R8LI3rPsHZEt/naDADeJtD4MwPepP/h/HCjmOw==
-    size: 139400716
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.6/Fraia-macOS-x64.dmg
-    sha512: qfWmgrBkbLQqp+avifpiBNV7jOkyb0iFDu6M7uLX65vjXR8O9oB4GRR+DvqtnaZ3eTm1UijqP/xjudnDBl1ZTA==
-    size: 129556397
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.6/Fraia-macOS-x64.zip
-sha512: zz0TAY4UbVnU/5WufIBv0/XVpX0Yz9ShPV+VHCcGGRDwLB99R8LI3rPsHZEt/naDADeJtD4MwPepP/h/HCjmOw==
-releaseName: Fraia 0.0.6
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.9/Fraia-macOS-x64.zip
+    sha512: opDZ0Ixr3Cx/M0XhKWPF4ghsJwxQHydYSrbZhy1zAXDq17n47sOrgqrSrqc8ac9W2vTb04rGSWN4Cs03FoQNlw==
+    size: 138086893
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.9/Fraia-macOS-x64.dmg
+    sha512: 3OF5niZO9F5Drmqr5l7Y4UDzelufKVWZKAoecYIlLIf6FoVjLQKdWqBQUiSdgTPjiZ+20l6iLjmgbmRVhg5w5Q==
+    size: 128367535
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.9/Fraia-macOS-x64.zip
+sha512: opDZ0Ixr3Cx/M0XhKWPF4ghsJwxQHydYSrbZhy1zAXDq17n47sOrgqrSrqc8ac9W2vTb04rGSWN4Cs03FoQNlw==
+releaseName: Fraia 0.0.9
 releaseNotes: |-
   ### Changed
 
-  - The updater-feed publication stage now creates its sealed staging directory
-    before writing and checksumming the feed projection. A deterministic release
-    workflow test protects that ordering.
+  - Base Model and Design Options conversations now share a cleaner transcript
+    with consistent assistant, user, streaming, and progress presentation.
+  - Fraia now follows the system appearance and clears stale manual theme
+    overrides.
+  - The Fraia menu now exposes the automatic update schedule directly and keeps
+    menu items wide enough for their labels.
+  - Workflow stages are navigated directly from their labels, with unavailable
+    stages explaining what is needed to continue.
+  - Error and destructive-alert text now meets WCAG AA contrast in the light
+    appearance, with the release desktop test pinned to that appearance.
+  - The public download page now provides platform-aware Stable and Beta
+    downloads, checksums, provenance, and unsigned-package disclosures.
+  - Stable and Beta now use a clearer low-poly Ionic column icon with a shorter,
+    more legible silhouette and distinct solid channel backgrounds.
+  - macOS uses matching light and dark artwork, while Windows and Linux retain
+    the reviewed light variants at every generated application-icon size.
 
   ### Updating
 
-  - Stable and Beta installations on the `0.0.4` feeds update directly to their
-    separately packaged `0.0.6` identities. The public `0.0.5` GitHub release
-    remains available for direct download, but its updater-feed projection did
-    not publish after the release assets were made public.
-releaseDate: 2026-08-03T16:28:36.604Z
+  - Stable and Beta installations update to separately packaged `0.0.9`
+    application identities on their existing channels.
+releaseDate: 2026-08-04T16:59:58.739Z

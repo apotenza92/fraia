@@ -1,20 +1,46 @@
-version: 0.0.6
+version: 0.0.9
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.6/Fraia-Beta-Windows-x64-Setup.exe
-    sha512: hg3e+ZzVMnGf6/q9BwKGI3vNzZYpO4f1fYf+Fa8o9hl/Az3LW9CfakHX54vA9LLhAIMrIgOl6bcP7otP16nNuQ==
-    size: 119340874
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.6/Fraia-Beta-Windows-x64-Setup.exe
-sha512: hg3e+ZzVMnGf6/q9BwKGI3vNzZYpO4f1fYf+Fa8o9hl/Az3LW9CfakHX54vA9LLhAIMrIgOl6bcP7otP16nNuQ==
-releaseName: Fraia Beta 0.0.6
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.9/Fraia-Beta-Windows-x64-Setup.exe
+    sha512: a0dPkRxPnTNAMxic3rLkgJ02gq1RJNAsgWQgT3WPGLuQNhsZE7/8AFu8wh4VTrWkO9HNCdWjPe7O76Zrwm4rwA==
+    size: 119262373
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.9/Fraia-Beta-Windows-x64-Setup.exe
+sha512: a0dPkRxPnTNAMxic3rLkgJ02gq1RJNAsgWQgT3WPGLuQNhsZE7/8AFu8wh4VTrWkO9HNCdWjPe7O76Zrwm4rwA==
+releaseName: Fraia Beta 0.0.9
 releaseNotes: "### Changed\r
 
   \r
 
-  - The updater-feed publication stage now creates its sealed staging directory\r
+  - Base Model and Design Options conversations now share a cleaner transcript\r
 
-  \  before writing and checksumming the feed projection. A deterministic release\r
+  \  with consistent assistant, user, streaming, and progress presentation.\r
 
-  \  workflow test protects that ordering.\r
+  - Fraia now follows the system appearance and clears stale manual theme\r
+
+  \  overrides.\r
+
+  - The Fraia menu now exposes the automatic update schedule directly and keeps\r
+
+  \  menu items wide enough for their labels.\r
+
+  - Workflow stages are navigated directly from their labels, with unavailable\r
+
+  \  stages explaining what is needed to continue.\r
+
+  - Error and destructive-alert text now meets WCAG AA contrast in the light\r
+
+  \  appearance, with the release desktop test pinned to that appearance.\r
+
+  - The public download page now provides platform-aware Stable and Beta\r
+
+  \  downloads, checksums, provenance, and unsigned-package disclosures.\r
+
+  - Stable and Beta now use a clearer low-poly Ionic column icon with a shorter,\r
+
+  \  more legible silhouette and distinct solid channel backgrounds.\r
+
+  - macOS uses matching light and dark artwork, while Windows and Linux retain\r
+
+  \  the reviewed light variants at every generated application-icon size.\r
 
   \r
 
@@ -22,11 +48,7 @@ releaseNotes: "### Changed\r
 
   \r
 
-  - Stable and Beta installations on the `0.0.4` feeds update directly to their\r
+  - Stable and Beta installations update to separately packaged `0.0.9`\r
 
-  \  separately packaged `0.0.6` identities. The public `0.0.5` GitHub release\r
-
-  \  remains available for direct download, but its updater-feed projection did\r
-
-  \  not publish after the release assets were made public."
-releaseDate: 2026-08-03T16:11:29.580Z
+  \  application identities on their existing channels."
+releaseDate: 2026-08-04T16:37:04.059Z
