@@ -28,7 +28,6 @@ import { LegendDialog } from '../viewport/ViewportLegendOverlay';
 import { ResultsWorkspace } from '../results/ResultsWorkspace';
 import { AppMenuBar } from './AppMenuBar';
 import { normalizeWorkbenchState, projectDirOf } from '../../lib/defaultProject';
-import type { ThemeMode } from '../../lib/theme';
 import { APP_HEADER_HEIGHT, CHROME } from './chromeMetrics';
 import { activeBatchFrom, activeDevelopmentPathFrom, decisionStateFrom, developmentPathsFrom, latestComparisonFrom, optionIdForPath, optionRevisions, revisionForOption } from '../../lib/designOptionDecisions';
 import { DesignOptionInspector } from '../options/DesignOptionInspector';
@@ -2507,8 +2506,6 @@ function ViewportRegion({
 export function AppShell({
   state,
   onState,
-  themeMode,
-  onThemeModeChange,
   documentTabs,
   activeDocumentId,
   onDocumentSelect,
@@ -2521,8 +2518,6 @@ export function AppShell({
 }: {
   state: WorkbenchState | null;
   onState: (s: WorkbenchState) => void;
-  themeMode: ThemeMode;
-  onThemeModeChange: (mode: ThemeMode) => void;
   documentTabs: DocumentTab[];
   activeDocumentId: string;
   onDocumentSelect: (id: string) => void;

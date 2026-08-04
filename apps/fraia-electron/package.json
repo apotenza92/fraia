@@ -1,7 +1,7 @@
 {
   "name": "fraia-electron",
   "private": true,
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "Fraia Electron workbench shell",
   "homepage": "https://github.com/apotenza92/fraia",
   "author": "Alex Potenza",
@@ -90,7 +90,7 @@
   },
   "overrides": {
     "@hono/node-server": "2.0.12",
-    "brace-expansion": "5.0.8",
+    "brace-expansion": "5.0.9",
     "protobufjs": "7.6.5"
   }
 }

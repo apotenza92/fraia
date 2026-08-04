@@ -91,10 +91,63 @@ describe('AppMenuBar application identity', () => {
     render(<AppMenuBar />);
 
     await user.click(await screen.findByRole('menuitem', { name: 'Fraia' }));
-    await user.click(await screen.findByRole('menuitem', { name: 'Check for Updates…' }));
+    const checkForUpdatesItem = await screen.findByRole('menuitem', { name: 'Check for Updates…' });
+    expect(checkForUpdatesItem.closest('[data-slot="menubar-content"]')).toHaveClass(
+      'w-max',
+      'min-w-max',
+      'whitespace-nowrap',
+    );
+    await user.click(checkForUpdatesItem);
 
     expect(checkForUpdates).toHaveBeenCalledOnce();
     expect(await screen.findByRole('dialog', { name: 'Fraia Updates' })).toBeVisible();
     expect(await screen.findByText('Fraia is up to date')).toBeVisible();
+  });
+
+  it('exposes the automatic check schedule directly from the Fraia menu', async () => {
+    const setUpdateFrequency = vi.fn().mockImplementation(async (frequency) => ({
+      channel: 'stable',
+      currentVersion: '0.0.6',
+      enabled: true,
+      frequency,
+      phase: 'idle',
+    }));
+    Object.defineProperty(window, 'fraia', {
+      configurable: true,
+      value: {
+        applicationMetadata: vi.fn().mockResolvedValue({
+          channel: 'stable',
+          productName: 'Fraia',
+        }),
+        onOpenUpdateDialog: vi.fn(() => () => {}),
+        onUpdateStatus: vi.fn(() => () => {}),
+        setUpdateFrequency,
+        updateStatus: vi.fn().mockResolvedValue({
+          channel: 'stable',
+          currentVersion: '0.0.6',
+          enabled: true,
+          frequency: 'daily',
+          phase: 'idle',
+        }),
+      },
+    });
+
+    const user = userEvent.setup();
+    render(<AppMenuBar />);
+
+    await user.click(await screen.findByRole('menuitem', { name: 'Fraia' }));
+    const schedule = await screen.findByRole('menuitem', { name: 'Check Automatically' });
+    await user.hover(schedule);
+    const daily = await screen.findByRole('menuitemradio', { name: 'Daily' });
+    expect(daily).toHaveAttribute('aria-checked', 'true');
+    expect(daily.closest('[data-slot="menubar-sub-content"]')).toHaveClass(
+      'w-max',
+      'min-w-max',
+      'whitespace-nowrap',
+    );
+
+    screen.getByRole('menuitemradio', { name: 'Weekly' }).focus();
+    await user.keyboard('{Enter}');
+    expect(setUpdateFrequency).toHaveBeenCalledWith('weekly');
   });
 });

@@ -36,51 +36,49 @@ describe('WorkflowStageBar', () => {
     renderStageBar();
 
     const workflow = screen.getByRole('navigation', { name: 'Design workflow' });
+    expect(workflow).toHaveClass('select-none');
     expect(within(workflow).getByText('Base Model')).toBeVisible();
     expect(within(workflow).getByText('Design Options')).toHaveAttribute('aria-current', 'step');
     expect(within(workflow).getByText('Analysis & Comparison')).toBeVisible();
     expect(screen.getByText('Step 2 of 3: Design Options')).toHaveAttribute('aria-live', 'polite');
   });
 
-  it('keeps earlier stages navigable while future breadcrumb stages stay noninteractive', async () => {
+  it('explains the shared generation gate when either later stage is hovered', async () => {
+    const user = userEvent.setup();
+    const gateReason = 'Generate options from the Base Model to continue.';
+    renderStageBar({
+      currentStage: 'base',
+      stages: [
+        { stage: 'base', available: true, gateReason: null },
+        { stage: 'options', available: false, gateReason },
+        { stage: 'analysis', available: false, gateReason },
+      ],
+    });
+
+    for (const label of ['Design Options', 'Analysis & Comparison']) {
+      const stage = screen.getByText(label);
+      expect(stage).toHaveAttribute('aria-disabled', 'true');
+      expect(document.getElementById(stage.getAttribute('aria-describedby') ?? '')).toHaveTextContent(gateReason);
+      await user.hover(stage);
+      expect(
+        await screen.findByText(gateReason, { selector: '[data-slot="tooltip-content"]' }),
+      ).toBeVisible();
+      await user.unhover(stage);
+    }
+  });
+
+  it('uses the three stage labels to navigate directly to any available stage', async () => {
     const user = userEvent.setup();
     const onNavigate = vi.fn();
     renderStageBar({ onNavigate });
 
     await user.click(screen.getByRole('button', { name: 'Base Model' }));
-    expect(onNavigate).toHaveBeenCalledWith('base');
-
-    const futureStage = screen.getByText('Analysis & Comparison');
-    expect(futureStage.closest('button')).toBeNull();
-    expect(futureStage).toHaveAttribute('aria-disabled', 'true');
-  });
-
-  it('uses Previous and Next only to request adjacent-stage navigation', async () => {
-    const user = userEvent.setup();
-    const onNavigate = vi.fn();
-    renderStageBar({ onNavigate });
-
-    await user.click(screen.getByRole('button', { name: 'Previous' }));
-    await user.click(screen.getByRole('button', { name: 'Next' }));
+    await user.click(screen.getByRole('button', { name: 'Analysis & Comparison' }));
 
     expect(onNavigate.mock.calls).toEqual([['base'], ['analysis']]);
   });
 
-  it('omits Previous on the first stage', () => {
-    renderStageBar({ currentStage: 'base' });
-
-    expect(screen.queryByRole('button', { name: 'Previous' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Next' })).toBeVisible();
-  });
-
-  it('omits Next on the last stage', () => {
-    renderStageBar({ currentStage: 'analysis' });
-
-    expect(screen.getByRole('button', { name: 'Previous' })).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Next' })).not.toBeInTheDocument();
-  });
-
-  it('keeps a gated Next focusable, explains the gate, and suppresses activation', async () => {
+  it('explains a gated stage and keeps it noninteractive', async () => {
     const user = userEvent.setup();
     const onNavigate = vi.fn();
     const gateReason = 'Include at least one design option for analysis to continue.';
@@ -92,34 +90,30 @@ describe('WorkflowStageBar', () => {
       ],
     });
 
-    const next = screen.getByRole('button', { name: 'Next' });
-    expect(next).not.toBeDisabled();
-    expect(next).toHaveAttribute('aria-disabled', 'true');
-    const descriptionId = next.getAttribute('aria-describedby');
+    const analysis = screen.getByText('Analysis & Comparison');
+    expect(analysis.closest('button')).toBeNull();
+    expect(analysis).toHaveAttribute('aria-disabled', 'true');
+    const descriptionId = analysis.getAttribute('aria-describedby');
     expect(descriptionId).toBeTruthy();
     expect(document.getElementById(descriptionId ?? '')).toHaveTextContent(gateReason);
 
-    screen.getByRole('button', { name: 'Previous' }).focus();
-    await user.tab();
-    await user.tab();
-    expect(next).toHaveFocus();
-    await user.hover(next);
+    await user.hover(analysis);
     expect(
       await screen.findByText(gateReason, { selector: '[data-slot="tooltip-content"]' }),
     ).toBeVisible();
 
-    await user.keyboard('{Enter}');
-    await user.click(next);
     expect(onNavigate).not.toHaveBeenCalled();
   });
 
-  it('pins the edge controls around a horizontally scrollable stage path', () => {
+  it('keeps the stage path horizontally scrollable at constrained widths', () => {
     renderStageBar();
 
     const workflow = screen.getByRole('navigation', { name: 'Design workflow' });
     const scrollArea = workflow.querySelector('[data-slot="workflow-stage-scroll"]');
-    expect(scrollArea).toHaveClass('min-w-0', 'overflow-x-auto');
-    expect(within(workflow).getByRole('button', { name: 'Previous' })).toBeVisible();
-    expect(within(workflow).getByRole('button', { name: 'Next' })).toBeVisible();
+    expect(workflow).not.toHaveClass('px-2');
+    expect(scrollArea).toHaveClass('min-w-0', 'overflow-x-auto', 'px-2');
+    expect(workflow.querySelector('[data-slot="separator"]')).toBeVisible();
+    expect(within(workflow).queryByRole('button', { name: 'Previous' })).not.toBeInTheDocument();
+    expect(within(workflow).queryByRole('button', { name: 'Next' })).not.toBeInTheDocument();
   });
 });
