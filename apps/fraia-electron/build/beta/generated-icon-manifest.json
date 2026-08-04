@@ -2,81 +2,81 @@
   "schemaVersion": 1,
   "variant": "beta",
   "source": "assets/fraia-icon-beta.svg",
-  "sourceSha256": "0daca52580d9cbcfce02c8ca1c587f7fe8c6856d2d31acd60e8a83c9845cf38e",
+  "sourceSha256": "ed241d88d869b6b810905b3e830e2b6aad8c6710a3876d82f0e8f682b08e85f9",
   "adaptiveMacos": {
     "apps/fraia-electron/build/beta/macos/Fraia Beta.icon/icon.json": {
       "sha256": "57143a02ea9e58b3e3bc84ab61aeac1295b53c5fe52b34493d83232929f2eacf",
       "size": 948
     },
     "apps/fraia-electron/build/beta/macos/Fraia Beta.icon/Assets/01-artwork.svg": {
-      "sha256": "25a66fba79e029e70f16a225898e0c7a816ae1d16d483f2a6fe41f6bc46e52bb",
-      "size": 2799
+      "sha256": "92e4cc263606aa381e7c652b5fa49a54909302cc6ff918738c86b9806ab16efc",
+      "size": 2586
     },
     "apps/fraia-electron/build/beta/macos/Fraia Beta.icon/Assets/01-artwork-dark.svg": {
-      "sha256": "a26ae4f345f0a055da98cbc38f9ef791cb20fb72536e65ef3004daa8a9e7ca1a",
-      "size": 2798
+      "sha256": "3c0d90f91db01ab18e8f352b83b97db5e500291ef3685e1599a4a6118bc76115",
+      "size": 2586
     }
   },
   "outputs": {
     "icon.icns": {
-      "sha256": "29acbf915b438da9d1811bcf137ddec019fb4d22def7f71c40a7dc395aea4adc",
-      "size": 314033
+      "sha256": "5faaa020b2aba90f2a554eeea6a86233c805832ccf3776ce5a9c88f554092048",
+      "size": 51303
     },
     "icon.ico": {
-      "sha256": "b3a484669af27e74a693a38cc854d44dc40f367e65711fe2dc77a0c09cf97b8c",
-      "size": 33741
+      "sha256": "05e45b93d24143504ff79d61d61176cd002408e8e465e9b0fdf6bc4a569fc45f",
+      "size": 7435
     },
     "icon.png": {
-      "sha256": "59b68fbd243f9b25b4dd674d9599de7d04a1766de70d1d5424d61cd933e7cab9",
-      "size": 54369
+      "sha256": "98f68acdbeccecb4a4bde8810239d1c3e3bf12b9207312a4d9ef0a69ddd98c4a",
+      "size": 9044
     },
     "icons/1024x1024.png": {
-      "sha256": "ce510c122a43f1eae04128e4e7a481bbf546a449fa77e6d859955fdda93f6fda",
-      "size": 151371
+      "sha256": "00df24097f1ee6de73b4dd55d08d374fd841d9fb917789ad245a6d8a98d84207",
+      "size": 23165
     },
     "icons/128x128.png": {
-      "sha256": "7c6d51cf76ef998d13ae1cd09a57a118dc38d09c8e03781a0bf2b63f15e6da73",
-      "size": 7365
+      "sha256": "c83d4af0885fce8ad4dad5f5037e9c6b800d0bd9df6287c3d1db693e631e706f",
+      "size": 1420
     },
     "icons/16x16.png": {
-      "sha256": "96d13f6159f2941ba454dc48053674feaaa6e3913618e2280214b0551ac939e6",
-      "size": 529
+      "sha256": "1509bcf336ff0f601125cf61a2c3d40cc1488b86baec78c215ed1cc50cb0cc78",
+      "size": 384
     },
     "icons/22x22.png": {
-      "sha256": "0c3c1c89633cf0407457b620aa63c8d5471836bdf1ab5957de4ebb1bb6a85d1e",
-      "size": 748
+      "sha256": "7558743981838074ced295eb27b7174a03d85fc30d94ee3af29dd1f0d4663db7",
+      "size": 417
     },
     "icons/24x24.png": {
-      "sha256": "ec1b178194d8fade4c1775c8b8fbaa76ea47500b8568f9b24e26aadb5f3dc394",
-      "size": 899
+      "sha256": "14c8c559fa33978b04f1e9955f808e739dd07b2449cbbb69feaa4c78a7b8b3da",
+      "size": 523
     },
     "icons/256x256.png": {
-      "sha256": "e9e7075b16ff32258c205d2ec077c92bbf86a590b1d793d66c3d24fcb5b5d406",
-      "size": 19340
+      "sha256": "b7bc2b28e3115c5cf2b0772d735560bdae764cef95315e44158b6ca4a45ccab6",
+      "size": 3000
     },
     "icons/32x32.png": {
-      "sha256": "87c62262825d229d188009e4c9ccc42eeb5eac6a59d38651c558b316721a81ee",
-      "size": 1064
+      "sha256": "4f62d073dfb2901f0c13ef4e278d6cafaef27a1bd0526aad23f9c448f082edfd",
+      "size": 428
     },
     "icons/48x48.png": {
-      "sha256": "8936395c071e21c17dcd0b18d7659f037eb9586acae95a7fcd7e87af13ac5a79",
-      "size": 1863
+      "sha256": "88d9b90db7ade256af787d4964685cd66cd62861f84af836df25bafd9a2747f0",
+      "size": 915
     },
     "icons/512x512.png": {
-      "sha256": "59b68fbd243f9b25b4dd674d9599de7d04a1766de70d1d5424d61cd933e7cab9",
-      "size": 54369
+      "sha256": "98f68acdbeccecb4a4bde8810239d1c3e3bf12b9207312a4d9ef0a69ddd98c4a",
+      "size": 9044
     },
     "icons/64x64.png": {
-      "sha256": "053fa2b5e3024e2d609ad54077adf4eeb589e83f650d757a7d7d35bf57527e5a",
-      "size": 2563
+      "sha256": "31c01acaf5dbcfcd9af99190d4f6dbf9ffccc7167d3123d64cc9430c9375c70d",
+      "size": 647
     },
     "icons/72x72.png": {
-      "sha256": "826037813defaa7e1e10fee6f2f1fd54f56c6d8cae9a2abbf669560e717a18dc",
-      "size": 2951
+      "sha256": "059e2777bc3198b620489825846e9276622a9c8c7e32ce6ee254ccb9a73a5f4d",
+      "size": 1054
     },
     "icons/96x96.png": {
-      "sha256": "1315dafb85863c2c4d8c75e4aabaf650f204543702be63ff902edeacef8364cf",
-      "size": 4281
+      "sha256": "79c648927a5d616e885095d9eecf9cd94b471e208de21505c20c8c92dbc81ba5",
+      "size": 865
     }
   }
 }
