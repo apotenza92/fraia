@@ -431,7 +431,7 @@ test('packaged updater code ships TUF verification for Windows and Linux', () =>
     'utf8',
   );
   assert.match(updateDialog, /Restart and update/);
-  assert.match(updateDialog, /Install when Fraia closes/);
+  assert.match(updateDialog, />\s*Later\s*</);
   assert.match(updateDialog, /ProgressLabel/);
   assert.match(updateDialog, /formatEta/);
 });

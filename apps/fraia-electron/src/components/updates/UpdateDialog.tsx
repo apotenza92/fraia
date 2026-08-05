@@ -100,22 +100,19 @@ function UpdateState({ status }: { status: UpdateStatus }) {
   }
 
   if (status.phase === 'ready') {
-    return (
-      <div className="flex flex-col gap-3">
-        <Alert>
-          <PackageCheck />
-          <AlertTitle>Fraia {status.version} is ready</AlertTitle>
-          <AlertDescription>
-            Restart now, or close this dialog and Fraia will install the update when the app closes.
-          </AlertDescription>
-        </Alert>
-        {status.releaseNotes ? (
-          <ScrollArea className="max-h-44" tabIndex={0}>
-            <p className="whitespace-pre-wrap text-sm">{status.releaseNotes}</p>
-          </ScrollArea>
-        ) : null}
+    return status.releaseNotes ? (
+      <div className="flex flex-col gap-2">
+        <p className="text-sm font-medium">What&apos;s new</p>
+        <ScrollArea
+          aria-label={`Release notes for Fraia ${status.version ?? 'update'}`}
+          className="h-44"
+          role="region"
+          tabIndex={0}
+        >
+          <p className="break-words whitespace-pre-wrap pr-3 text-sm">{status.releaseNotes}</p>
+        </ScrollArea>
       </div>
-    );
+    ) : null;
   }
 
   if (status.phase === 'installing') {
@@ -203,13 +200,15 @@ export function UpdateDialog({
       <DialogContent className="sm:max-w-lg" showCloseButton={!installing}>
         <DialogHeader>
           <div className="flex flex-wrap items-center gap-2">
-            <DialogTitle>Fraia Updates</DialogTitle>
+            <DialogTitle>{ready ? `Fraia ${status.version} is ready` : 'Fraia Updates'}</DialogTitle>
             {status?.channel ? (
               <Badge variant="secondary">{status.channel === 'beta' ? 'Beta channel' : 'Stable channel'}</Badge>
             ) : null}
           </div>
-          <DialogDescription>
-            Current version {status?.currentVersion ?? 'unknown'}. Fraia verifies the update before replacing the application.
+          <DialogDescription className={ready ? 'sr-only' : undefined}>
+            {ready
+              ? `Release notes and installation options for Fraia ${status.version}.`
+              : `Current version ${status?.currentVersion ?? 'unknown'}.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -223,7 +222,7 @@ export function UpdateDialog({
           )}
         </div>
 
-        {enabled ? (
+        {enabled && !ready ? (
           <Field orientation="horizontal">
             <FieldContent>
               <FieldLabel htmlFor="automatic-update-frequency">Automatic checks</FieldLabel>
@@ -254,15 +253,11 @@ export function UpdateDialog({
           </Field>
         ) : null}
 
-        <p className="text-xs text-muted-foreground">
-          Fraia&apos;s updater works independently of package managers. Either update path preserves the app identity, channel, and user data.
-        </p>
-
         <DialogFooter>
           {ready ? (
             <>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                Install when Fraia closes
+                Later
               </Button>
               <Button type="button" onClick={onInstall} disabled={installing}>
                 {installing ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}

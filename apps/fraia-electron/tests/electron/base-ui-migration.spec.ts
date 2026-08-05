@@ -101,6 +101,60 @@ test("desktop shell preserves keyboard and accessibility contracts", async () =>
       "minimum desktop bounds should not overflow the document",
     ).toEqual({ horizontalOverflow: false, verticalOverflow: false })
 
+    const releaseNotes = Array.from(
+      { length: 40 },
+      (_, index) => `• Change ${index + 1} keeps the update details readable inside the dialog.`,
+    ).join("\n")
+    await electronApp.evaluate(({ BrowserWindow }, notes) => {
+      BrowserWindow.getAllWindows()[0]?.webContents.send("fraia:updateStatus", {
+        channel: "beta",
+        currentVersion: "0.0.6",
+        enabled: true,
+        frequency: "daily",
+        phase: "ready",
+        releaseNotes: notes,
+        trustedMetadata: true,
+        version: "0.0.9",
+      })
+    }, releaseNotes)
+
+    const updateDialog = page.getByRole("dialog", { name: "Fraia 0.0.9 is ready" })
+    const releaseNotesRegion = page.getByRole("region", {
+      name: "Release notes for Fraia 0.0.9",
+    })
+    await expect(updateDialog).toBeVisible()
+    await expect(updateDialog.getByText("What's new")).toBeVisible()
+    await expect(updateDialog.getByText("Automatic checks")).toHaveCount(0)
+    await expect(updateDialog.getByText(/Fraia verifies the update/)).toHaveCount(0)
+    await expect(updateDialog.getByText(/updater works independently/)).toHaveCount(0)
+    await expect(releaseNotesRegion).toBeVisible()
+    expect(await releaseNotesRegion.evaluate((region) => {
+      const dialog = region.closest('[data-slot="dialog-content"]')
+      const footer = dialog?.querySelector('[data-slot="dialog-footer"]')
+      const viewport = region.querySelector('[data-slot="scroll-area-viewport"]')
+      if (!(dialog instanceof HTMLElement)
+        || !(footer instanceof HTMLElement)
+        || !(viewport instanceof HTMLElement)) {
+        throw new Error("Update dialog scroll geometry is incomplete")
+      }
+      const dialogBounds = dialog.getBoundingClientRect()
+      const footerBounds = footer.getBoundingClientRect()
+      const viewportBounds = viewport.getBoundingClientRect()
+      return {
+        dialogInsideWindow: dialogBounds.bottom <= window.innerHeight,
+        footerBelowNotes: footerBounds.top >= viewportBounds.bottom,
+        notesOverflow: viewport.scrollHeight > viewport.clientHeight,
+        viewportHeight: viewport.clientHeight,
+      }
+    })).toEqual({
+      dialogInsideWindow: true,
+      footerBelowNotes: true,
+      notesOverflow: true,
+      viewportHeight: 176,
+    })
+    await page.getByRole("button", { name: "Close", exact: true }).click()
+    await expect(updateDialog).toHaveCount(0)
+
     await page.emulateMedia({ colorScheme: "light" })
     await page.evaluate(() => localStorage.setItem("fraia:theme-mode", "dark"))
     await page.reload()
@@ -111,6 +165,8 @@ test("desktop shell preserves keyboard and accessibility contracts", async () =>
     await expect(page.locator("html")).toHaveAttribute("data-theme-mode", "system")
     await expect(page.locator("html")).not.toHaveClass(/\bdark\b/)
     await expect.poll(() => page.evaluate(() => localStorage.getItem("fraia:theme-mode"))).toBeNull()
+    await page.mouse.move(0, 0)
+    await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveCount(0)
 
     // Electron cannot create the blank Chromium page used by axe's partial-run
     // mode. Legacy mode runs the same rules in the application page and still
