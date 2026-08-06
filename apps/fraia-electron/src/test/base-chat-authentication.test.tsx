@@ -92,6 +92,65 @@ describe('Base Model ChatGPT authentication', () => {
     expect(await screen.findByRole('button', { name: 'Sign in required' })).toBeVisible();
   });
 
+  it('starts a newly launched Base Model Guide at the top', async () => {
+    const startedState: WorkbenchState = {
+      overview: { projectDir: '/projects/frame-a' },
+      agentState: {
+        sessions: [{
+          id: 'session-pre-solve',
+          surface: 'pre_solve',
+          title: 'Base Model Guide',
+          status: 'active',
+          messages: [{
+            author: 'assistant',
+            text: 'Start with the model overview, then work through each question in order.',
+            mode: 'pi',
+          }],
+        }],
+        settingsBySurface: {
+          pre_solve: { providerId: 'openai-codex', modelId: 'gpt-5.6-luna' },
+        },
+      },
+    };
+    const agentStartSession = vi.fn(async () => startedState);
+    Object.defineProperty(window, 'fraia', {
+      configurable: true,
+      value: {
+        agentProviderStatus: vi.fn(async () => providerStatus(true)),
+        agentStartSession,
+        onAiRuntimeStatus: vi.fn(() => () => {}),
+      },
+    });
+    const initialState: WorkbenchState = {
+      overview: { projectDir: '/projects/frame-a' },
+      agentState: {
+        sessions: [],
+        settingsBySurface: {
+          pre_solve: { providerId: 'openai-codex', modelId: 'gpt-5.6-luna' },
+        },
+      },
+    };
+    const onState = vi.fn();
+    const user = userEvent.setup();
+    const { container, rerender } = render(
+      <BaseChatPanel state={initialState} onState={onState} />,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Start the Base Model Guide' }));
+    await waitFor(() => expect(agentStartSession).toHaveBeenCalledWith({
+      projectDir: '/projects/frame-a',
+      surface: 'pre_solve',
+    }));
+    await waitFor(() => expect(onState).toHaveBeenCalledWith(startedState));
+    rerender(<BaseChatPanel state={startedState} onState={onState} />);
+
+    expect(await screen.findByRole('log')).toBeVisible();
+    expect(container.querySelector('[data-slot="message-scroller"]')).toHaveAttribute(
+      'data-default-scroll-position',
+      'start',
+    );
+  });
+
   it('keeps the design-option handoff and generation progress inside the chat', async () => {
     Object.defineProperty(window, 'fraia', {
       configurable: true,
@@ -120,7 +179,7 @@ describe('Base Model ChatGPT authentication', () => {
       },
     };
     const onGenerateOptions = vi.fn();
-    const { rerender } = render(
+    const { container, rerender } = render(
       <BaseChatPanel
         state={state}
         onState={vi.fn()}
@@ -130,6 +189,10 @@ describe('Base Model ChatGPT authentication', () => {
     const user = userEvent.setup();
 
     expect(await screen.findByText('Explore design options')).toBeVisible();
+    expect(container.querySelector('[data-slot="message-scroller"]')).toHaveAttribute(
+      'data-default-scroll-position',
+      'last-anchor',
+    );
     expect(screen.getByText('Your Base Model brief is ready. Fraia can now develop distinct structural approaches for side-by-side review.')).toBeVisible();
     expect(screen.getByText('You can also keep chatting with the Base Model Guide to refine the model or adjust the brief. Generate options whenever you are ready.')).toBeVisible();
     const generate = screen.getByRole('button', { name: 'Generate design options' });

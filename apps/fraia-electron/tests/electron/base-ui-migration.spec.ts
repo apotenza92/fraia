@@ -288,6 +288,7 @@ test("fake Pi runtime signs in with ChatGPT, uses Luna, completes, cancels, and 
     await expect(page.getByText("Fake Pi response", { exact: true }).first()).toBeVisible()
     const transcript = page.getByRole("log")
     const transcriptViewport = page.getByRole("region", { name: "Messages" })
+    await expect.poll(() => transcriptViewport.evaluate((element) => element.scrollTop)).toBe(0)
     await expect(transcript).toHaveAttribute("aria-busy", "false")
     await expect(page.locator('[data-slot="message"][data-author="assistant"]')).toHaveAttribute("aria-label", "Fraia AI")
     await expect(page.locator('[data-slot="message"][data-author="assistant"] [data-slot="bubble"]')).toHaveAttribute("data-variant", "ghost")

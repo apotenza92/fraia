@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { MessageScrollerDefaultScrollPosition } from '@shadcn/react/message-scroller';
 import { Spinner } from '@/components/ui/spinner';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Button } from '@/components/ui/button';
@@ -16,17 +17,19 @@ import {
 export function ChatTranscript({
   children,
   busy = false,
+  defaultScrollPosition = 'last-anchor',
 }: {
   children: ReactNode;
   busy?: boolean;
+  defaultScrollPosition?: MessageScrollerDefaultScrollPosition;
 }) {
   return (
     <MessageScrollerProvider
       autoScroll
-      defaultScrollPosition="last-anchor"
+      defaultScrollPosition={defaultScrollPosition}
       scrollPreviousItemPeek={0}
     >
-      <MessageScroller>
+      <MessageScroller data-default-scroll-position={defaultScrollPosition}>
         <MessageScrollerViewport>
           <MessageScrollerContent aria-busy={busy} className="gap-3 p-3">
             {children}

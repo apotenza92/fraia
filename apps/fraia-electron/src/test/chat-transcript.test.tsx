@@ -13,7 +13,7 @@ describe('ChatTranscript', () => {
     const onCancel = vi.fn();
     const { container } = render(
       <div className="h-96">
-        <ChatTranscript busy>
+        <ChatTranscript busy defaultScrollPosition="start">
           <ChatTranscriptMessage author="assistant" messageId="assistant-1">
             Check the support conditions before analysis.
           </ChatTranscriptMessage>
@@ -38,6 +38,7 @@ describe('ChatTranscript', () => {
     const viewport = screen.getByRole('region', { name: 'Messages' });
     const transcript = screen.getByRole('log');
     expect(transcript).toHaveAttribute('aria-busy', 'true');
+    expect(container.querySelector('[data-slot="message-scroller"]')).toHaveAttribute('data-default-scroll-position', 'start');
     expect(viewport).not.toHaveAttribute('style');
     expect(viewport).toHaveClass('scroll-fade-b', 'scrollbar-thin', 'scrollbar-gutter-stable');
 

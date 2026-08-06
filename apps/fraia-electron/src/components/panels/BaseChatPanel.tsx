@@ -159,6 +159,7 @@ export function BaseChatPanel({
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [startedGuideSessionId, setStartedGuideSessionId] = useState<string | null>(null);
   const [resettingGuide, setResettingGuide] = useState(false);
   const [pendingUserText, setPendingUserText] = useState<string | null>(null);
   const [provider, setProvider] = useState<AgentProviderStatus | null>(null);
@@ -288,7 +289,11 @@ export function BaseChatPanel({
     try {
       const response = await window.fraia.agentStartSession({ projectDir, surface: SURFACE });
       const next = normalizeWorkbenchState(response);
-      if (next) onState(next);
+      if (next) {
+        const startedSession = next.agentState?.sessions?.find((candidate) => candidate.surface === SURFACE);
+        setStartedGuideSessionId(startedSession?.id ?? null);
+        onState(next);
+      }
       refreshProvider();
     } catch (error: any) {
       setStartError(error?.message || 'Could not start the Base Model chat session.');
@@ -732,7 +737,10 @@ export function BaseChatPanel({
   );
 
   const transcript = (
-    <ChatTranscript busy={interactionBusy}>
+    <ChatTranscript
+      busy={interactionBusy}
+      defaultScrollPosition={session?.id === startedGuideSessionId ? 'start' : 'last-anchor'}
+    >
       {messageList}
     </ChatTranscript>
   );
