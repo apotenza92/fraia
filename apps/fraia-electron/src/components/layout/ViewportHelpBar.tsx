@@ -32,7 +32,6 @@ import {
   viewportNavigationProfile,
   type ViewportCustomNavigationSettings,
   type ViewportNavigationAction,
-  type ViewportNavigationProfile,
   type ViewportNavigationProfileId,
   type ViewportMouseHandedness,
 } from '@/lib/viewportNavigation';
@@ -42,46 +41,6 @@ export type ViewportHelpShortcut = {
   keys: string[];
   label: string;
 };
-
-type MouseGesture = 'left' | 'middle' | 'right' | 'left+right' | 'wheel' | 'none';
-
-function mouseGestureForAction(
-  profile: ViewportNavigationProfile,
-  action: Exclude<ViewportNavigationAction, 'none'>,
-  handedness: ViewportMouseHandedness,
-): MouseGesture {
-  if (action === 'zoom') return 'wheel';
-  const binding = profile.bindings.find((candidate) => candidate.action === action);
-  if (!binding) return 'none';
-  if (binding?.chord) return binding.chord;
-  return handedMouseButton(binding?.button ?? 'left', handedness);
-}
-
-function MouseGestureIcon({ gesture, className }: { gesture: MouseGesture; className?: string }) {
-  const leftActive = gesture === 'left' || gesture === 'left+right';
-  const rightActive = gesture === 'right' || gesture === 'left+right';
-  const middleActive = gesture === 'middle' || gesture === 'wheel';
-
-  return (
-    <svg
-      aria-hidden="true"
-      className={className}
-      data-mouse-gesture={gesture}
-      fill="none"
-      viewBox="0 0 24 24"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      {leftActive ? <path d="M5.75 8.75V8A5.25 5.25 0 0 1 11 2.75h.25v6Z" fill="currentColor" opacity="0.45" /> : null}
-      {rightActive ? <path d="M12.75 2.75H13A5.25 5.25 0 0 1 18.25 8v.75h-5.5Z" fill="currentColor" opacity="0.45" /> : null}
-      <rect height="20" rx="7" stroke="currentColor" strokeWidth="1.75" width="14" x="5" y="2" />
-      <path d="M5.5 9h13M12 2.5V9" stroke="currentColor" strokeWidth="1.25" />
-      {middleActive ? <rect fill="currentColor" height="5" rx="1.5" width="3" x="10.5" y="3.25" /> : null}
-      {gesture === 'wheel' ? (
-        <path d="m9.5 15 2.5-2.5 2.5 2.5M9.5 18l2.5 2.5 2.5-2.5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.25" />
-      ) : null}
-    </svg>
-  );
-}
 
 const CUSTOM_ACTION_ITEMS = [
   { value: 'rotate', label: 'Rotate' },
@@ -128,11 +87,10 @@ function CustomButtonField({
   );
 }
 
-function Mapping({ label, value, gesture }: { label: string; value: string; gesture: MouseGesture }) {
+function Mapping({ label, value }: { label: string; value: string }) {
   return (
     <Tooltip>
-      <TooltipTrigger render={<span className="flex min-w-0 items-center gap-1.5" />}>
-        <MouseGestureIcon gesture={gesture} className="size-3.5 shrink-0" />
+      <TooltipTrigger render={<span className="flex min-w-0 items-center" />}>
         <span className="truncate"><span className="font-medium text-foreground">{label}</span> · {value}</span>
       </TooltipTrigger>
       <TooltipContent>{label}: {value}</TooltipContent>
@@ -140,10 +98,9 @@ function Mapping({ label, value, gesture }: { label: string; value: string; gest
   );
 }
 
-function ControlRow({ label, value, gesture }: { label: string; value: string; gesture: MouseGesture }) {
+function ControlRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="grid grid-cols-[1rem_4rem_1fr] items-center gap-2">
-      <MouseGestureIcon gesture={gesture} className="size-4 text-muted-foreground" />
+    <div className="grid grid-cols-[4rem_1fr] items-center gap-2">
       <span className="font-medium">{label}</span>
       <span className="text-muted-foreground">{value}</span>
     </div>
@@ -199,9 +156,9 @@ export function ViewportHelpBar({
 
         {showCameraMappings ? (
           <div data-testid="viewport-help-essentials" className="flex min-w-0 items-center gap-3 text-xs text-muted-foreground">
-            <Mapping label="Rotate" value={rotateLabel} gesture={mouseGestureForAction(profile, 'rotate', mouseHandedness)} />
-            <Mapping label="Pan" value={panLabel} gesture={mouseGestureForAction(profile, 'pan', mouseHandedness)} />
-            <Mapping label="Zoom" value={zoomLabel} gesture={mouseGestureForAction(profile, 'zoom', mouseHandedness)} />
+            <Mapping label="Rotate" value={rotateLabel} />
+            <Mapping label="Pan" value={panLabel} />
+            <Mapping label="Zoom" value={zoomLabel} />
           </div>
         ) : null}
 
@@ -275,9 +232,9 @@ export function ViewportHelpBar({
               </Field>
 
               <div className="flex flex-col gap-1.5">
-                <ControlRow label="Rotate" value={rotateLabel} gesture={mouseGestureForAction(profile, 'rotate', mouseHandedness)} />
-                <ControlRow label="Pan" value={panLabel} gesture={mouseGestureForAction(profile, 'pan', mouseHandedness)} />
-                <ControlRow label="Zoom" value={zoomLabel} gesture={mouseGestureForAction(profile, 'zoom', mouseHandedness)} />
+                <ControlRow label="Rotate" value={rotateLabel} />
+                <ControlRow label="Pan" value={panLabel} />
+                <ControlRow label="Zoom" value={zoomLabel} />
               </div>
 
               <Separator />

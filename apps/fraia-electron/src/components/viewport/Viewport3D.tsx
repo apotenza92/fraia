@@ -18,6 +18,7 @@ import {
   DEFAULT_VIEWPORT_NAVIGATION_PROFILE_ID,
   DEFAULT_VIEWPORT_CUSTOM_NAVIGATION_SETTINGS,
   resolveViewportNavigationGesture,
+  viewportZoomSpeedForGesture,
   type ViewportCustomNavigationSettings,
   type ViewportNavigationAction,
   type ViewportNavigationProfileId,
@@ -2955,6 +2956,7 @@ export function Viewport3D({
 
     function configureNavigationGesture(event: PointerEvent) {
       const action = resolveViewportNavigationGesture(currentNavigationProfileId, event, currentCustomNavigationSettings);
+      controls.zoomSpeed = viewportZoomSpeedForGesture(action);
       if (action === 'pan' && currentNavigationProfileId === 'strand7' && event.buttons === 3) {
         cancelActiveCameraGesture();
         controls.enabled = false;
@@ -3909,7 +3911,10 @@ export function Viewport3D({
     }
 
     function handlePointerUp(event: PointerEvent) {
-      if (activeCameraPointerId === event.pointerId && !strandChordPan) activeCameraPointerId = null;
+      if (activeCameraPointerId === event.pointerId && !strandChordPan) {
+        activeCameraPointerId = null;
+        controls.zoomSpeed = viewportZoomSpeedForGesture('none');
+      }
       if (suppressBoxCompletionPointerUpId === event.pointerId) {
         suppressBoxCompletionPointerUpId = null;
         return;
@@ -4057,6 +4062,7 @@ export function Viewport3D({
     }
 
     function handlePointerCancel(event: PointerEvent) {
+      controls.zoomSpeed = viewportZoomSpeedForGesture('none');
       cancelSelectionDrag(event);
       updateHoverTarget(null);
     }

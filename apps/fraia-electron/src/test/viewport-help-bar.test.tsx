@@ -28,9 +28,7 @@ describe('viewport help bar', () => {
     expect(screen.getByTestId('viewport-help-status')).toHaveTextContent('Member · Plane Auto');
     expect(screen.getByTestId('viewport-help-essentials')).not.toHaveTextContent('Select · Click');
     expect(screen.getByTestId('viewport-help-essentials')).toHaveTextContent('Rotate · Left drag');
-    expect(Array.from(screen.getByTestId('viewport-help-essentials').querySelectorAll('[data-mouse-gesture]')).map((icon) => (
-      icon.getAttribute('data-mouse-gesture')
-    ))).toEqual(['left', 'right', 'wheel']);
+    expect(screen.getByTestId('viewport-help-essentials').querySelector('[data-mouse-gesture]')).not.toBeInTheDocument();
 
     rerender(
       <ViewportHelpBar
@@ -87,12 +85,12 @@ describe('viewport help bar', () => {
     expect(screen.queryByText('Click to toggle')).not.toBeInTheDocument();
     expect(screen.queryByText('Click to clear')).not.toBeInTheDocument();
     expect(screen.queryByText('Click, move, click')).not.toBeInTheDocument();
-    expect(screen.getByRole('dialog').querySelectorAll('[data-mouse-gesture="wheel"]')).toHaveLength(1);
+    expect(screen.getByRole('dialog').querySelector('[data-mouse-gesture]')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Left-handed mouse' }));
     expect(onMouseHandedness).toHaveBeenCalledWith('left');
   });
 
-  it('swaps physical button copy and icons for a left-handed mouse', () => {
+  it('swaps physical button copy for a left-handed mouse without mouse icons', () => {
     render(
       <ViewportHelpBar
         availableWidth={900}
@@ -109,9 +107,7 @@ describe('viewport help bar', () => {
     const essentials = screen.getByTestId('viewport-help-essentials');
     expect(essentials).toHaveTextContent('Rotate · Right drag');
     expect(essentials).toHaveTextContent('Pan · Left drag');
-    expect(Array.from(essentials.querySelectorAll('[data-mouse-gesture]')).map((icon) => (
-      icon.getAttribute('data-mouse-gesture')
-    ))).toEqual(['right', 'left', 'wheel']);
+    expect(essentials.querySelector('[data-mouse-gesture]')).not.toBeInTheDocument();
   });
 
   it('shows editable mouse assignments only for the Custom profile', async () => {

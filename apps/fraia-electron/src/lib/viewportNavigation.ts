@@ -43,6 +43,7 @@ export type ViewportNavigationGestureInput = {
 };
 
 export const DEFAULT_VIEWPORT_NAVIGATION_PROFILE_ID: ViewportNavigationProfileId = 'spacegass';
+export const VIEWPORT_DRAG_ZOOM_SPEED = 6;
 export const VIEWPORT_NAVIGATION_STORAGE_KEY = 'fraia.viewport.navigationProfile.v1';
 export const VIEWPORT_CUSTOM_NAVIGATION_STORAGE_KEY = 'fraia.viewport.customNavigation.v1';
 export const DEFAULT_VIEWPORT_MOUSE_HANDEDNESS: ViewportMouseHandedness = 'right';
@@ -227,6 +228,10 @@ export function resolveViewportNavigationGesture(
   return profile.bindings.find((binding) => (
     binding.button === button && binding.modifier === modifier
   ))?.action ?? 'none';
+}
+
+export function viewportZoomSpeedForGesture(action: ViewportNavigationAction) {
+  return action === 'zoom' ? VIEWPORT_DRAG_ZOOM_SPEED : 1;
 }
 
 export function loadStoredViewportNavigationProfile(storage: Pick<Storage, 'getItem'> | null = typeof window === 'undefined' ? null : window.localStorage) {

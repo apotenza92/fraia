@@ -17,6 +17,7 @@ import {
   storeViewportCustomNavigationSettings,
   storeViewportNavigationProfile,
   viewportNavigationProfile,
+  viewportZoomSpeedForGesture,
   type ViewportNavigationProfileId,
 } from '@/lib/viewportNavigation';
 
@@ -64,6 +65,13 @@ describe('viewport navigation profiles', () => {
   it('rejects ambiguous primary-plus-shift gestures', () => {
     expect(resolveViewportNavigationGesture('rhino', gesture(2, { shiftKey: true, metaKey: true }))).toBe('none');
     expect(resolveViewportNavigationGesture('ansys', gesture(1, { shiftKey: true, ctrlKey: true }))).toBe('none');
+  });
+
+  it('makes drag zoom meaningful without changing other camera gestures', () => {
+    expect(viewportZoomSpeedForGesture('zoom')).toBe(6);
+    expect(viewportZoomSpeedForGesture('rotate')).toBe(1);
+    expect(viewportZoomSpeedForGesture('pan')).toBe(1);
+    expect(viewportZoomSpeedForGesture('none')).toBe(1);
   });
 
   it('uses SPACE GASS-style as the default and invalid-storage fallback', () => {
