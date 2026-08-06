@@ -1,40 +1,46 @@
-version: 0.0.9
+version: 0.0.10
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.9/Fraia-Beta-Linux-x64.AppImage
-    sha512: ByAmk86t4dRRZ1Xsppj0kG01mnAbcyj2RfxGRHEIeTx+3pl2QeJCLFKk0i/VnDW7tZuNJ9THcBZxWMgn6gs+ew==
-    size: 106853969
-    blockMapSize: 112229
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.9/Fraia-Beta-Linux-x64.deb
-    sha512: 5vuOQrzo96mH3i0e749Xr5fTx75F9tMyhpJv9/6oANtyFBDicqFL2NpYvsBlGIoEFZkRVIZQrLFVgOAav33H8w==
-    size: 106422984
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.9/Fraia-Beta-Linux-x64.rpm
-    sha512: 0xrkV+Y3aXkdJS7e8qprtUq43r4ZSHNEAA1vd8+3NvwWcpaqwblzbOMkngbqhvdfxPokYdj36eKSwdrI/o7gnA==
-    size: 93603185
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.9/Fraia-Beta-Linux-x64.AppImage
-sha512: ByAmk86t4dRRZ1Xsppj0kG01mnAbcyj2RfxGRHEIeTx+3pl2QeJCLFKk0i/VnDW7tZuNJ9THcBZxWMgn6gs+ew==
-releaseName: Fraia Beta 0.0.9
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.10/Fraia-Beta-Linux-x64.AppImage
+    sha512: Uv8vaQO8RYBocmnSgTVvCZJOfMz4HXnn51zgiqtwPC4KsfR4+K7Ccpaiuuc38GcV42rAKsLf4dhcHg1r164TQg==
+    size: 106858155
+    blockMapSize: 112319
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.10/Fraia-Beta-Linux-x64.deb
+    sha512: U27hCqJzP6PX7T9Iy4GRKJCJs7aPNk80C3wdIPrxQ4uzhbjq8G1/bkYpbNbZNGmcAO4UajysIs4G3rZT+NtyVg==
+    size: 106428444
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.10/Fraia-Beta-Linux-x64.rpm
+    sha512: YokMmv/aAWlYO8IOq7KTR9RfplBWGxTbA1vsg3/4PdNeQ3xPf9XtwlqXzFrBz7wRal5UjzApw9TUMR8TQKuUZQ==
+    size: 93625045
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.10/Fraia-Beta-Linux-x64.AppImage
+sha512: Uv8vaQO8RYBocmnSgTVvCZJOfMz4HXnn51zgiqtwPC4KsfR4+K7Ccpaiuuc38GcV42rAKsLf4dhcHg1r164TQg==
+releaseName: Fraia Beta 0.0.10
 releaseNotes: |-
   ### Changed
 
-  - Base Model and Design Options conversations now share a cleaner transcript
-    with consistent assistant, user, streaming, and progress presentation.
-  - Fraia now follows the system appearance and clears stale manual theme
-    overrides.
-  - The Fraia menu now exposes the automatic update schedule directly and keeps
-    menu items wide enough for their labels.
-  - Workflow stages are navigated directly from their labels, with unavailable
-    stages explaining what is needed to continue.
-  - Error and destructive-alert text now meets WCAG AA contrast in the light
-    appearance, with the release desktop test pinned to that appearance.
-  - The public download page now provides platform-aware Stable and Beta
-    downloads, checksums, provenance, and unsigned-package disclosures.
-  - Stable and Beta now use a clearer low-poly Ionic column icon with a shorter,
-    more legible silhouette and distinct solid channel backgrounds.
-  - macOS uses matching light and dark artwork, while Windows and Linux retain
-    the reviewed light variants at every generated application-icon size.
+  - Viewport labels now retain their semantic colours, resolve collisions more
+    reliably, expand independently, and keep proposed-support labels anchored to
+    their passive green support markers. Compact member labels show `SW` on its
+    own line, while expanded labels show `Self weight` without separate arrows.
+  - Selection now prioritises nodes and members over overlapping load graphics,
+    uses restrained amber geometry-only highlights, clears predictably on an
+    empty click, and supports containment, crossing, and lasso selection without
+    making proposed supports selectable.
+  - The canvas has a persistent Controls bar with accurate mouse diagrams,
+    right- and left-handed help, authentic engineering-app navigation profiles,
+    and a separate persistent Custom mouse profile. Fraia continues to default
+    to SPACE GASS navigation.
+  - New files open in an isometric view and remember their camera independently
+    after the user moves it.
+  - New assistant replies remain positioned at the top of the latest response,
+    and the Base Model handoff into Design Options is clearer and more compact.
+  - ChatGPT sign-in now uses browser authorization directly without asking users
+    to paste a redirect URL.
+  - Development launches now use one identifiable, single-owner Fraia Dev
+    process with isolated user data and reliable stale-launch recovery.
+  - The update dialog now presents release readiness and release notes more
+    directly with less redundant chrome.
 
   ### Updating
 
-  - Stable and Beta installations update to separately packaged `0.0.9`
+  - Stable and Beta installations update to separately packaged `0.0.10`
     application identities on their existing channels.
-releaseDate: 2026-08-04T16:37:52.095Z
+releaseDate: 2026-08-06T09:41:22.738Z
