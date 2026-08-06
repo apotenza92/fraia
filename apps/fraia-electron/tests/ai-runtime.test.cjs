@@ -249,12 +249,11 @@ test('catalogue describes the reviewed ChatGPT OAuth provider and Luna model', a
   assert.equal(result.models[0].defaultReasoningLevel, 'low');
 });
 
-test('OAuth flow opens Pi URLs, forwards prompts, and reports completion', async (t) => {
+test('OAuth flow automatically chooses browser login, opens its URL, and keeps the manual fallback out of Fraia', async (t) => {
   const { directory, filePath } = temporaryFile();
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const events = [];
   const opened = [];
-  let promptResult;
   const runtime = new FraiaAiRuntime({
     safeStorage: fakeSafeStorage(),
     shell: { openExternal: async (url) => opened.push(url) },
@@ -265,9 +264,24 @@ test('OAuth flow opens Pi URLs, forwards prompts, and reports completion', async
   runtime.modelRuntime = {
     login: async (_providerId, type, interaction) => {
       assert.equal(type, 'oauth');
+      const loginMethod = await interaction.prompt({
+        type: 'select',
+        message: 'Select OpenAI Codex login method:',
+        options: [
+          { id: 'browser', label: 'Browser login (default)' },
+          { id: 'device_code', label: 'Device code login (headless)' },
+        ],
+      });
+      assert.equal(loginMethod, 'browser');
       interaction.notify({ type: 'auth_url', url: 'https://provider.example/sign-in' });
-      interaction.notify({ type: 'device_code', verificationUri: 'https://provider.example/device', userCode: 'ABCD' });
-      promptResult = await interaction.prompt({ type: 'select', message: 'Choose account', options: [{ id: 'work', label: 'Work' }] });
+      const manualAbort = new AbortController();
+      const ignoredManualPrompt = interaction.prompt({
+        type: 'manual_code',
+        message: 'Paste the redirect URL',
+        signal: manualAbort.signal,
+      }).catch(() => {});
+      manualAbort.abort();
+      await ignoredManualPrompt;
     },
     refresh: async () => ({ aborted: false, errors: new Map() }),
     getAvailable: async () => [],
@@ -275,14 +289,39 @@ test('OAuth flow opens Pi URLs, forwards prompts, and reports completion', async
     getModels: () => [],
   };
 
-  const { flowId } = await runtime.startOAuth('openai-codex');
+  await runtime.startOAuth('openai-codex');
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(opened, ['https://provider.example/sign-in', 'https://provider.example/device']);
-  assert.equal(events.some((event) => event.type === 'prompt'), true);
-  runtime.answerAuthPrompt(flowId, 'work');
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(promptResult, 'work');
+  assert.deepEqual(opened, ['https://provider.example/sign-in']);
+  assert.equal(events.some((event) => event.type === 'prompt'), false);
   assert.equal(events.some((event) => event.type === 'complete'), true);
+});
+
+test('OAuth flow rejects an unexpected device-code branch without opening it', async (t) => {
+  const { directory, filePath } = temporaryFile();
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const events = [];
+  const opened = [];
+  const runtime = new FraiaAiRuntime({
+    safeStorage: fakeSafeStorage(),
+    shell: { openExternal: async (url) => opened.push(url) },
+    userDataDir: directory,
+    emitStatus: (event) => events.push(event),
+  });
+  runtime.credentials = new SecureCredentialStore({ safeStorage: fakeSafeStorage(), filePath });
+  runtime.modelRuntime = {
+    login: async (_providerId, _type, interaction) => {
+      interaction.notify({ type: 'device_code', verificationUri: 'https://provider.example/device', userCode: 'ABCD' });
+    },
+    refresh: async () => ({ aborted: false, errors: new Map() }),
+    getAvailable: async () => [],
+    getProviders: () => [],
+    getModels: () => [],
+  };
+
+  await runtime.startOAuth('openai-codex');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(opened, []);
+  assert.match(events.find((event) => event.type === 'error')?.message ?? '', /browser sign-in only/);
 });
 
 test('catalogue refresh retains stale state and diagnostics after an offline failure', async () => {

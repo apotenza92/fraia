@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
+import { loadStoredViewportCamera, saveStoredViewportCamera } from '@/lib/viewportCameraMemory';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Line2 } from 'three/examples/jsm/lines/Line2.js';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
@@ -8,10 +9,25 @@ import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { ViewportGizmo, type GizmoOptions } from 'three-viewport-gizmo';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { installOrthographicViewCubeCamera } from '@/lib/viewportGizmoCamera';
 import type { AgentTarget, RenderLoad, RenderRelease, RenderScene, RenderSupport } from '../../lib/types';
 import { displayMembersFor, type DisplayMember } from '../../lib/renderMembers';
 import { formatQuantity, metricStructuralUnitProfile, unitProfileFrom } from '../../lib/units';
-import { loadArrowSymbol, supportSymbolSpec, viewportStroke, type ViewportSymbolSpec } from '../../lib/viewportSymbols';
+import { expandedLabelCenterAlongDirection, loadArrowSymbol, SUPPORT_SYMBOL_SCALE, supportLabelOffset, supportLabelOffsetCandidates, supportSymbolHitRegion, supportSymbolOffset, supportSymbolSpec, viewportLoadLeaderFractions, viewportStroke, viewportVisualProfile, type ViewportSymbolSpec } from '../../lib/viewportSymbols';
+import {
+  DEFAULT_VIEWPORT_NAVIGATION_PROFILE_ID,
+  DEFAULT_VIEWPORT_CUSTOM_NAVIGATION_SETTINGS,
+  resolveViewportNavigationGesture,
+  type ViewportCustomNavigationSettings,
+  type ViewportNavigationAction,
+  type ViewportNavigationProfileId,
+} from '../../lib/viewportNavigation';
+import {
+  emptyCanvasSelectionAction,
+  isViewportNodeSelectable,
+  prioritizeViewportPointerTarget,
+  viewportSelectionKind,
+} from '../../lib/viewportSelection';
 
 type ViewportFitInsets = {
   left?: number;
@@ -81,7 +97,7 @@ export type ViewportPointerInfo = {
 };
 
 export type ViewportSelectionGesture = {
-  operation: 'add' | 'remove';
+  operation: 'toggle';
   selectionKind: 'window' | 'crossing';
   shape: 'box' | 'lasso';
   targets: AgentTarget[];
@@ -115,12 +131,12 @@ function viewportNodeColor() {
 function viewportInteractionPalette() {
   const dark = isDarkMode();
   return {
-    hoverAccent: dark ? '#93c5fd' : '#2563eb',
-    selectedAccent: dark ? '#60a5fa' : '#1d4ed8',
+    hoverAccent: dark ? '#fbbf24' : '#b45309',
+    selectedAccent: dark ? '#fbbf24' : '#b45309',
     haloUnderlay: viewportBackgroundColor(),
-    hoverOpacity: dark ? 0.74 : 0.62,
-    selectedOpacity: dark ? 0.92 : 0.88,
-    selectedHoverOpacity: dark ? 1 : 0.96,
+    hoverOpacity: dark ? 0.48 : 0.42,
+    selectedOpacity: dark ? 0.96 : 0.92,
+    selectedHoverOpacity: 1,
   };
 }
 
@@ -214,7 +230,6 @@ function memberLabelPoint(points: THREE.Vector3[]) {
 }
 
 const MEMBER_END_DISPLAY_INSET_RATIO = 0.035;
-const MEMBER_END_DISPLAY_INSET_PX = 16;
 const MEMBER_END_DISPLAY_MAX_TRIM_RATIO = 0.45;
 const RELEASE_TICK_COLORS = {
   x: '#ef4444',
@@ -222,6 +237,7 @@ const RELEASE_TICK_COLORS = {
   z: '#3b82f6',
 };
 const NODE_POINT_SIZE_PX = 12;
+const NODE_POINT_RADIUS_RATIO = 28 / 64;
 const INFERENCE_AXIS_COLOR_NUMBERS: Record<InferenceAxis, number> = {
   x: 0xef4444,
   y: 0x22c55e,
@@ -256,8 +272,8 @@ const EDIT_RENDER_ORDER = {
   node: 21.1,
   schemePreviewNode: 21.2,
   focusedNode: 21.3,
-  hoverNode: 21.4,
-  selectedNode: 21.5,
+  hoverNode: 21.04,
+  selectedNode: 21.05,
 };
 
 function memberEndDisplayInset(length: number) {
@@ -268,9 +284,11 @@ export function Viewport3D({
   scene,
   focusedTargets = [],
   fitInsets,
-  labelVisibility = { node: false, member: false, support: false, load: false },
+  labelVisibility = { node: true, member: true, support: true, load: true },
   selectionEnabled = true,
   cameraScopeKey = 'default',
+  navigationProfileId = DEFAULT_VIEWPORT_NAVIGATION_PROFILE_ID,
+  customNavigationSettings = DEFAULT_VIEWPORT_CUSTOM_NAVIGATION_SETTINGS,
   onSelectTarget,
   onSelectionGesture,
   onViewportClick,
@@ -283,6 +301,8 @@ export function Viewport3D({
   labelVisibility?: ViewportLabelVisibility;
   selectionEnabled?: boolean;
   cameraScopeKey?: string;
+  navigationProfileId?: ViewportNavigationProfileId;
+  customNavigationSettings?: ViewportCustomNavigationSettings;
   onSelectTarget?: (target: AgentTarget | null) => void;
   onSelectionGesture?: (gesture: ViewportSelectionGesture) => void;
   onViewportClick?: (event: ViewportPointerInfo) => void;
@@ -294,20 +314,12 @@ export function Viewport3D({
   const onViewportClickRef = useRef(onViewportClick);
   const onViewportPointerMoveRef = useRef(onViewportPointerMove);
   const selectionEnabledRef = useRef(selectionEnabled);
-  const cameraStateRef = useRef<{
-    scopeKey: string;
-    hasSceneGeometry: boolean;
-    position: THREE.Vector3;
-    target: THREE.Vector3;
-    up: THREE.Vector3;
-    zoom: number;
-    viewSize: number;
-  } | null>(null);
   const sceneApiRef = useRef<{
     updateFocusedTargets: (targets: AgentTarget[]) => void;
     updateFitInsets: (insets: Required<ViewportFitInsets>) => void;
     updateEditOverlay: (overlay: ViewportEditOverlay | null | undefined) => void;
     updateLabelVisibility: (visibility: ViewportLabelVisibility) => void;
+    updateNavigationProfile: (profileId: ViewportNavigationProfileId, customSettings: ViewportCustomNavigationSettings) => void;
   } | null>(null);
   const onSelectionGestureRef = useRef(onSelectionGesture);
   const fitInsetLeft = Math.max(0, fitInsets?.left ?? 0);
@@ -356,6 +368,10 @@ export function Viewport3D({
   }, [labelVisibility]);
 
   useEffect(() => {
+    sceneApiRef.current?.updateNavigationProfile(navigationProfileId, customNavigationSettings);
+  }, [customNavigationSettings, navigationProfileId]);
+
+  useEffect(() => {
     const el = ref.current;
     if (!el) return;
     const viewportElement = el;
@@ -371,7 +387,6 @@ export function Viewport3D({
     const focusedMembers = new Set(focusedTargets.filter((target) => target.kind === 'member').map((target) => target.id));
     const focusedNodes = new Set(focusedTargets.filter((target) => target.kind === 'node').map((target) => target.id));
     const focusedSupports = new Set(focusedTargets.filter((target) => target.kind === 'support').map((target) => target.id));
-    const focusedLoads = new Set(focusedTargets.filter((target) => target.kind === 'load').map((target) => target.id));
     let currentFitInsetLeft = fitInsetLeft;
     let currentFitInsetRight = fitInsetRight;
     let currentFitInsetTop = fitInsetTop;
@@ -379,10 +394,18 @@ export function Viewport3D({
     let currentLabelVisibility = { ...labelVisibility };
     let currentEditOverlay = editOverlay;
     let currentFocusedTargets = focusedTargets;
+    let currentNavigationProfileId = navigationProfileId;
+    let currentCustomNavigationSettings = customNavigationSettings;
     let hoveredTarget: AgentTarget | null = null;
     let hoveredMemberAnchor: THREE.Vector3 | null = null;
     let hoveredTargetSource: 'label' | 'geometry' | null = null;
     const nodesById = nodeMap(scene);
+    const proposedSupportNodeIds = new Set(
+      (scene.supports ?? [])
+        .filter(isBriefVisualSupport)
+        .map(supportNodeId)
+        .filter((nodeId): nodeId is string => Boolean(nodeId)),
+    );
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
     renderer.autoClear = false;
     renderer.domElement.dataset.fraiaCanvasRole = 'viewport-webgl';
@@ -408,6 +431,7 @@ export function Viewport3D({
     const s = new THREE.Scene();
     let viewSize = 20;
     const camera = new THREE.OrthographicCamera(-10, 10, 10, -10, -1000, 1000);
+    let currentVisualProfile = viewportVisualProfile(camera.zoom);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = false;
     controls.zoomToCursor = true;
@@ -475,6 +499,7 @@ export function Viewport3D({
       };
     };
     const viewGizmo = new ViewportGizmo(camera, renderer, viewGizmoOptions());
+    installOrthographicViewCubeCamera(viewGizmo);
     viewGizmo.attachControls(controls);
     let viewGizmoTheme = isDarkMode() ? 'dark' : 'light';
     let viewGizmoPlacement = [
@@ -591,7 +616,9 @@ export function Viewport3D({
       viewGizmoTheme = nextTheme;
       viewGizmoPlacement = nextPlacement;
       unbindViewGizmoGlobalHover();
-      viewGizmo.set(viewGizmoOptions()).attachControls(controls);
+      viewGizmo.set(viewGizmoOptions());
+      installOrthographicViewCubeCamera(viewGizmo);
+      viewGizmo.attachControls(controls);
       sharpenViewGizmoLabelTextures();
       bindViewGizmoGlobalHover();
       scheduleRender();
@@ -608,9 +635,7 @@ export function Viewport3D({
     let previewMemberHaloBatch: LineSegments2 | null = null;
     let previewMemberBatch: LineSegments2 | null = null;
     let selectedMemberBatch: LineSegments2 | null = null;
-    let selectedMemberHaloBatch: LineSegments2 | null = null;
     let hoverMemberBatch: LineSegments2 | null = null;
-    let hoverMemberHaloBatch: LineSegments2 | null = null;
     const labelsEnabled = scene.members.length < AUTO_LABEL_MEMBER_LIMIT;
     type LabelPlacementDirection = 'below' | 'above' | 'right' | 'left' | 'below-left' | 'below-right' | 'above-left' | 'above-right';
     type LabelVisualState = 'base' | 'hover' | 'selected';
@@ -623,6 +648,17 @@ export function Viewport3D({
         hover: THREE.CanvasTexture;
         selected: THREE.CanvasTexture;
       };
+    };
+    type LoadLabelLeaderVisual = {
+      line: Line2;
+      halo: Line2 | null;
+    };
+    type LoadLabelTrack = {
+      start: THREE.Vector3;
+      end: THREE.Vector3;
+      direction: THREE.Vector3;
+      leader?: LoadLabelLeaderVisual;
+      labelFraction?: number;
     };
     type LabelSprite = {
       sprite: THREE.Sprite;
@@ -637,7 +673,11 @@ export function Viewport3D({
       priority: number;
       kind: 'node' | 'member' | 'support' | 'load';
       ownerTargets: AgentTarget[];
-      placement?: 'pinned';
+      hoverTargets?: AgentTarget[];
+      placement?: 'pinned' | 'anchored' | 'load-line' | 'load-point';
+      loadTrack?: LoadLabelTrack;
+      themeTextureFactory?: () => LabelTextureSpec;
+      themeOffsetFactory?: (textureSpec: LabelTextureSpec) => { x: number; y: number };
       hoverOnly?: boolean;
       placementDirection?: LabelPlacementDirection;
       wasVisible?: boolean;
@@ -651,12 +691,45 @@ export function Viewport3D({
     const nodeLabelSprites: LabelSprite[] = [];
     const loadLabelSprites: LabelSprite[] = [];
     const supportLabelSprites: LabelSprite[] = [];
-    const symbolSprites: Array<{ sprite: THREE.Sprite; material: THREE.SpriteMaterial; texture: THREE.CanvasTexture; widthPx: number; heightPx: number; anchor: THREE.Vector3; direction?: THREE.Vector3; offset?: { x: number; y: number }; pin?: { x: number; y: number }; tone: 'support' | 'load' | 'release'; focused: boolean }> = [];
-    const supportHitPoints: Array<{ supportId: string; nodeId: string; point: THREE.Vector3 }> = [];
+    const symbolSprites: Array<{ sprite: THREE.Sprite; material: THREE.SpriteMaterial; texture: THREE.CanvasTexture; widthPx: number; heightPx: number; anchor: THREE.Vector3; direction?: THREE.Vector3; offset?: { x: number; y: number }; pin?: { x: number; y: number }; tone: 'support' | 'load' | 'release'; focused: boolean; proposed?: boolean; target?: AgentTarget; halo?: { sprite: THREE.Sprite; material: THREE.SpriteMaterial } }> = [];
+    const supportHitPoints: Array<{ supportId: string; nodeId: string; point: THREE.Vector3; kind: string }> = [];
     const loadHitAnchors: Array<{ loadId: string; point: THREE.Vector3 }> = [];
     const loadHitSegments: Array<{ loadId: string; start: THREE.Vector3; end: THREE.Vector3 }> = [];
-    const arrowHeadObjects: THREE.Mesh[] = [];
-    const loadArrowSegments: Array<{ start: THREE.Vector3; end: THREE.Vector3 }> = [];
+    type LoadArrowVisual = {
+      shaft: Line2;
+      halo: Line2 | null;
+      head: Line2;
+      headHalo: Line2 | null;
+      tail: THREE.Vector3;
+      tip: THREE.Vector3;
+    };
+    type UniformLineLoadLayout = {
+      start: THREE.Vector3;
+      end: THREE.Vector3;
+      direction: THREE.Vector3;
+      tangent: THREE.Vector3;
+      tailOffset: number;
+    };
+    type ParallelLineLoadLayout = {
+      start: THREE.Vector3;
+      tangent: THREE.Vector3;
+      arrowTangent: THREE.Vector3;
+      sign: number;
+      arrowLength: number;
+      firstCenter: number;
+      lastCenter: number;
+    };
+    type LoadLineVisualGroup = {
+      start: THREE.Vector3;
+      end: THREE.Vector3;
+      arrows: LoadArrowVisual[];
+      focused: boolean;
+      layout?: UniformLineLoadLayout | ParallelLineLoadLayout;
+    };
+    const loadArrowSegments: Array<{ start: THREE.Vector3; end: THREE.Vector3; visual: LoadArrowVisual }> = [];
+    const loadLineVisualGroups: LoadLineVisualGroup[] = [];
+    const loadLabelLeaders: LoadLabelLeaderVisual[] = [];
+    const loadInteractionStrokes: Array<{ loadId: string; line: Line2; halo: Line2 | null; baseRenderOrder: number }> = [];
     const nodeObjects: THREE.Points[] = [];
     const labelAnchorGapPx = 6;
     // Hover member labels are re-anchored on every pointermove; keep their side stable across near-tied placements.
@@ -677,14 +750,13 @@ export function Viewport3D({
     const memberBatchMat = new LineMaterial({ linewidth: viewportStroke.member, worldUnits: false, transparent: true, opacity: 1, depthTest: true, depthWrite: false });
     const previewMemberHaloMat = new LineMaterial({ linewidth: viewportStroke.member + 7, worldUnits: false, transparent: true, depthTest: false, depthWrite: false });
     const previewMemberBatchMat = new LineMaterial({ linewidth: viewportStroke.member + 0.8, worldUnits: false, transparent: true, depthTest: false, depthWrite: false });
-    const selectedMemberHaloMat = new LineMaterial({ linewidth: viewportStroke.member + 9, worldUnits: false, transparent: true, depthTest: false, depthWrite: false });
-    const selectedMemberBatchMat = new LineMaterial({ linewidth: viewportStroke.member + 1.7, worldUnits: false, transparent: true, depthTest: false, depthWrite: false });
-    const hoverMemberHaloMat = new LineMaterial({ linewidth: viewportStroke.member + 7, worldUnits: false, transparent: true, depthTest: false, depthWrite: false });
-    const hoverMemberMat = new LineMaterial({ linewidth: viewportStroke.member + 0.8, worldUnits: false, transparent: true, depthTest: false, depthWrite: false });
+    const selectedMemberBatchMat = new LineMaterial({ linewidth: viewportStroke.member, worldUnits: false, dashed: true, dashSize: 0.45, gapSize: 0.3, transparent: true, depthTest: false, depthWrite: false });
+    const hoverMemberMat = new LineMaterial({ linewidth: viewportStroke.member, worldUnits: false, transparent: true, depthTest: false, depthWrite: false });
     const loadMat = new LineMaterial({ linewidth: loadArrowSymbol.strokeWidth, worldUnits: false, transparent: true, depthTest: false, depthWrite: false });
-    const focusedLoadMat = new LineMaterial({ linewidth: viewportStroke.loadFocused, worldUnits: false, transparent: true, depthTest: false, depthWrite: false });
+    const focusedLoadMat = new LineMaterial({ linewidth: loadArrowSymbol.strokeWidth, worldUnits: false, transparent: true, depthTest: false, depthWrite: false });
     const loadHaloMat = new LineMaterial({ linewidth: loadArrowSymbol.strokeWidth + LAYER_HALO_EXTRA_PX, worldUnits: false, transparent: true, opacity: 0.94, depthTest: false, depthWrite: false });
-    const focusedLoadHaloMat = new LineMaterial({ linewidth: viewportStroke.loadFocused + LAYER_HALO_EXTRA_PX, worldUnits: false, transparent: true, opacity: 0.96, depthTest: false, depthWrite: false });
+    const focusedLoadHaloMat = new LineMaterial({ linewidth: loadArrowSymbol.strokeWidth + 4, worldUnits: false, transparent: true, opacity: 0.96, depthTest: false, depthWrite: false });
+    const hoverLoadHaloMat = new LineMaterial({ linewidth: loadArrowSymbol.strokeWidth + 3, worldUnits: false, transparent: true, opacity: 0.48, depthTest: false, depthWrite: false });
     const releaseLineMaterial = (axis: keyof typeof RELEASE_TICK_COLORS, focused = false) => new LineMaterial({
       color: RELEASE_TICK_COLORS[axis],
       linewidth: focused ? viewportStroke.symbol * 0.9 : viewportStroke.symbol * 0.7,
@@ -712,12 +784,11 @@ export function Viewport3D({
       z: releaseLineMaterial('z', true),
     };
     const allReleaseMats = [...Object.values(releaseMats), ...Object.values(focusedReleaseMats)];
-    const loadHeadMat = new THREE.MeshBasicMaterial({ transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
-    const focusedLoadHeadMat = new THREE.MeshBasicMaterial({ transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
     const nodeTexture = makeNodeTexture();
     const nodeMat = new THREE.PointsMaterial({ size: NODE_POINT_SIZE_PX, sizeAttenuation: false, map: nodeTexture, alphaTest: 0.2, transparent: true, depthTest: false, depthWrite: false });
+    const proposedSupportNodeMat = new THREE.PointsMaterial({ size: NODE_POINT_SIZE_PX, sizeAttenuation: false, map: nodeTexture, alphaTest: 0.2, transparent: true, depthTest: false, depthWrite: false });
     const focusedNodeMat = new THREE.PointsMaterial({ size: NODE_POINT_SIZE_PX, sizeAttenuation: false, map: nodeTexture, alphaTest: 0.2, transparent: true, depthTest: false, depthWrite: false });
-    const selectedNodeFillMat = new THREE.PointsMaterial({ size: NODE_POINT_SIZE_PX + 3, sizeAttenuation: false, map: nodeTexture, alphaTest: 0.2, transparent: true, depthTest: false, depthWrite: false });
+    const selectedNodeFillMat = new THREE.PointsMaterial({ size: NODE_POINT_SIZE_PX + 4, sizeAttenuation: false, map: nodeTexture, alphaTest: 0.2, transparent: true, depthTest: false, depthWrite: false });
     const hoverNodeFillMat = new THREE.PointsMaterial({ size: NODE_POINT_SIZE_PX + 2, sizeAttenuation: false, map: nodeTexture, alphaTest: 0.2, transparent: true, depthTest: false, depthWrite: false });
     const previewNodeFillMat = new THREE.PointsMaterial({ size: NODE_POINT_SIZE_PX + 2, sizeAttenuation: false, map: nodeTexture, alphaTest: 0.2, transparent: true, depthTest: false, depthWrite: false });
     const editGridMat = new LineMaterial({ color: 0x64748b, linewidth: 1, worldUnits: false, transparent: true, opacity: 0.3, depthTest: false, depthWrite: false });
@@ -939,10 +1010,11 @@ export function Viewport3D({
     }
 
     function createGlyphLine(points: THREE.Vector3[], material: LineMaterial, renderOrder = 42, haloMaterial?: LineMaterial) {
+      let haloLine: Line2 | null = null;
       if (haloMaterial) {
         const haloGeo = new LineGeometry();
         haloGeo.setPositions(points.flatMap((point) => [point.x, point.y, point.z]));
-        const haloLine = new Line2(haloGeo, haloMaterial);
+        haloLine = new Line2(haloGeo, haloMaterial);
         haloLine.computeLineDistances();
         haloLine.renderOrder = Math.max(0, renderOrder - 1);
         memberObjects.push(haloLine);
@@ -955,7 +1027,7 @@ export function Viewport3D({
       line.renderOrder = renderOrder;
       memberObjects.push(line);
       s.add(line);
-      return line;
+      return { line, haloLine };
     }
 
     function makeNodeTexture() {
@@ -1227,12 +1299,19 @@ export function Viewport3D({
     type EntityLabelKind = 'node' | 'member' | 'support' | 'load';
     type EntityLabelTone = 'default' | 'proposedMember';
     type EntityLabelRow = { text: string; color?: string; variant?: 'group' | 'detail'; wrap?: boolean; inlineWithPrimary?: boolean };
+    type ExpandedEntityLabelLine = string | { text: string; color?: string };
 
     function proposedMemberColor() {
       return sceneProposedMemberColor();
     }
 
-    function entityLabelTexture(kind: EntityLabelKind, primaryText: string, rows: EntityLabelRow[] = [], tone: EntityLabelTone = 'default', inkOverride?: string) {
+    function entityLabelTexture(
+      kind: EntityLabelKind,
+      primaryText: string,
+      rows: EntityLabelRow[] = [],
+      tone: EntityLabelTone = 'default',
+      inkOverride?: string,
+    ) {
       const dark = isDarkMode();
       const dpr = 2;
       const measure = document.createElement('canvas').getContext('2d')!;
@@ -1329,22 +1408,24 @@ export function Viewport3D({
 
     function entityLabelTextureStates(kind: EntityLabelKind, primaryText: string, rows: EntityLabelRow[] = [], tone: EntityLabelTone = 'default') {
       const base = entityLabelTexture(kind, primaryText, rows, tone);
-      const interaction = viewportInteractionPalette();
-      const hover = entityLabelTexture(kind, primaryText, rows, tone, interaction.hoverAccent);
-      const selected = entityLabelTexture(kind, primaryText, rows, tone, interaction.selectedAccent);
       return {
         texture: base.texture,
         widthPx: base.widthPx,
         heightPx: base.heightPx,
         stateTextures: {
           base: base.texture,
-          hover: hover.texture,
-          selected: selected.texture,
+          hover: base.texture,
+          selected: base.texture,
         },
       };
     }
 
-    function expandedEntityLabelTexture(kind: EntityLabelKind, lines: string[], tone: EntityLabelTone = 'default', inkOverride?: string) {
+    function expandedEntityLabelTexture(
+      kind: EntityLabelKind,
+      lines: ExpandedEntityLabelLine[],
+      tone: EntityLabelTone = 'default',
+      inkOverride?: string,
+    ) {
       const dark = isDarkMode();
       const dpr = 2;
       const measure = document.createElement('canvas').getContext('2d')!;
@@ -1352,9 +1433,11 @@ export function Viewport3D({
       const horizontalPadding = 12;
       const verticalPadding = 9;
       const lineHeight = 15;
-      const labelLines = lines.map((line) => line.trim()).filter(Boolean);
+      const labelLines = lines
+        .map((line) => typeof line === 'string' ? { text: line.trim() } : { ...line, text: line.text.trim() })
+        .filter((line) => Boolean(line.text));
       measure.font = font;
-      const widthPx = Math.ceil(horizontalPadding * 2 + Math.max(56, ...labelLines.map((line) => measure.measureText(line).width)));
+      const widthPx = Math.ceil(horizontalPadding * 2 + Math.max(56, ...labelLines.map((line) => measure.measureText(line.text).width)));
       const heightPx = Math.ceil(verticalPadding * 2 + Math.max(1, labelLines.length) * lineHeight);
       const canvas = document.createElement('canvas');
       canvas.width = widthPx * dpr;
@@ -1387,11 +1470,12 @@ export function Viewport3D({
       ctx.stroke();
       ctx.restore();
       ctx.font = font;
-      ctx.textAlign = 'left';
+      ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = ink;
       labelLines.forEach((line, index) => {
-        ctx.fillText(line, horizontalPadding, verticalPadding + lineHeight / 2 + index * lineHeight);
+        ctx.fillStyle = line.color ?? ink;
+        ctx.fillText(line.text, widthPx / 2, verticalPadding + lineHeight / 2 + index * lineHeight);
       });
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
@@ -1399,19 +1483,16 @@ export function Viewport3D({
       return { texture, widthPx, heightPx };
     }
 
-    function expandedEntityLabelTextureStates(kind: EntityLabelKind, lines: string[], tone: EntityLabelTone = 'default') {
+    function expandedEntityLabelTextureStates(kind: EntityLabelKind, lines: ExpandedEntityLabelLine[], tone: EntityLabelTone = 'default') {
       const base = expandedEntityLabelTexture(kind, lines, tone);
-      const interaction = viewportInteractionPalette();
-      const hover = expandedEntityLabelTexture(kind, lines, tone, interaction.hoverAccent);
-      const selected = expandedEntityLabelTexture(kind, lines, tone, interaction.selectedAccent);
       return {
         texture: base.texture,
         widthPx: base.widthPx,
         heightPx: base.heightPx,
         stateTextures: {
           base: base.texture,
-          hover: hover.texture,
-          selected: selected.texture,
+          hover: base.texture,
+          selected: base.texture,
         },
       };
     }
@@ -1430,30 +1511,42 @@ export function Viewport3D({
     }
 
     function compactMemberLabel(member: DisplayMember) {
+      return `M${member.id}`;
+    }
+
+    function compactMemberDetail(member: DisplayMember) {
       const length = Number.isFinite(member.length) && member.length > 0
         ? formatLengthScalar(member.length)
         : 'n/a';
-      return `${member.id}: ${length}`;
+      return `L${length}`;
     }
 
-    function compactNodeLabel(node: { x: number; y: number; z: number }, index: number) {
-      return `${index + 1}: ${nodeCoordinateText(node)}`;
+    function compactNodeLabel(index: number) {
+      return `N${index + 1}`;
     }
 
     function compactSupportLabel(support: RenderSupport, index: number) {
-      return `${supportDisplayId(support, index)}: ${isBriefVisualSupport(support) ? 'Proposed' : supportType(support)}`;
+      return `S${supportDisplayId(support, index)}`;
+    }
+
+    function loadAbbreviation(load: RenderLoad) {
+      return load.kind === 'uniform_line' ? 'UDL' : 'PL';
     }
 
     function compactLoadLabel(load: RenderLoad, index: number) {
-      return `${index + 1}: ${loadDisplayText(load)}`;
+      return `${loadAbbreviation(load)}${index + 1}`;
     }
 
     function makeMemberLabelTexture(member: DisplayMember, rows: EntityLabelRow[] = []) {
-      return entityLabelTextureStates('member', compactMemberLabel(member), rows, isSchemePreviewMember(member) ? 'proposedMember' : 'default');
+      const lengthRows = [{ text: compactMemberDetail(member), variant: 'detail' as const }];
+      const selfWeightRows = memberHasSelfWeight(member)
+        ? [{ text: 'SW', color: sceneLoadColor(), variant: 'detail' as const }]
+        : [];
+      return entityLabelTextureStates('member', compactMemberLabel(member), [...lengthRows, ...selfWeightRows, ...rows], isSchemePreviewMember(member) ? 'proposedMember' : 'default');
     }
 
     function makeMemberDimensionLabelTexture(member: DisplayMember) {
-      return entityLabelTextureStates('member', compactMemberLabel(member), [], isSchemePreviewMember(member) ? 'proposedMember' : 'default');
+      return makeMemberLabelTexture(member);
     }
 
     function makeExpandedMemberLabelTexture(member: DisplayMember) {
@@ -1461,17 +1554,24 @@ export function Viewport3D({
         ? formatLengthScalar(member.length)
         : 'n/a';
       const tone = isSchemePreviewMember(member) ? 'proposedMember' : 'default';
-      return expandedEntityLabelTextureStates('member', [
+      const lines: ExpandedEntityLabelLine[] = [
         `Member: ${member.id}`,
         `Length: ${length}`,
-      ], tone);
+      ];
+      if (memberHasSelfWeight(member)) lines.push({ text: 'Self weight', color: sceneLoadColor() });
+      return expandedEntityLabelTextureStates('member', lines, tone);
+    }
+
+    function memberHasSelfWeight(member: DisplayMember) {
+      const memberIds = new Set([member.id, ...member.segments.map((segment) => segment.memberId)]);
+      return (scene.loads ?? []).some((load) => isSelfWeightLoad(load) && memberIds.has(loadMemberId(load) ?? ''));
     }
 
     function makeMemberIdLabelTexture(memberId: string, anchor: THREE.Vector3, includeCoordinates = false) {
       const member = displayMembers.find((item) => item.id === memberId || item.segments.some((segment) => segment.memberId === memberId));
-      const rows = includeCoordinates ? [{ text: `| ${coordinateText(anchor)}`, variant: 'detail' as const, inlineWithPrimary: true }] : [];
+      const rows = includeCoordinates ? [{ text: coordinateText(anchor), variant: 'detail' as const }] : [];
       if (member) return makeMemberLabelTexture(member, rows);
-      return entityLabelTextureStates('member', `${memberId}: n/a`, rows);
+      return entityLabelTextureStates('member', memberId, [{ text: 'n/a', variant: 'detail' as const }, ...rows]);
     }
 
     function pendingNodeLabelIds() {
@@ -1531,26 +1631,32 @@ export function Viewport3D({
       return `${sign}${grouped}${decimal ? `.${decimal}` : ''}`;
     }
 
-    function nodeCoordinateText(node: { x: number; y: number; z: number }) {
-      const values = [node.x, node.y, node.z].map(formatLengthScalar).join(',');
-      return values;
+    function nodeHasProposedSupport(nodeId: string | undefined) {
+      return Boolean(nodeId && proposedSupportNodeIds.has(nodeId));
     }
 
-    function makeNodeLabelTexture(node: { x: number; y: number; z: number }, index: number, rows: EntityLabelRow[] = []) {
-      return entityLabelTextureStates('node', compactNodeLabel(node, index), rows);
+    function makeNodeLabelTexture(node: { id?: string; x: number; y: number; z: number }, index: number, rows: EntityLabelRow[] = []) {
+      const coordinateRows = [{
+        text: `X${formatLengthScalar(node.x)}  Y${formatLengthScalar(node.y)}  Z${formatLengthScalar(node.z)}`,
+        variant: 'detail' as const,
+      }];
+      const supportRows = nodeHasProposedSupport(node.id)
+        ? [{ text: 'PS', color: sceneSupportColor(), variant: 'detail' as const }]
+        : [];
+      return entityLabelTextureStates('node', compactNodeLabel(index), [...coordinateRows, ...supportRows, ...rows]);
     }
 
-    function makeExpandedNodeLabelTexture(node: { x: number; y: number; z: number }, index: number) {
+    function makeExpandedNodeLabelTexture(node: { id?: string; x: number; y: number; z: number }, index: number) {
       const nodeId = String(index + 1);
       const xValue = formatLengthScalar(node.x);
       const yValue = formatLengthScalar(node.y);
       const zValue = formatLengthScalar(node.z);
-      return expandedEntityLabelTextureStates('node', [
+      const lines: ExpandedEntityLabelLine[] = [
         `Node: ${nodeId}`,
-        `X: ${xValue}`,
-        `Y: ${yValue}`,
-        `Z: ${zValue}`,
-      ]);
+        `X: ${xValue}  Y: ${yValue}  Z: ${zValue}`,
+      ];
+      if (nodeHasProposedSupport(node.id)) lines.push({ text: 'Proposed support', color: sceneSupportColor() });
+      return expandedEntityLabelTextureStates('node', lines);
     }
 
     function nodeDisplayNumber(nodeId: string | undefined) {
@@ -1559,8 +1665,17 @@ export function Viewport3D({
       return index >= 0 ? String(index + 1) : nodeId;
     }
 
+    function memberDisplayNumber(memberId: string | undefined) {
+      if (!memberId) return 'n/a';
+      const member = displayMembers.find((item) => (
+        item.id === memberId || item.segments.some((segment) => segment.memberId === memberId)
+      ));
+      return member?.id ?? memberId;
+    }
+
     function makeSupportLabelTexture(support: RenderSupport, index: number) {
-      return entityLabelTextureStates('support', compactSupportLabel(support, index));
+      const detail = isBriefVisualSupport(support) ? 'Proposed' : supportType(support);
+      return entityLabelTextureStates('support', compactSupportLabel(support, index), [{ text: detail, variant: 'detail' }]);
     }
 
     function makeExpandedSupportLabelTexture(support: RenderSupport, index: number) {
@@ -1591,17 +1706,12 @@ export function Viewport3D({
     }
 
     function makeLoadLabelTexture(load: RenderLoad, index: number) {
-      return entityLabelTextureStates('load', compactLoadLabel(load, index), []);
-    }
-
-    function loadTypeText(load: RenderLoad) {
-      if (isSelfWeightLoad(load)) return 'Self weight';
-      return load.kind === 'uniform_line' ? 'Line load' : 'Point load';
+      return entityLabelTextureStates('load', compactLoadLabel(load, index), [{ text: loadDisplayText(load), variant: 'detail' }]);
     }
 
     function loadTargetText(load: RenderLoad) {
       const memberId = loadMemberId(load);
-      if (memberId) return `Member ${memberId}`;
+      if (memberId) return `Member ${memberDisplayNumber(memberId)}`;
       const nodeId = loadNodeId(load);
       if (nodeId) return `Node ${nodeDisplayNumber(nodeId)}`;
       if (Number.isFinite(load.x) && Number.isFinite(load.y)) {
@@ -1612,8 +1722,7 @@ export function Viewport3D({
 
     function makeExpandedLoadLabelTexture(load: RenderLoad, index: number) {
       return expandedEntityLabelTextureStates('load', [
-        `Load: ${index + 1}`,
-        `Type: ${loadTypeText(load)}`,
+        `${loadAbbreviation(load)} ${index + 1}`,
         `Value: ${loadDisplayText(load)}`,
         `Target: ${loadTargetText(load)}`,
       ]);
@@ -1629,25 +1738,27 @@ export function Viewport3D({
     }
 
     function createMemberLabel(member: DisplayMember, points: THREE.Vector3[], ownerTargets: AgentTarget[] = []) {
-      const { texture, widthPx, heightPx, stateTextures } = makeMemberDimensionLabelTexture(member);
+      const themeTextureFactory = () => makeMemberDimensionLabelTexture(member);
+      const { texture, widthPx, heightPx, stateTextures } = themeTextureFactory();
       const material = new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false, transparent: true });
       const sprite = new THREE.Sprite(material);
       const anchor = memberLabelPoint(points);
       sprite.position.copy(anchor);
       sprite.renderOrder = 90;
       const anchorClearancePx = 0;
-      return { sprite, material, texture, stateTextures, widthPx, heightPx, anchor, anchorClearancePx, offset: { x: 0, y: 0 }, priority: 3, kind: 'member' as const, ownerTargets, member, placement: 'pinned' as const };
+      return { sprite, material, texture, stateTextures, widthPx, heightPx, anchor, anchorClearancePx, offset: { x: 0, y: 0 }, priority: 3, kind: 'member' as const, ownerTargets, member, placement: 'pinned' as const, themeTextureFactory };
     }
 
     function createMemberDetailLabel(member: DisplayMember, points: THREE.Vector3[], ownerTargets: AgentTarget[] = []) {
-      const { texture, widthPx, heightPx, stateTextures } = makeExpandedMemberLabelTexture(member);
+      const themeTextureFactory = () => makeExpandedMemberLabelTexture(member);
+      const { texture, widthPx, heightPx, stateTextures } = themeTextureFactory();
       const material = new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false, transparent: true });
       const sprite = new THREE.Sprite(material);
       const anchor = memberLabelPoint(points);
       sprite.position.copy(anchor);
       sprite.renderOrder = 94;
       const anchorClearancePx = 0;
-      return { sprite, material, texture, stateTextures, widthPx, heightPx, anchor, anchorClearancePx, offset: { x: 0, y: 0 }, priority: 0, kind: 'member' as const, ownerTargets, member, hoverOnly: true };
+      return { sprite, material, texture, stateTextures, widthPx, heightPx, anchor, anchorClearancePx, offset: { x: 0, y: 0 }, priority: 0, kind: 'member' as const, ownerTargets, member, hoverOnly: true, themeTextureFactory };
     }
 
     function labelPrimitiveRadius(widthPx: number, heightPx: number, anchorClearancePx = 0) {
@@ -1663,69 +1774,77 @@ export function Viewport3D({
     }
 
     function createNodeLabel(node: { id: string; x: number; y: number; z: number }, index: number, focused: boolean, rows: EntityLabelRow[] = [], ownerTargets: AgentTarget[] = []) {
-      const { texture, widthPx, heightPx, stateTextures } = makeNodeLabelTexture(node, index, rows);
+      const themeTextureFactory = () => makeNodeLabelTexture(node, index, rows);
+      const { texture, widthPx, heightPx, stateTextures } = themeTextureFactory();
       const material = new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false, transparent: true });
       const sprite = new THREE.Sprite(material);
       const anchor = new THREE.Vector3(node.x, node.y, node.z);
       sprite.position.copy(anchor);
       sprite.renderOrder = focused ? 93 : 88;
       const anchorClearancePx = NODE_POINT_SIZE_PX * 0.5;
-      const label = { sprite, material, texture, stateTextures, widthPx, heightPx, anchor, anchorClearancePx, offset: labelPrimitiveOffset(widthPx, heightPx, -Math.PI / 2, anchorClearancePx), priority: focused ? 0 : 1, kind: 'node' as const, ownerTargets };
+      const label = { sprite, material, texture, stateTextures, widthPx, heightPx, anchor, anchorClearancePx, offset: labelPrimitiveOffset(widthPx, heightPx, -Math.PI / 2, anchorClearancePx), priority: focused ? 0 : 1, kind: 'node' as const, ownerTargets, themeTextureFactory };
       nodeLabelSprites.push(label);
       s.add(sprite);
       return label;
     }
 
     function createNodeDetailLabel(node: { id: string; x: number; y: number; z: number }, index: number, ownerTargets: AgentTarget[] = []) {
-      const { texture, widthPx, heightPx, stateTextures } = makeExpandedNodeLabelTexture(node, index);
+      const themeTextureFactory = () => makeExpandedNodeLabelTexture(node, index);
+      const { texture, widthPx, heightPx, stateTextures } = themeTextureFactory();
       const material = new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false, transparent: true });
       const sprite = new THREE.Sprite(material);
       const anchor = new THREE.Vector3(node.x, node.y, node.z);
       sprite.position.copy(anchor);
       sprite.renderOrder = 94;
       const anchorClearancePx = NODE_POINT_SIZE_PX * 0.5;
-      const label = { sprite, material, texture, stateTextures, widthPx, heightPx, anchor, anchorClearancePx, offset: labelPrimitiveOffset(widthPx, heightPx, -Math.PI / 2, anchorClearancePx), priority: 0, kind: 'node' as const, ownerTargets, hoverOnly: true };
+      const label = { sprite, material, texture, stateTextures, widthPx, heightPx, anchor, anchorClearancePx, offset: labelPrimitiveOffset(widthPx, heightPx, -Math.PI / 2, anchorClearancePx), priority: 0, kind: 'node' as const, ownerTargets, hoverOnly: true, themeTextureFactory };
       nodeLabelSprites.push(label);
       s.add(sprite);
       return label;
     }
 
     function createSupportLabel(support: RenderSupport, index: number, anchor: THREE.Vector3, focused: boolean) {
-      const { texture, widthPx, heightPx, stateTextures } = makeSupportLabelTexture(support, index);
+      const themeTextureFactory = () => makeSupportLabelTexture(support, index);
+      const themeOffsetFactory = (textureSpec: LabelTextureSpec) => supportLabelOffset(supportType(support), textureSpec.heightPx);
+      const { texture, widthPx, heightPx, stateTextures } = themeTextureFactory();
       const material = new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false, transparent: true });
       const sprite = new THREE.Sprite(material);
       sprite.position.copy(anchor);
       sprite.renderOrder = focused ? 94 : 91;
       const anchorClearancePx = 12;
-      const nodeId = supportNodeId(support);
-      const label = { sprite, material, texture, stateTextures, widthPx, heightPx, anchor, anchorClearancePx, offset: labelPrimitiveOffset(widthPx, heightPx, Math.PI / 4, anchorClearancePx), priority: focused ? 0 : 2, kind: 'support' as const, ownerTargets: [
-        { kind: 'support', id: support.id },
-        ...(nodeId ? [{ kind: 'node', id: nodeId }] : []),
-      ] };
+      const supportTarget = { kind: 'support' as const, id: support.id };
+      const ownerTargets = isBriefVisualSupport(support) ? [] : [supportTarget];
+      const label = { sprite, material, texture, stateTextures, widthPx, heightPx, anchor, anchorClearancePx, offset: themeOffsetFactory({ texture, widthPx, heightPx, stateTextures }), priority: focused ? 0 : 2, kind: 'support' as const, ownerTargets, hoverTargets: ownerTargets, placement: 'anchored' as const, themeTextureFactory, themeOffsetFactory };
       supportLabelSprites.push(label);
       s.add(sprite);
       return label;
     }
 
     function createSupportDetailLabel(support: RenderSupport, index: number, anchor: THREE.Vector3) {
-      const { texture, widthPx, heightPx, stateTextures } = makeExpandedSupportLabelTexture(support, index);
+      const themeTextureFactory = () => makeExpandedSupportLabelTexture(support, index);
+      const themeOffsetFactory = (textureSpec: LabelTextureSpec) => supportLabelOffset(supportType(support), textureSpec.heightPx);
+      const { texture, widthPx, heightPx, stateTextures } = themeTextureFactory();
       const material = new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false, transparent: true });
       const sprite = new THREE.Sprite(material);
       sprite.position.copy(anchor);
       sprite.renderOrder = 95;
       const anchorClearancePx = 12;
-      const nodeId = supportNodeId(support);
-      const label = { sprite, material, texture, stateTextures, widthPx, heightPx, anchor, anchorClearancePx, offset: labelPrimitiveOffset(widthPx, heightPx, Math.PI / 4, anchorClearancePx), priority: 0, kind: 'support' as const, ownerTargets: [
-        { kind: 'support', id: support.id },
-        ...(nodeId ? [{ kind: 'node', id: nodeId }] : []),
-      ], hoverOnly: true };
+      const supportTarget = { kind: 'support' as const, id: support.id };
+      const ownerTargets = isBriefVisualSupport(support) ? [] : [supportTarget];
+      const label = { sprite, material, texture, stateTextures, widthPx, heightPx, anchor, anchorClearancePx, offset: themeOffsetFactory({ texture, widthPx, heightPx, stateTextures }), priority: 0, kind: 'support' as const, ownerTargets, hoverTargets: ownerTargets, placement: 'anchored' as const, hoverOnly: true, themeTextureFactory, themeOffsetFactory };
       supportLabelSprites.push(label);
       s.add(sprite);
       return label;
     }
 
-    function createLoadLabel(load: RenderLoad, index: number, anchor: THREE.Vector3) {
-      const { texture, widthPx, heightPx, stateTextures } = makeLoadLabelTexture(load, index);
+    function createLoadLabel(
+      load: RenderLoad,
+      index: number,
+      anchor: THREE.Vector3,
+      loadTrack?: LoadLabelTrack,
+    ) {
+      const themeTextureFactory = () => makeLoadLabelTexture(load, index);
+      const { texture, widthPx, heightPx, stateTextures } = themeTextureFactory();
       const material = new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false, transparent: true });
       const sprite = new THREE.Sprite(material);
       sprite.position.copy(anchor);
@@ -1733,22 +1852,28 @@ export function Viewport3D({
       const anchorClearancePx = 0;
       const label = { sprite, material, texture, stateTextures, widthPx, heightPx, anchor, anchorClearancePx, offset: labelPrimitiveOffset(widthPx, heightPx, -Math.PI / 4, anchorClearancePx), priority: 4, kind: 'load' as const, ownerTargets: [
         { kind: 'load', id: load.id },
-      ] };
+      ], placement: loadTrack ? 'load-line' as const : 'load-point' as const, loadTrack, themeTextureFactory };
       loadLabelSprites.push(label);
       s.add(sprite);
       return label;
     }
 
-    function createLoadDetailLabel(load: RenderLoad, index: number, anchor: THREE.Vector3) {
-      const { texture, widthPx, heightPx, stateTextures } = makeExpandedLoadLabelTexture(load, index);
+    function createLoadDetailLabel(
+      load: RenderLoad,
+      index: number,
+      anchor: THREE.Vector3,
+      loadTrack?: LoadLabelTrack,
+    ) {
+      const themeTextureFactory = () => makeExpandedLoadLabelTexture(load, index);
+      const { texture, widthPx, heightPx, stateTextures } = themeTextureFactory();
       const material = new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false, transparent: true });
       const sprite = new THREE.Sprite(material);
       sprite.position.copy(anchor);
       sprite.renderOrder = 95;
       const anchorClearancePx = 0;
-      const label = { sprite, material, texture, stateTextures, widthPx, heightPx, anchor, anchorClearancePx, offset: labelPrimitiveOffset(widthPx, heightPx, -Math.PI / 4, anchorClearancePx), priority: 0, kind: 'load' as const, ownerTargets: [
+      const label = { sprite, material, texture, stateTextures, widthPx, heightPx, anchor, anchorClearancePx, offset: labelPrimitiveOffset(widthPx, heightPx, -Math.PI / 4, anchorClearancePx), priority: 4, kind: 'load' as const, ownerTargets: [
         { kind: 'load', id: load.id },
-      ], hoverOnly: true };
+      ], placement: loadTrack ? 'load-line' as const : 'load-point' as const, loadTrack, hoverOnly: true, themeTextureFactory };
       loadLabelSprites.push(label);
       s.add(sprite);
       return label;
@@ -2059,7 +2184,7 @@ export function Viewport3D({
       anchor: THREE.Vector3,
       tone: 'support' | 'load' | 'release',
       focused: boolean,
-      options: { direction?: THREE.Vector3; offset?: { x: number; y: number }; pin?: { x: number; y: number } } = {},
+      options: { direction?: THREE.Vector3; offset?: { x: number; y: number }; pin?: { x: number; y: number }; proposed?: boolean; target?: AgentTarget } = {},
     ) {
       const material = new THREE.SpriteMaterial({ alphaMap: textureSpec.texture, depthTest: false, depthWrite: false, transparent: true });
       const sprite = new THREE.Sprite(material);
@@ -2068,7 +2193,18 @@ export function Viewport3D({
       }
       sprite.position.copy(anchor);
       sprite.renderOrder = tone === 'load' ? (focused ? 49 : 48) : (focused ? 45 : 40);
-      const item = { sprite, material, texture: textureSpec.texture, widthPx: textureSpec.widthPx, heightPx: textureSpec.heightPx, anchor, tone, focused, ...options };
+      const halo = tone === 'support'
+        ? (() => {
+            const haloMaterial = new THREE.SpriteMaterial({ alphaMap: textureSpec.texture, depthTest: false, depthWrite: false, transparent: true });
+            const haloSprite = new THREE.Sprite(haloMaterial);
+            haloSprite.position.copy(anchor);
+            haloSprite.renderOrder = sprite.renderOrder - 1;
+            haloSprite.visible = focused;
+            s.add(haloSprite);
+            return { sprite: haloSprite, material: haloMaterial };
+          })()
+        : undefined;
+      const item = { sprite, material, texture: textureSpec.texture, widthPx: textureSpec.widthPx, heightPx: textureSpec.heightPx, anchor, tone, focused, halo, ...options };
       symbolSprites.push(item);
       s.add(sprite);
       return item;
@@ -2076,7 +2212,12 @@ export function Viewport3D({
 
     function createSupportSymbol(support: RenderSupport, anchor: THREE.Vector3, focused: boolean) {
       const kind = supportType(support);
-      return createSymbolSprite(makeSymbolTexture(supportSymbolSpec(kind, supportGroupLabel(support))), anchor, 'support', focused, { offset: { x: 0, y: kind === 'Fixed' ? 8 : kind === 'Indicative' ? 14 : 18 } });
+      const proposed = isBriefVisualSupport(support);
+      return createSymbolSprite(makeSymbolTexture(supportSymbolSpec(kind, supportGroupLabel(support))), anchor, 'support', focused, {
+        offset: supportSymbolOffset(kind),
+        proposed,
+        target: proposed ? undefined : { kind: 'support', id: support.id },
+      });
     }
 
     function arrowHeadWidthAxis(direction: THREE.Vector3, preferredAxis: THREE.Vector3) {
@@ -2095,38 +2236,126 @@ export function Viewport3D({
       return new THREE.Vector3(1, 0, 0);
     }
 
-    function createLoadArrow(points: { tail: THREE.Vector3; head: THREE.Vector3; tangent: THREE.Vector3 }, material: LineMaterial, headMaterial: THREE.MeshBasicMaterial, renderOrder: number) {
+    function registerLoadInteractionStroke(loadId: string, line: Line2, halo: Line2 | null, baseRenderOrder: number) {
+      loadInteractionStrokes.push({ loadId, line, halo, baseRenderOrder });
+    }
+
+    function createLoadLabelLeader(loadId: string) {
+      const origin = new THREE.Vector3();
+      const railRenderOrder = 16.5;
+      // Layer the leader halo below the rail foreground and the leader stroke
+      // above it, preserving both red strokes through their shared junction.
+      const glyph = createGlyphLine([origin, origin], loadMat, railRenderOrder + 0.5, loadHaloMat);
+      glyph.line.visible = false;
+      glyph.line.frustumCulled = false;
+      if (glyph.haloLine) {
+        glyph.haloLine.visible = false;
+        glyph.haloLine.frustumCulled = false;
+      }
+      const leader = { line: glyph.line, halo: glyph.haloLine };
+      loadLabelLeaders.push(leader);
+      registerLoadInteractionStroke(loadId, glyph.line, glyph.haloLine, railRenderOrder + 0.5);
+      return leader;
+    }
+
+    function updateLoadLabelLeaderGeometry(leader: LoadLabelLeaderVisual, start: THREE.Vector3, end: THREE.Vector3) {
+      const positions = [start, end].flatMap((point) => [point.x, point.y, point.z]);
+      (leader.line.geometry as LineGeometry).setPositions(positions);
+      leader.line.computeLineDistances();
+      leader.line.visible = true;
+      if (leader.halo) {
+        (leader.halo.geometry as LineGeometry).setPositions(positions);
+        leader.halo.computeLineDistances();
+        leader.halo.visible = true;
+      }
+    }
+
+    function createLoadArrow(loadId: string, points: { tail: THREE.Vector3; head: THREE.Vector3; tangent: THREE.Vector3 }, renderOrder: number) {
       const dir = points.head.clone().sub(points.tail).normalize();
       const tangent = arrowHeadWidthAxis(dir, points.tangent);
       const neck = points.head.clone().addScaledVector(dir, -loadArrowSymbol.headBack);
-      loadArrowSegments.push({ start: points.tail.clone(), end: points.head.clone() });
-      createGlyphLine([points.tail, neck], material, renderOrder, material === focusedLoadMat ? focusedLoadHaloMat : loadHaloMat);
+      // Keep the shaft foreground above the open head's halo so it remains visible
+      // all the way to the exact tip shared by the two head strokes.
+      const shaft = createGlyphLine([points.tail, points.head], loadMat, renderOrder + 0.5, loadHaloMat);
       const left = neck.clone().addScaledVector(tangent, -loadArrowSymbol.headHalfWidth);
       const right = neck.clone().addScaledVector(tangent, loadArrowSymbol.headHalfWidth);
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.Float32BufferAttribute([
-        left.x, left.y, left.z,
-        points.head.x, points.head.y, points.head.z,
-        right.x, right.y, right.z,
-      ], 3));
-      geometry.setIndex([0, 1, 2]);
-      const mesh = new THREE.Mesh(geometry, headMaterial);
-      mesh.renderOrder = renderOrder + 1;
-      arrowHeadObjects.push(mesh);
-      s.add(mesh);
+      const head = createGlyphLine(
+        [left, points.head, right],
+        loadMat,
+        renderOrder + 1,
+        loadHaloMat,
+      );
+      const visual: LoadArrowVisual = {
+        shaft: shaft.line,
+        halo: shaft.haloLine,
+        head: head.line,
+        headHalo: head.haloLine,
+        tail: points.tail.clone(),
+        tip: points.head.clone(),
+      };
+      registerLoadInteractionStroke(loadId, shaft.line, shaft.haloLine, renderOrder + 0.5);
+      registerLoadInteractionStroke(loadId, head.line, head.haloLine, renderOrder + 1);
+      loadArrowSegments.push({ start: points.tail.clone(), end: points.head.clone(), visual });
+      return visual;
     }
 
-    function createPointLoadSymbol(anchor: THREE.Vector3, direction: THREE.Vector3, focused: boolean, memberTangent?: THREE.Vector3) {
-      const material = focused ? focusedLoadMat : loadMat;
+    function updateLoadArrowGeometry(
+      visual: LoadArrowVisual,
+      points: { tail: THREE.Vector3; head: THREE.Vector3; tangent: THREE.Vector3 },
+    ) {
+      visual.tail.copy(points.tail);
+      visual.tip.copy(points.head);
+      const shaftPositions = [points.tail, points.head].flatMap((point) => [point.x, point.y, point.z]);
+      (visual.shaft.geometry as LineGeometry).setPositions(shaftPositions);
+      visual.shaft.computeLineDistances();
+      if (visual.halo) {
+        (visual.halo.geometry as LineGeometry).setPositions(shaftPositions);
+        visual.halo.computeLineDistances();
+      }
+      updateCameraFacingLoadArrowHead(visual);
+    }
+
+    function updateCameraFacingLoadArrowHead(visual: LoadArrowVisual) {
+      const tail = projectToViewport(visual.tail);
+      const tip = projectToViewport(visual.tip);
+      const dx = tip.x - tail.x;
+      const dy = tip.y - tail.y;
+      const length = Math.hypot(dx, dy);
+      if (length <= 1e-6) return;
+      const along = { x: dx / length, y: dy / length };
+      const across = { x: -along.y, y: along.x };
+      const headBackPx = 9 * currentVisualProfile.symbolScale;
+      const headHalfWidthPx = 6 * currentVisualProfile.symbolScale;
+      const neck = {
+        x: tip.x - along.x * headBackPx,
+        y: tip.y - along.y * headBackPx,
+      };
+      const left = screenPointToWorld({
+        x: neck.x - across.x * headHalfWidthPx,
+        y: neck.y - across.y * headHalfWidthPx,
+      }, tip.z);
+      const right = screenPointToWorld({
+        x: neck.x + across.x * headHalfWidthPx,
+        y: neck.y + across.y * headHalfWidthPx,
+      }, tip.z);
+      const positions = [left, visual.tip, right].flatMap((point) => [point.x, point.y, point.z]);
+      (visual.head.geometry as LineGeometry).setPositions(positions);
+      visual.head.computeLineDistances();
+      if (visual.headHalo) {
+        (visual.headHalo.geometry as LineGeometry).setPositions(positions);
+        visual.headHalo.computeLineDistances();
+      }
+    }
+
+    function createPointLoadSymbol(loadId: string, anchor: THREE.Vector3, direction: THREE.Vector3, memberTangent?: THREE.Vector3) {
       const dir = direction.clone().normalize();
       const head = anchor.clone().addScaledVector(dir, -0.16);
       const tail = anchor.clone().addScaledVector(dir, -(loadArrowSymbol.shaftLength + 0.16));
-      createLoadArrow({ tail, head, tangent: memberTangent ?? new THREE.Vector3(0, 1, 0) }, material, focused ? focusedLoadHeadMat : loadHeadMat, focused ? 49 : 48);
+      createLoadArrow(loadId, { tail, head, tangent: memberTangent ?? new THREE.Vector3(0, 1, 0) }, 16.5);
       return tail;
     }
 
-    function createLineLoadSymbol(start: THREE.Vector3, end: THREE.Vector3, direction: THREE.Vector3, focused: boolean) {
-      const material = focused ? focusedLoadMat : loadMat;
+    function createLineLoadSymbol(loadId: string, start: THREE.Vector3, end: THREE.Vector3, direction: THREE.Vector3) {
       const dir = direction.clone().normalize();
       const memberVector = end.clone().sub(start);
       const memberLength = memberVector.length();
@@ -2137,34 +2366,65 @@ export function Viewport3D({
       const topOffset = loadArrowSymbol.shaftLength;
       const headOffset = 0.16;
       if (isParallelToMember) {
-        const renderOrder = focused ? 47 : 43;
+        const renderOrder = 16.5;
         const arrowLength = Math.min(loadArrowSymbol.shaftLength, Math.max(0.5, memberLength * 0.22), Math.max(0.05, memberLength * 0.75));
         const endMargin = Math.min(0.35, memberLength * 0.08);
         const firstCenter = endMargin + arrowLength / 2;
         const lastCenter = memberLength - endMargin - arrowLength / 2;
         const available = Math.max(0, lastCenter - firstCenter);
-        const preferredCenterSpacing = Math.max(1.1, arrowLength * 1.65);
-        const arrowCount = Math.max(1, Math.floor(available / preferredCenterSpacing) + 1);
         const sign = tangent.dot(dir) >= 0 ? 1 : -1;
-        for (let index = 0; index < arrowCount; index += 1) {
-          const centerDistance = arrowCount === 1 ? memberLength / 2 : firstCenter + (available * index) / (arrowCount - 1);
+        const arrows: LoadArrowVisual[] = [];
+        const maximumArrowCount = 8;
+        for (let index = 0; index < maximumArrowCount; index += 1) {
+          const centerDistance = firstCenter + (available * index) / (maximumArrowCount - 1);
           const tailDistance = centerDistance - sign * arrowLength / 2;
           const headDistance = centerDistance + sign * arrowLength / 2;
           const tail = start.clone().addScaledVector(tangent, tailDistance);
           const head = start.clone().addScaledVector(tangent, headDistance);
-          createLoadArrow({ tail, head, tangent: arrowTangent }, material, focused ? focusedLoadHeadMat : loadHeadMat, renderOrder);
+          arrows.push(createLoadArrow(loadId, { tail, head, tangent: arrowTangent }, renderOrder));
         }
+        loadLineVisualGroups.push({
+          start: start.clone(),
+          end: end.clone(),
+          arrows,
+          focused: false,
+          layout: {
+            start: start.clone(),
+            tangent: tangent.clone(),
+            arrowTangent: arrowTangent.clone(),
+            sign,
+            arrowLength,
+            firstCenter,
+            lastCenter,
+          },
+        });
         return start.clone().lerp(end, 0.5);
       }
-      createGlyphLine([
+      const rail = createGlyphLine([
         start.clone().addScaledVector(dir, -topOffset),
         end.clone().addScaledVector(dir, -topOffset),
-      ], material, focused ? 47 : 43, focused ? focusedLoadHaloMat : loadHaloMat);
-      [0, 1 / 3, 2 / 3, 1].forEach((t) => {
+      ], loadMat, 16.5, loadHaloMat);
+      registerLoadInteractionStroke(loadId, rail.line, rail.haloLine, 16.5);
+      const arrows: LoadArrowVisual[] = [];
+      Array.from({ length: 8 }, (_, index) => index / 7).forEach((t) => {
         const base = start.clone().lerp(end, t);
         const top = base.clone().addScaledVector(dir, -topOffset);
         const head = base.clone().addScaledVector(dir, -headOffset);
-        createLoadArrow({ tail: top, head, tangent: arrowTangent }, material, focused ? focusedLoadHeadMat : loadHeadMat, focused ? 47 : 43);
+        const arrow = createLoadArrow(loadId, { tail: top, head, tangent: arrowTangent }, 16.5);
+        arrows.push(arrow);
+      });
+      loadLineVisualGroups.push({
+        start: start.clone(),
+        end: end.clone(),
+        arrows,
+        focused: false,
+        layout: {
+          start: start.clone(),
+          end: end.clone(),
+          direction: dir.clone(),
+          tangent: arrowTangent.clone(),
+          tailOffset: topOffset,
+        },
       });
       return start.clone().lerp(end, 0.5).addScaledVector(dir, -topOffset);
     }
@@ -2344,34 +2604,36 @@ export function Viewport3D({
     previewMemberBatch = createMemberSegmentBatch(previewMemberPositions, previewMemberBatchMat, EDIT_RENDER_ORDER.preview);
     baseMemberHaloBatch = createMemberSegmentBatch(baseMemberPositions, baseMemberHaloMat, 15);
     baseMemberBatch = createMemberSegmentBatch(baseMemberPositions, memberBatchMat, 16);
-    hoverMemberHaloBatch = createMemberSegmentBatch([], hoverMemberHaloMat, 17);
     hoverMemberBatch = createMemberSegmentBatch([], hoverMemberMat, 18);
-    selectedMemberHaloBatch = createMemberSegmentBatch(selectedMemberPositions, selectedMemberHaloMat, 19);
     selectedMemberBatch = createMemberSegmentBatch(selectedMemberPositions, selectedMemberBatchMat, 20);
-    if (selectedMemberHaloBatch) selectedMemberHaloBatch.visible = selectedMemberPositions.length > 0;
     selectedMemberBatch.visible = selectedMemberPositions.length > 0;
-    if (hoverMemberHaloBatch) hoverMemberHaloBatch.visible = false;
     if (hoverMemberBatch) hoverMemberBatch.visible = false;
 
     const baseNodePoints = scene.nodes
-      .filter((node) => !isSchemePreviewNode(node))
+      .filter((node) => !isSchemePreviewNode(node) && isViewportNodeSelectable(node.id, proposedSupportNodeIds))
       .map((node) => new THREE.Vector3(node.x, node.y, node.z));
     const previewNodePoints = scene.nodes
-      .filter(isSchemePreviewNode)
+      .filter((node) => isSchemePreviewNode(node) && isViewportNodeSelectable(node.id, proposedSupportNodeIds))
       .map((node) => new THREE.Vector3(node.x, node.y, node.z));
-    scene.nodes.forEach((node) => nodeHitPoints.push({ nodeId: node.id, point: new THREE.Vector3(node.x, node.y, node.z) }));
+    const proposedSupportNodePoints = scene.nodes
+      .filter((node) => proposedSupportNodeIds.has(node.id))
+      .map((node) => new THREE.Vector3(node.x, node.y, node.z));
+    scene.nodes
+      .filter((node) => isViewportNodeSelectable(node.id, proposedSupportNodeIds))
+      .forEach((node) => nodeHitPoints.push({ nodeId: node.id, point: new THREE.Vector3(node.x, node.y, node.z) }));
     [createNodePoints(baseNodePoints)].forEach((points) => {
       if (!points) return;
       nodeObjects.push(points);
       s.add(points);
     });
     updateNodePointGeometry(createDynamicNodePoints(previewNodeFillMat, EDIT_RENDER_ORDER.schemePreviewNode), previewNodePoints);
+    updateNodePointGeometry(createDynamicNodePoints(proposedSupportNodeMat, EDIT_RENDER_ORDER.node), proposedSupportNodePoints);
     const hoverNodeFillPoints = createDynamicNodePoints(hoverNodeFillMat, EDIT_RENDER_ORDER.hoverNode);
     const selectedNodeFillPoints = createDynamicNodePoints(selectedNodeFillMat, EDIT_RENDER_ORDER.selectedNode);
 
     if (labelsEnabled) {
       scene.nodes.forEach((node, index) => {
-        if (isSchemePreviewNode(node)) return;
+        if (isSchemePreviewNode(node) || !isViewportNodeSelectable(node.id, proposedSupportNodeIds)) return;
         const ownerTargets = [
           { kind: 'node', id: node.id },
         ];
@@ -2384,31 +2646,47 @@ export function Viewport3D({
       const n = nodesById.get(supportNodeId(support) ?? '');
       if (!n) continue;
       const p = new THREE.Vector3(n.x, n.y, n.z);
-      const supportFocused = focusedSupports.has(support.id) || focusedNodes.has(supportNodeId(support) ?? '');
+      const supportFocused = focusedSupports.has(support.id);
       supportNodeById.set(support.id, supportNodeId(support) ?? '');
-      supportHitPoints.push({ supportId: support.id, nodeId: supportNodeId(support) ?? '', point: p });
+      if (!isBriefVisualSupport(support)) {
+        supportHitPoints.push({ supportId: support.id, nodeId: supportNodeId(support) ?? '', point: p, kind: supportType(support) });
+      }
       createSupportSymbol(support, p, supportFocused);
-      if (labelsEnabled) {
+      if (labelsEnabled && !isBriefVisualSupport(support)) {
         createSupportLabel(support, index, p, supportFocused);
         createSupportDetailLabel(support, index, p);
       }
     }
 
     for (const [loadIndex, load] of (scene.loads ?? []).entries()) {
+      if (isSelfWeightLoad(load)) continue;
       const { memberId } = memberPointsForLoad(load);
       const direction = loadDirection(load);
       const bases = loadBasePoints(load);
-      const loadFocused = focusedLoads.has(load.id) || (memberId ? focusedMembers.has(memberId) : false);
       const memberPoints = loadMemberPoints(load);
       const validLabelAnchor = hasValidLoadLabelAnchor(load, memberPoints);
       let labelAnchor: THREE.Vector3 | undefined;
-      if (!isSelfWeightLoad(load) && load.kind === 'uniform_line' && memberPoints) {
-        labelAnchor = createLineLoadSymbol(memberPoints.start, memberPoints.end, direction, loadFocused);
-        loadHitSegments.push({ loadId: load.id, start: memberPoints.start, end: memberPoints.end });
-      } else if (!isSelfWeightLoad(load)) {
+      let loadTrack: LoadLabelTrack | undefined;
+      if (load.kind === 'uniform_line' && memberPoints) {
+        labelAnchor = createLineLoadSymbol(load.id, memberPoints.start, memberPoints.end, direction);
+        const memberTangent = memberPoints.end.clone().sub(memberPoints.start).normalize();
+        const visualOffset = Math.abs(memberTangent.dot(direction)) > 0.985
+          ? new THREE.Vector3()
+          : direction.clone().multiplyScalar(-loadArrowSymbol.shaftLength);
+        loadTrack = {
+          start: memberPoints.start.clone().add(visualOffset),
+          end: memberPoints.end.clone().add(visualOffset),
+          direction: direction.clone(),
+        };
+        loadHitSegments.push({
+          loadId: load.id,
+          start: memberPoints.start.clone().add(visualOffset),
+          end: memberPoints.end.clone().add(visualOffset),
+        });
+      } else {
         const memberTangent = memberPoints ? memberPoints.end.clone().sub(memberPoints.start) : nearbyMemberTangentForLoad(bases[0], direction);
         bases.forEach((base, baseIndex) => {
-          const anchor = createPointLoadSymbol(base, direction, loadFocused, memberTangent);
+          const anchor = createPointLoadSymbol(load.id, base, direction, memberTangent);
           if (baseIndex === 0) labelAnchor = anchor;
           loadHitAnchors.push({ loadId: load.id, point: anchor });
         });
@@ -2416,8 +2694,9 @@ export function Viewport3D({
       bases.forEach((base) => loadHitAnchors.push({ loadId: load.id, point: base }));
       if (labelsEnabled && validLabelAnchor) {
         const anchor = labelAnchor ?? bases[0];
-        createLoadLabel(load, loadIndex, anchor);
-        createLoadDetailLabel(load, loadIndex, anchor);
+        if (loadTrack) loadTrack.leader = createLoadLabelLeader(load.id);
+        createLoadLabel(load, loadIndex, anchor, loadTrack);
+        createLoadDetailLabel(load, loadIndex, anchor, loadTrack);
       }
     }
 
@@ -2436,6 +2715,36 @@ export function Viewport3D({
       );
     }
 
+    function refreshLabelTexturesForTheme() {
+      const labels = [
+        ...memberLabelSprites,
+        ...nodeLabelSprites,
+        ...supportLabelSprites,
+        ...loadLabelSprites,
+      ];
+      labels.forEach((label) => {
+        if (!label.themeTextureFactory) return;
+        const previousTextures = new Set<THREE.CanvasTexture>([
+          label.texture,
+          ...Object.values(label.stateTextures ?? {}),
+        ]);
+        const previousState: LabelVisualState = label.material.map === label.stateTextures?.selected
+          ? 'selected'
+          : label.material.map === label.stateTextures?.hover
+            ? 'hover'
+            : 'base';
+        const next = label.themeTextureFactory();
+        label.texture = next.texture;
+        label.stateTextures = next.stateTextures;
+        label.widthPx = next.widthPx;
+        label.heightPx = next.heightPx;
+        if (label.themeOffsetFactory) label.offset = label.themeOffsetFactory(next);
+        label.material.map = next.stateTextures?.[previousState] ?? next.texture;
+        label.material.needsUpdate = true;
+        previousTextures.forEach((texture) => texture.dispose());
+      });
+    }
+
     function applyTheme() {
       const bg = viewportBackgroundColor();
       const isDark = isDarkMode();
@@ -2451,25 +2760,23 @@ export function Viewport3D({
       previewMemberHaloMat.opacity = 0.92;
       previewMemberBatchMat.color.set(interaction.hoverAccent);
       previewMemberBatchMat.opacity = interaction.hoverOpacity;
-      selectedMemberHaloMat.color.set(interaction.haloUnderlay);
-      selectedMemberHaloMat.opacity = 1;
       selectedMemberBatchMat.color.set(interaction.selectedAccent);
       selectedMemberBatchMat.opacity = interaction.selectedOpacity;
-      hoverMemberHaloMat.color.set(interaction.haloUnderlay);
-      hoverMemberHaloMat.opacity = 0.92;
       hoverMemberMat.color.set(interaction.hoverAccent);
       hoverMemberMat.opacity = interaction.hoverOpacity;
       loadMat.color.set(sceneLoadColor());
       focusedLoadMat.color.set(sceneLoadColor());
       loadHaloMat.color.set(interaction.haloUnderlay);
-      focusedLoadHaloMat.color.set(interaction.haloUnderlay);
+      focusedLoadHaloMat.color.set(interaction.selectedAccent);
+      focusedLoadHaloMat.opacity = interaction.selectedOpacity;
+      hoverLoadHaloMat.color.set(interaction.hoverAccent);
+      hoverLoadHaloMat.opacity = interaction.hoverOpacity;
       releaseHaloMat.color.set(interaction.haloUnderlay);
-      loadHeadMat.color.set(sceneLoadColor());
-      focusedLoadHeadMat.color.set(sceneLoadColor());
       nodeMat.color.set(viewportNodeColor());
+      proposedSupportNodeMat.color.set(viewportNodeColor());
       focusedNodeMat.color.set(viewportNodeColor());
       selectedNodeFillMat.color.set(interaction.selectedAccent);
-      selectedNodeFillMat.opacity = 1;
+      selectedNodeFillMat.opacity = interaction.selectedOpacity;
       hoverNodeFillMat.color.set(interaction.hoverAccent);
       hoverNodeFillMat.opacity = Math.max(interaction.hoverOpacity, 0.88);
       previewNodeFillMat.color.set(interaction.hoverAccent);
@@ -2489,12 +2796,19 @@ export function Viewport3D({
         if (symbol.tone === 'support') symbol.material.color.set(supportColor);
         if (symbol.tone === 'load') symbol.material.color.set(loadColor);
         if (symbol.tone === 'release') symbol.material.color.set(isDark ? '#cbd5e1' : '#475569');
+        if (symbol.halo) {
+          symbol.halo.material.color.set(interaction.selectedAccent);
+          symbol.halo.material.opacity = interaction.selectedOpacity;
+        }
       });
+      updateSymbolInteractionStates();
       refreshViewGizmoIfNeeded();
     }
     applyTheme();
     const themeQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleThemeChange = () => {
+      refreshLabelTexturesForTheme();
+      updateEditOverlay(currentEditOverlay);
       applyTheme();
       scheduleRender();
     };
@@ -2521,7 +2835,7 @@ export function Viewport3D({
       controls.minZoom = 0.15;
       controls.maxZoom = 12;
     }
-    const savedCamera = cameraStateRef.current;
+    const savedCamera = loadStoredViewportCamera(cameraScopeKey);
     function cameraPreset(view: ViewportCameraView) {
       return view === 'front'
         ? { direction: new THREE.Vector3(0, 0, 1), up: new THREE.Vector3(0, 1, 0) }
@@ -2545,23 +2859,22 @@ export function Viewport3D({
       shouldFitScene = true;
     }
     function saveCameraState() {
-      cameraStateRef.current = {
-        scopeKey: cameraScopeKey,
+      saveStoredViewportCamera(cameraScopeKey, {
         hasSceneGeometry,
-        position: camera.position.clone(),
-        target: controls.target.clone(),
-        up: camera.up.clone(),
+        position: [camera.position.x, camera.position.y, camera.position.z],
+        target: [controls.target.x, controls.target.y, controls.target.z],
+        up: [camera.up.x, camera.up.y, camera.up.z],
         zoom: camera.zoom,
         viewSize,
-      };
+      });
     }
     applyCameraView('iso');
-    const canRestoreSavedCamera = savedCamera?.scopeKey === cameraScopeKey && (savedCamera.hasSceneGeometry || !hasSceneGeometry);
+    const canRestoreSavedCamera = savedCamera && (savedCamera.hasSceneGeometry || !hasSceneGeometry);
     if (canRestoreSavedCamera) {
-      camera.position.copy(savedCamera.position);
-      controls.target.copy(savedCamera.target);
-      controls.cursor.copy(savedCamera.target);
-      camera.up.copy(savedCamera.up);
+      camera.position.fromArray(savedCamera.position);
+      controls.target.fromArray(savedCamera.target);
+      controls.cursor.fromArray(savedCamera.target);
+      camera.up.fromArray(savedCamera.up);
       camera.zoom = savedCamera.zoom;
       viewSize = savedCamera.viewSize;
       shouldFitScene = false;
@@ -2584,6 +2897,82 @@ export function Viewport3D({
       saveCameraState();
       scheduleRender();
     };
+    let activeCameraPointerId: number | null = null;
+    let strandChordPan: { pointerId: number; x: number; y: number } | null = null;
+
+    function finishStrandChordPan() {
+      if (!strandChordPan) return;
+      strandChordPan = null;
+      controls.enabled = true;
+      activeCameraPointerId = null;
+      saveCameraState();
+      scheduleRender();
+    }
+
+    function handleStrandChordPointerMove(event: PointerEvent) {
+      if (!strandChordPan) return;
+      const dx = event.clientX - strandChordPan.x;
+      const dy = event.clientY - strandChordPan.y;
+      strandChordPan.x = event.clientX;
+      strandChordPan.y = event.clientY;
+      camera.updateMatrixWorld(true);
+      const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+      const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+      const worldX = (camera.right - camera.left) / Math.max(camera.zoom, 0.001) / Math.max(renderer.domElement.clientWidth, 1);
+      const worldY = (camera.top - camera.bottom) / Math.max(camera.zoom, 0.001) / Math.max(renderer.domElement.clientHeight, 1);
+      const offset = right.multiplyScalar(-dx * worldX).add(up.multiplyScalar(dy * worldY));
+      camera.position.add(offset);
+      controls.target.add(offset);
+      controls.cursor.add(offset);
+      saveCameraState();
+      scheduleRender();
+    }
+
+    function handleStrandChordPointerUp() {
+      finishStrandChordPan();
+      document.removeEventListener('pointermove', handleStrandChordPointerMove, true);
+      document.removeEventListener('pointerup', handleStrandChordPointerUp, true);
+      document.removeEventListener('pointercancel', handleStrandChordPointerUp, true);
+    }
+
+    function cancelActiveCameraGesture() {
+      if (strandChordPan) {
+        handleStrandChordPointerUp();
+        return;
+      }
+      if (activeCameraPointerId === null) return;
+      renderer.domElement.dispatchEvent(new PointerEvent('pointercancel', { pointerId: activeCameraPointerId }));
+      activeCameraPointerId = null;
+    }
+
+    function orbitMouseAction(action: ViewportNavigationAction, event: PointerEvent) {
+      if (action === 'zoom') return THREE.MOUSE.DOLLY;
+      const modified = event.shiftKey || event.ctrlKey || event.metaKey;
+      if (action === 'rotate') return modified ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+      if (action === 'pan') return modified ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN;
+      return -1;
+    }
+
+    function configureNavigationGesture(event: PointerEvent) {
+      const action = resolveViewportNavigationGesture(currentNavigationProfileId, event, currentCustomNavigationSettings);
+      if (action === 'pan' && currentNavigationProfileId === 'strand7' && event.buttons === 3) {
+        cancelActiveCameraGesture();
+        controls.enabled = false;
+        markCameraInteractionStart();
+        activeCameraPointerId = event.pointerId;
+        strandChordPan = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+        document.addEventListener('pointermove', handleStrandChordPointerMove, true);
+        document.addEventListener('pointerup', handleStrandChordPointerUp, true);
+        document.addEventListener('pointercancel', handleStrandChordPointerUp, true);
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      const buttonKey = event.button === 0 ? 'LEFT' : event.button === 1 ? 'MIDDLE' : event.button === 2 ? 'RIGHT' : null;
+      if (!buttonKey) return;
+      controls.mouseButtons[buttonKey] = orbitMouseAction(action, event) as THREE.MOUSE;
+      activeCameraPointerId = action === 'none' ? null : event.pointerId;
+    }
     const handleViewGizmoStart = () => {
       cancelSmoothFitAnimation();
       userInteractingWithCamera = true;
@@ -2750,6 +3139,90 @@ export function Viewport3D({
     let selectionCanvasHeight = 0;
     let resizeRenderLoopId = 0;
     let resizeRenderLoopUntil = 0;
+
+    function uniformLineArrowPoints(layout: UniformLineLoadLayout, t: number, isEndpoint: boolean) {
+      const profile = currentVisualProfile;
+      const base = layout.start.clone().lerp(layout.end, t);
+      const pxPerWorldUnit = projectedDirectionScale(base, layout.direction);
+      const loadVisualRadiusPx = (profile.loadStrokePx + profile.haloExtraPx) / 2;
+      const obstacleRadiusPx = isEndpoint
+        ? NODE_POINT_SIZE_PX * NODE_POINT_RADIUS_RATIO * profile.nodeScale
+        : profile.memberStrokePx / 2;
+      const headClearanceWorld = (
+        obstacleRadiusPx + loadVisualRadiusPx + 2.5
+      ) / pxPerWorldUnit * profile.detail;
+      return {
+        tail: base.clone().addScaledVector(layout.direction, -layout.tailOffset),
+        head: base.clone().addScaledVector(layout.direction, -headClearanceWorld),
+        tangent: layout.tangent,
+      };
+    }
+
+    function parallelLineArrowPoints(layout: ParallelLineLoadLayout, t: number) {
+      const centerDistance = THREE.MathUtils.lerp(layout.firstCenter, layout.lastCenter, t);
+      const tailDistance = centerDistance - layout.sign * layout.arrowLength / 2;
+      const headDistance = centerDistance + layout.sign * layout.arrowLength / 2;
+      return {
+        tail: layout.start.clone().addScaledVector(layout.tangent, tailDistance),
+        head: layout.start.clone().addScaledVector(layout.tangent, headDistance),
+        tangent: layout.arrowTangent,
+      };
+    }
+
+    function applyViewportVisualProfile() {
+      currentVisualProfile = viewportVisualProfile(camera.zoom);
+      const profile = currentVisualProfile;
+
+      memberBatchMat.linewidth = profile.memberStrokePx;
+      selectedMemberBatchMat.linewidth = profile.memberStrokePx;
+      hoverMemberMat.linewidth = profile.memberStrokePx;
+      baseMemberHaloMat.linewidth = profile.memberStrokePx + profile.haloExtraPx;
+      baseMemberHaloMat.opacity = 0.96 * profile.detail;
+
+      loadMat.linewidth = profile.loadStrokePx;
+      loadMat.opacity = 0.78 + profile.detail * 0.22;
+      loadHaloMat.linewidth = profile.loadStrokePx + profile.haloExtraPx;
+      loadHaloMat.opacity = 0.94 * profile.detail;
+      focusedLoadMat.linewidth = profile.loadStrokePx;
+      focusedLoadHaloMat.linewidth = profile.loadStrokePx + Math.min(4, profile.haloExtraPx);
+      hoverLoadHaloMat.linewidth = profile.loadStrokePx + Math.min(3, profile.haloExtraPx);
+
+      Object.values(releaseMats).forEach((material) => {
+        material.linewidth = viewportStroke.symbol * 0.7 * profile.symbolScale;
+      });
+      releaseHaloMat.linewidth = viewportStroke.symbol * 0.9 * profile.symbolScale + profile.haloExtraPx;
+      releaseHaloMat.opacity = 0.94 * profile.detail;
+
+      nodeMat.size = NODE_POINT_SIZE_PX * profile.nodeScale;
+      selectedNodeFillMat.size = (NODE_POINT_SIZE_PX + 4) * profile.nodeScale;
+      hoverNodeFillMat.size = (NODE_POINT_SIZE_PX + 2) * profile.nodeScale;
+      proposedSupportNodeMat.size = NODE_POINT_SIZE_PX * profile.nodeScale;
+      proposedSupportNodeMat.color.set(sceneSupportColor()).lerp(nodeMat.color, profile.detail);
+      previewNodeFillMat.size = (NODE_POINT_SIZE_PX + 2) * profile.nodeScale;
+
+      loadArrowSegments.forEach(({ visual }) => updateCameraFacingLoadArrowHead(visual));
+      const showLoadArrowHeads = profile.loadArrowDetail === 1;
+      loadLineVisualGroups.forEach((group) => {
+        const count = Math.min(group.arrows.length, profile.loadArrowCount);
+        group.arrows.forEach((arrow, index) => {
+          const visible = index < count;
+          const layout = group.layout;
+          if (visible && layout && 'direction' in layout) {
+            const t = count === 1 ? 0.5 : index / (count - 1);
+            const isEndpoint = index === 0 || index === count - 1;
+            updateLoadArrowGeometry(arrow, uniformLineArrowPoints(layout, t, isEndpoint));
+          } else if (visible && layout && 'arrowLength' in layout) {
+            const t = count === 1 ? 0.5 : index / (count - 1);
+            updateLoadArrowGeometry(arrow, parallelLineArrowPoints(layout, t));
+          }
+          arrow.shaft.visible = visible;
+          if (arrow.halo) arrow.halo.visible = visible;
+          arrow.head.visible = visible && showLoadArrowHeads;
+          if (arrow.headHalo) arrow.headHalo.visible = visible && showLoadArrowHeads;
+        });
+      });
+    }
+
     function scheduleRender() {
       if (renderFrameId) return;
       renderFrameId = requestAnimationFrame(renderFrame);
@@ -2758,6 +3231,7 @@ export function Viewport3D({
     function renderFrame() {
       renderFrameId = 0;
       frameCount += 1;
+      applyViewportVisualProfile();
       updateMemberVisualGeometry();
       updateSymbolSprites();
       updateLabelSprites();
@@ -2841,14 +3315,13 @@ export function Viewport3D({
       baseMemberHaloMat.resolution.set(width, height);
       previewMemberHaloMat.resolution.set(width, height);
       previewMemberBatchMat.resolution.set(width, height);
-      selectedMemberHaloMat.resolution.set(width, height);
       selectedMemberBatchMat.resolution.set(width, height);
-      hoverMemberHaloMat.resolution.set(width, height);
       hoverMemberMat.resolution.set(width, height);
       loadMat.resolution.set(width, height);
       focusedLoadMat.resolution.set(width, height);
       loadHaloMat.resolution.set(width, height);
       focusedLoadHaloMat.resolution.set(width, height);
+      hoverLoadHaloMat.resolution.set(width, height);
       releaseHaloMat.resolution.set(width, height);
       allReleaseMats.forEach((material) => material.resolution.set(width, height));
       Object.values(editGuideMats).forEach((material) => material.resolution.set(width, height));
@@ -2863,6 +3336,7 @@ export function Viewport3D({
       const layout = viewportFitLayout();
       if (shouldFitScene) viewSize = fittedViewSize(layout.aspect, layout.usableWidthFraction, layout.usableHeightFraction);
       applyViewportProjection(layout);
+      applyViewportVisualProfile();
       saveCameraState();
       updateMemberVisualGeometry();
       updateSymbolSprites();
@@ -2891,6 +3365,7 @@ export function Viewport3D({
       return [
         Math.round(bounds.width),
         Math.round(bounds.height),
+        currentVisualProfile.memberEndInsetPx.toFixed(4),
         ...camera.matrixWorld.elements.map((value) => value.toFixed(6)),
         ...camera.projectionMatrix.elements.map((value) => value.toFixed(6)),
       ].join(':');
@@ -2904,7 +3379,7 @@ export function Viewport3D({
       const screenEnd = projectToViewport(end);
       const screenLength = Math.hypot(screenEnd.x - screenStart.x, screenEnd.y - screenStart.y);
       if (!Number.isFinite(screenLength) || screenLength <= 1e-6) return { start: start.clone(), end: end.clone() };
-      const trimRatio = Math.min(MEMBER_END_DISPLAY_MAX_TRIM_RATIO, MEMBER_END_DISPLAY_INSET_PX / screenLength);
+      const trimRatio = Math.min(MEMBER_END_DISPLAY_MAX_TRIM_RATIO, currentVisualProfile.memberEndInsetPx / screenLength);
       return {
         start: start.clone().lerp(end, trimRatio),
         end: start.clone().lerp(end, 1 - trimRatio),
@@ -2935,7 +3410,7 @@ export function Viewport3D({
       if (previewMemberBatch) updateLineSegments(previewMemberBatch, positionsForMemberSegments(previewSegments));
 
       const nextFocusedMembers = new Set(currentFocusedTargets.filter((target) => target.kind === 'member').map((target) => target.id));
-      updateMemberOverlay(selectedMemberHaloBatch, selectedMemberBatch, memberPositions(nextFocusedMembers));
+      updateMemberOverlay(null, selectedMemberBatch, memberPositions(nextFocusedMembers));
       updateHoverTargets(hoveredTarget ? [hoveredTarget] : []);
     }
 
@@ -2974,7 +3449,6 @@ export function Viewport3D({
       start: ScreenPoint;
       points: ScreenPoint[];
       active: boolean;
-      shiftKey: boolean;
     };
     let selectionDrag: SelectionDragState | null = null;
     let suppressBoxCompletionPointerUpId: number | null = null;
@@ -2985,7 +3459,7 @@ export function Viewport3D({
     }
 
     function selectionKind(start: ScreenPoint, end: ScreenPoint): ViewportSelectionGesture['selectionKind'] {
-      return end.x >= start.x ? 'window' : 'crossing';
+      return viewportSelectionKind(start.x, end.x);
     }
 
     function selectionBounds(points: ScreenPoint[]) {
@@ -3063,6 +3537,22 @@ export function Viewport3D({
       return shape === 'box' ? pointInBounds(point, selectionBounds(path)) : pointInPolygon(point, path);
     }
 
+    function projectedSupportCenter(support: (typeof supportHitPoints)[number]) {
+      const projected = projectToViewport(support.point);
+      const active = currentFocusedTargets.some((target) => target.kind === 'support' && target.id === support.supportId)
+        || (hoveredTarget?.kind === 'support' && hoveredTarget.id === support.supportId);
+      const overviewScale = active ? 1 : currentVisualProfile.symbolScale;
+      const hitRegion = supportSymbolHitRegion(support.kind, overviewScale);
+      return { ...projected, x: projected.x + hitRegion.x, y: projected.y + hitRegion.y, hitRegion };
+    }
+
+    function distanceToSupportMarker(pointer: ScreenPoint, support: (typeof supportHitPoints)[number]) {
+      const marker = projectedSupportCenter(support);
+      const dx = Math.max(Math.abs(pointer.x - marker.x) - marker.hitRegion.width / 2, 0);
+      const dy = Math.max(Math.abs(pointer.y - marker.y) - marker.hitRegion.height / 2, 0);
+      return { distance: Math.hypot(dx, dy), z: marker.z };
+    }
+
     function segmentSelected(
       start: ScreenPoint,
       end: ScreenPoint,
@@ -3088,7 +3578,7 @@ export function Viewport3D({
         if (pointSelected(projected, path, shape)) targets.push({ kind: 'node', id: node.nodeId });
       }
       for (const support of supportHitPoints) {
-        const projected = projectToViewport(support.point);
+        const projected = projectedSupportCenter(support);
         if (projected.z < -1 || projected.z > 1) continue;
         if (pointSelected(projected, path, shape)) targets.push({ kind: 'support', id: support.supportId });
       }
@@ -3140,7 +3630,7 @@ export function Viewport3D({
         source: 'label' as const,
       });
       const labelOwnsTarget = (label: LabelSprite, target: AgentTarget) => (
-        label.ownerTargets.some((ownerTarget) => ownerTarget.kind === target.kind && ownerTarget.id === target.id)
+        (label.hoverTargets ?? label.ownerTargets).some((ownerTarget) => ownerTarget.kind === target.kind && ownerTarget.id === target.id)
         || Boolean(labelTarget(label)?.kind === target.kind && labelTarget(label)?.id === target.id)
       );
       const labelScreenCenter = (label: LabelSprite) => {
@@ -3223,23 +3713,6 @@ export function Viewport3D({
       selectionCtx.fill();
       selectionCtx.stroke();
       selectionCtx.restore();
-      if (drag.shiftKey) {
-        selectionCtx.save();
-        selectionCtx.fillStyle = crossing ? '#15803d' : '#1d4ed8';
-        selectionCtx.strokeStyle = 'rgba(255,255,255,0.88)';
-        selectionCtx.lineWidth = 2;
-        selectionCtx.beginPath();
-        selectionCtx.arc(end.x + 18, end.y - 18, 10, 0, Math.PI * 2);
-        selectionCtx.fill();
-        selectionCtx.stroke();
-        selectionCtx.strokeStyle = '#ffffff';
-        selectionCtx.lineWidth = 2.4;
-        selectionCtx.beginPath();
-        selectionCtx.moveTo(end.x + 12, end.y - 18);
-        selectionCtx.lineTo(end.x + 24, end.y - 18);
-        selectionCtx.stroke();
-        selectionCtx.restore();
-      }
     }
 
     function pointerTargets(event: PointerEvent): { target: AgentTarget | null; snapTarget: ViewportPointerInfo['snapTarget']; hoverMemberAnchor: THREE.Vector3 | null; source: 'label' | 'geometry' | null } {
@@ -3264,9 +3737,9 @@ export function Viewport3D({
         if (!bestNode || distance < bestNode.distance) bestNode = { id: node.nodeId, distance };
       }
       for (const support of supportHitPoints) {
-        const projected = projectToViewport(support.point);
-        if (projected.z < -1 || projected.z > 1) continue;
-        const distance = Math.hypot(pointer.x - projected.x, pointer.y - projected.y);
+        const marker = distanceToSupportMarker(pointer, support);
+        if (marker.z < -1 || marker.z > 1) continue;
+        const distance = marker.distance;
         if (!bestSupport || distance < bestSupport.distance) bestSupport = { id: support.supportId, distance };
       }
       for (const load of loadHitAnchors) {
@@ -3303,14 +3776,14 @@ export function Viewport3D({
         const midpointDistance = Math.hypot(pointer.x - midpoint.x, pointer.y - midpoint.y);
         if (!bestMidpoint || midpointDistance < bestMidpoint.distance) bestMidpoint = { id: segment.memberId, distance: midpointDistance };
       }
-      const target = bestSupport && bestSupport.distance <= 18
-        ? { kind: 'support' as const, id: bestSupport.id }
-        : bestNode && bestNode.distance <= 14
+      const target = bestNode && bestNode.distance <= 14
           ? { kind: 'node' as const, id: bestNode.id }
-          : bestLoad && bestLoad.distance <= 18
-            ? { kind: 'load' as const, id: bestLoad.id }
-            : best && best.distance <= 14
-              ? { kind: 'member' as const, id: best.id }
+        : best && best.distance <= 14
+          ? { kind: 'member' as const, id: best.id }
+          : bestSupport && bestSupport.distance <= 6
+            ? { kind: 'support' as const, id: bestSupport.id }
+            : bestLoad && bestLoad.distance <= 12
+              ? { kind: 'load' as const, id: bestLoad.id }
               : null;
       const snapTarget = bestNode && bestNode.distance <= 14
         ? { kind: 'node' as const, id: bestNode.id }
@@ -3319,7 +3792,8 @@ export function Viewport3D({
           : best && best.distance <= 14
             ? { kind: 'member' as const, id: best.id }
             : null;
-      if (labelHit) {
+      const prioritizedTarget = prioritizeViewportPointerTarget(target, labelHit?.target ?? null);
+      if (labelHit && prioritizedTarget === labelHit.target) {
         return {
           target: labelHit.target,
           snapTarget: snapTarget ?? labelSnapTarget,
@@ -3327,7 +3801,12 @@ export function Viewport3D({
           source: labelHit.source,
         };
       }
-      return { target, snapTarget, hoverMemberAnchor: target?.kind === 'member' ? best?.anchor ?? null : null, source: target ? 'geometry' : null };
+      return {
+        target: prioritizedTarget,
+        snapTarget,
+        hoverMemberAnchor: prioritizedTarget?.kind === 'member' ? best?.anchor ?? null : null,
+        source: prioritizedTarget ? 'geometry' : null,
+      };
     }
 
     function pointerInfo(event: PointerEvent): ViewportPointerInfo {
@@ -3356,11 +3835,11 @@ export function Viewport3D({
       onViewportClickRef.current?.(info);
     }
 
-    function emitSelectionGesture(drag: SelectionDragState, operation: ViewportSelectionGesture['operation']) {
+    function emitSelectionGesture(drag: SelectionDragState) {
       clearSelectionCanvas();
       const end = drag.points[drag.points.length - 1];
       onSelectionGestureRef.current?.({
-        operation,
+        operation: 'toggle',
         selectionKind: selectionKind(drag.start, end),
         shape: drag.mode,
         targets: selectionTargets(drag),
@@ -3374,14 +3853,13 @@ export function Viewport3D({
       updateHoverTargets(drag.active ? selectionTargets(drag) : []);
     }
 
-    function startArmedBoxSelection(start: ScreenPoint, shiftKey: boolean) {
+    function startArmedBoxSelection(start: ScreenPoint) {
       selectionDrag = {
         pointerId: null,
         mode: 'box',
         start,
         points: [start],
         active: false,
-        shiftKey,
       };
       clearSelectionCanvas();
       drawSelectionDrag(selectionDrag);
@@ -3401,12 +3879,11 @@ export function Viewport3D({
           ...selectionDrag,
           points: [selectionDrag.start, info.screen],
           active: screenDistance(selectionDrag.start, info.screen) > selectionDragThresholdPx,
-          shiftKey: event.shiftKey,
         };
         selectionDrag = null;
         suppressBoxCompletionPointerUpId = event.pointerId;
         updateSelectionPreview(drag);
-        if (drag.active) emitSelectionGesture(drag, event.shiftKey ? 'remove' : 'add');
+        if (drag.active) emitSelectionGesture(drag);
         else clearSelectionCanvas();
         return;
       }
@@ -3419,7 +3896,6 @@ export function Viewport3D({
             start: info.screen,
             points: [info.screen],
             active: false,
-            shiftKey: event.shiftKey,
           }
         : null;
       if (selectionDrag) {
@@ -3427,10 +3903,13 @@ export function Viewport3D({
         event.stopPropagation();
         controls.enabled = false;
         renderer.domElement.setPointerCapture?.(event.pointerId);
+        return;
       }
+      configureNavigationGesture(event);
     }
 
     function handlePointerUp(event: PointerEvent) {
+      if (activeCameraPointerId === event.pointerId && !strandChordPan) activeCameraPointerId = null;
       if (suppressBoxCompletionPointerUpId === event.pointerId) {
         suppressBoxCompletionPointerUpId = null;
         return;
@@ -3446,15 +3925,20 @@ export function Viewport3D({
         } catch {
           // Pointer capture can already be released if the pointer leaves the canvas.
         }
-        drag.shiftKey = event.shiftKey;
-        if (drag.active && moved > selectionDragThresholdPx) emitSelectionGesture(drag, event.shiftKey ? 'remove' : 'add');
+        if (drag.active && moved > selectionDragThresholdPx) emitSelectionGesture(drag);
         else clearSelectionCanvas();
         return;
       }
       if (moved <= 4) {
         const info = pointerInfo(event);
         if (selectionEnabledRef.current && !event.altKey && !info.target) {
-          startArmedBoxSelection(info.screen, event.shiftKey);
+          const action = emptyCanvasSelectionAction(currentFocusedTargets.length > 0, event.shiftKey);
+          if (action === 'clear') {
+            onSelectTargetRef.current?.(null);
+            onViewportClickRef.current?.(info);
+            return;
+          }
+          startArmedBoxSelection(info.screen);
           onViewportClickRef.current?.(info);
           return;
         }
@@ -3493,22 +3977,7 @@ export function Viewport3D({
     }
 
     function nodeIdsForTargets(targets: AgentTarget[]) {
-      const nodeIds = new Set<string>();
-      targets.forEach((target) => {
-        if (target.kind === 'node') nodeIds.add(target.id);
-        if (target.kind === 'member') {
-          const member = memberEndpoints.get(target.id);
-          const startNode = memberStartId(member ?? {});
-          const endNode = memberEndId(member ?? {});
-          if (startNode) nodeIds.add(startNode);
-          if (endNode) nodeIds.add(endNode);
-        }
-        if (target.kind === 'support') {
-          const nodeId = supportNodeById.get(target.id);
-          if (nodeId) nodeIds.add(nodeId);
-        }
-      });
-      return nodeIds;
+      return new Set(targets.filter((target) => target.kind === 'node').map((target) => target.id));
     }
 
     function nodePoints(nodeIds: Set<string>) {
@@ -3532,12 +4001,13 @@ export function Viewport3D({
     function updateHoverTargets(targets: AgentTarget[]) {
       const previewTargets = targets.filter((target) => !targetIsFocused(target));
       const hoverMemberIds = new Set(previewTargets.filter((target) => target.kind === 'member').map((target) => target.id));
-      updateMemberOverlay(hoverMemberHaloBatch, hoverMemberBatch, memberPositions(hoverMemberIds));
+      updateMemberOverlay(null, hoverMemberBatch, memberPositions(hoverMemberIds));
       const hoverPoints = nodePoints(nodeIdsForTargets(previewTargets));
       updateNodePointGeometry(hoverNodeFillPoints, hoverPoints);
       const interaction = viewportInteractionPalette();
       hoverMemberMat.opacity = interaction.hoverOpacity;
       hoverNodeFillMat.opacity = Math.max(interaction.hoverOpacity, 0.88);
+      updateSymbolInteractionStates();
       scheduleRender();
     }
 
@@ -3557,7 +4027,6 @@ export function Viewport3D({
         } else if (screenDistance(lastPoint, info.screen) >= 2) {
           selectionDrag.points.push(info.screen);
         }
-        selectionDrag.shiftKey = event.shiftKey;
         selectionDrag.active = selectionDrag.active || screenDistance(selectionDrag.start, info.screen) > selectionDragThresholdPx;
         drawSelectionDrag(selectionDrag);
         updateSelectionPreview(selectionDrag);
@@ -3594,13 +4063,10 @@ export function Viewport3D({
 
     function handleSelectionModifier(event: KeyboardEvent) {
       if (event.key === 'Escape' && selectionDrag) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
         cancelSelectionDrag();
-        return;
       }
-      if (event.key !== 'Shift' || !selectionDrag) return;
-      selectionDrag.shiftKey = event.type === 'keydown';
-      drawSelectionDrag(selectionDrag);
-      updateSelectionPreview(selectionDrag);
     }
 
     renderer.domElement.addEventListener('pointerdown', handlePointerDown, true);
@@ -3615,13 +4081,52 @@ export function Viewport3D({
       currentFocusedTargets = nextTargets;
       const nextFocusedMembers = new Set(nextTargets.filter((target) => target.kind === 'member').map((target) => target.id));
       const positions = memberPositions(nextFocusedMembers);
-      if (selectedMemberHaloBatch) updateLineSegments(selectedMemberHaloBatch, positions);
       if (selectedMemberBatch) updateLineSegments(selectedMemberBatch, positions);
       const selectedNodeIds = nodeIdsForTargets(nextTargets);
       const selectedPoints = nodePoints(selectedNodeIds);
       updateNodePointGeometry(selectedNodeFillPoints, selectedPoints);
+      updateSymbolInteractionStates();
       updateHoverTarget(hoveredTarget, hoveredMemberAnchor, hoveredTargetSource);
       scheduleRender();
+    }
+
+    function updateSymbolInteractionStates() {
+      const interaction = viewportInteractionPalette();
+      symbolSprites.forEach((item) => {
+        if (!item.target || !item.halo) return;
+        const selected = targetIsFocused(item.target);
+        const hovered = targetEquals(item.target, hoveredTarget);
+        item.focused = selected || hovered;
+        item.halo.sprite.visible = selected || hovered;
+        item.halo.material.color.set(selected ? interaction.selectedAccent : interaction.hoverAccent);
+        item.halo.material.opacity = selected ? interaction.selectedOpacity : interaction.hoverOpacity;
+      });
+      loadInteractionStrokes.forEach((stroke) => {
+        const target = { kind: 'load' as const, id: stroke.loadId };
+        const selected = targetIsFocused(target);
+        const hovered = targetEquals(target, hoveredTarget);
+        stroke.line.material = selected ? focusedLoadMat : loadMat;
+        stroke.line.renderOrder = selected || hovered ? 49 : stroke.baseRenderOrder;
+        if (stroke.halo) {
+          stroke.halo.material = selected ? focusedLoadHaloMat : hovered ? hoverLoadHaloMat : loadHaloMat;
+          stroke.halo.renderOrder = stroke.line.renderOrder - 1;
+        }
+      });
+    }
+
+    function updateNavigationProfile(
+      nextProfileId: ViewportNavigationProfileId,
+      nextCustomSettings: ViewportCustomNavigationSettings,
+    ) {
+      const profileChanged = nextProfileId !== currentNavigationProfileId;
+      const customSettingsChanged = Object.keys(nextCustomSettings).some((button) => (
+        nextCustomSettings[button as keyof ViewportCustomNavigationSettings]
+        !== currentCustomNavigationSettings[button as keyof ViewportCustomNavigationSettings]
+      ));
+      if (!profileChanged && !customSettingsChanged) return;
+      cancelActiveCameraGesture();
+      currentNavigationProfileId = nextProfileId;
+      currentCustomNavigationSettings = nextCustomSettings;
     }
 
     function updateFitInsets(next: Required<ViewportFitInsets>) {
@@ -3654,7 +4159,7 @@ export function Viewport3D({
       labelsEnabled,
       labelSpriteCount: memberLabelSprites.length + nodeLabelSprites.length + supportLabelSprites.length + loadLabelSprites.length,
       symbolSpriteCount: symbolSprites.length,
-      arrowHeadObjectCount: arrowHeadObjects.length,
+      arrowHeadObjectCount: loadArrowSegments.length,
       threeObjectCount: s.children.length,
       canvasPixelRatio: renderer.getPixelRatio(),
       rendererInfo: {
@@ -3667,7 +4172,7 @@ export function Viewport3D({
       },
     };
     (window as any).__FRAIA_VIEWPORT_STATS__ = viewportStats;
-    sceneApiRef.current = { updateFocusedTargets, updateFitInsets, updateEditOverlay, updateLabelVisibility };
+    sceneApiRef.current = { updateFocusedTargets, updateFitInsets, updateEditOverlay, updateLabelVisibility, updateNavigationProfile };
     updateFocusedTargets(focusedTargets);
     updateEditOverlay(editOverlay);
     resize();
@@ -3676,6 +4181,15 @@ export function Viewport3D({
       const r = renderer.domElement.getBoundingClientRect();
       const v = p.clone().project(camera);
       return { x: (v.x * 0.5 + 0.5) * r.width, y: (-v.y * 0.5 + 0.5) * r.height, z: v.z };
+    }
+
+    function screenPointToWorld(point: { x: number; y: number }, projectedZ: number) {
+      const r = renderer.domElement.getBoundingClientRect();
+      return new THREE.Vector3(
+        point.x / Math.max(r.width, 1) * 2 - 1,
+        -(point.y / Math.max(r.height, 1)) * 2 + 1,
+        projectedZ,
+      ).unproject(camera);
     }
 
     type ScreenBounds = { left: number; right: number; top: number; bottom: number };
@@ -3747,7 +4261,7 @@ export function Viewport3D({
       };
     }
 
-    function modelObstacleRects() {
+    function structuralObstacleRects() {
       const rects: ReturnType<typeof screenRect>[] = [];
       scene.nodes.forEach((node) => {
         rects.push(screenRect(toScreen(new THREE.Vector3(node.x, node.y, node.z)), 20, 20, 4));
@@ -3770,6 +4284,11 @@ export function Viewport3D({
           ));
         }
       });
+      return rects;
+    }
+
+    function modelObstacleRects() {
+      const rects = structuralObstacleRects();
       symbolSprites.forEach((item) => {
         const center = toScreen(item.anchor);
         const offset = item.offset ?? { x: 0, y: 0 };
@@ -3790,6 +4309,7 @@ export function Viewport3D({
     function visibleVectorObstacleRects() {
       const rects: ReturnType<typeof screenRect>[] = [];
       loadArrowSegments.forEach((segment) => {
+        if (!segment.visual.shaft.visible) return;
         rects.push(...screenSegmentObstacleRects(segment.start, segment.end, loadArrowSymbol.strokeWidth + 14, 4));
       });
       activeProjectionVectorSegments.forEach((segment) => {
@@ -3825,9 +4345,23 @@ export function Viewport3D({
       const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
       const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
       const placedLabels: ReturnType<typeof screenRect>[] = [];
+      loadLabelLeaders.forEach((leader) => {
+        leader.line.visible = false;
+        if (leader.halo) leader.halo.visible = false;
+      });
+      const compactLabelCollisionPaddingPx = 6;
+      function compactLabelRect(center: { x: number; y: number }, label: LabelSprite) {
+        return screenRect(center, label.widthPx, label.heightPx, compactLabelCollisionPaddingPx);
+      }
       function labelOrthogonalCandidates(label: LabelSprite) {
+        const nodeTarget = label.kind === 'node'
+          ? label.ownerTargets.find((target) => target.kind === 'node')
+          : undefined;
+        const nodeAnchorRadius = nodeTarget && proposedSupportNodeIds.has(nodeTarget.id)
+          ? 10 * SUPPORT_SYMBOL_SCALE
+          : NODE_POINT_SIZE_PX / 2;
         const gap = label.kind === 'node'
-          ? NODE_POINT_SIZE_PX / 2 + 5
+          ? nodeAnchorRadius + 5
           : labelAnchorGapPx + label.anchorClearancePx;
         const diagonalX = label.widthPx / 2 + gap;
         const diagonalY = label.heightPx / 2 + gap;
@@ -3842,7 +4376,7 @@ export function Viewport3D({
           { direction: 'above-right' as const, x: diagonalX, y: -diagonalY },
         ];
         if (label.kind === 'node') {
-          const preferred = ['above', 'left', 'right', 'below'];
+          const preferred = ['below', 'left', 'right', 'above'];
           return candidates
             .filter((candidate) => preferred.includes(candidate.direction))
             .map((candidate) => ({
@@ -3866,7 +4400,12 @@ export function Viewport3D({
         ...supportLabelSprites,
         ...memberLabelSprites,
         ...loadLabelSprites,
-      ].sort((a, b) => a.priority - b.priority);
+      ].sort((a, b) => {
+        const hoverOrder = Number(Boolean(a.hoverOnly)) - Number(Boolean(b.hoverOnly));
+        if (hoverOrder) return hoverOrder;
+        const placementOrder = (label: LabelSprite) => label.placement === 'anchored' ? 0 : 1;
+        return placementOrder(a) - placementOrder(b) || a.priority - b.priority;
+      });
       const labelTransitionDurationMs = 150;
 
       function targetMatches(a: AgentTarget, b: AgentTarget | null) {
@@ -3874,18 +4413,70 @@ export function Viewport3D({
       }
 
       function labelMatchesHover(label: LabelSprite) {
-        return label.ownerTargets.some((target) => targetMatches(target, hoveredTarget));
+        return (label.hoverTargets ?? label.ownerTargets).some((target) => targetMatches(target, hoveredTarget));
       }
 
       function labelMatchesFocusedTarget(label: LabelSprite) {
         return label.ownerTargets.some(targetIsFocused);
       }
 
+      function oppositeProjectedDirection(anchor: THREE.Vector3, direction: THREE.Vector3) {
+        const origin = toScreen(anchor);
+        const tip = toScreen(anchor.clone().add(direction));
+        const opposite = { x: origin.x - tip.x, y: origin.y - tip.y };
+        const length = Math.hypot(opposite.x, opposite.y);
+        return length > 1e-6
+          ? { x: opposite.x / length, y: opposite.y / length }
+          : undefined;
+      }
+
+      const loadLabelLeaderLengthPx = 14;
+      const loadLabelLeaderGapPx = 0;
+
+      function loadLabelLeaderGeometry(track: LoadLabelTrack, fraction: number) {
+        const start = track.start.clone().lerp(track.end, fraction);
+        const startScreen = toScreen(start);
+        const away = oppositeProjectedDirection(start, track.direction) ?? { x: 0, y: -1 };
+        const endScreen = {
+          x: startScreen.x + away.x * loadLabelLeaderLengthPx,
+          y: startScreen.y + away.y * loadLabelLeaderLengthPx,
+        };
+        return {
+          away,
+          start,
+          startScreen,
+          end: screenPointToWorld(endScreen, startScreen.z),
+          endScreen,
+        };
+      }
+
+      function loadLabelCalloutCenter(
+        geometry: ReturnType<typeof loadLabelLeaderGeometry>,
+        label: LabelSprite,
+      ) {
+        const labelRadius = (
+          Math.abs(geometry.away.x) * label.widthPx
+          + Math.abs(geometry.away.y) * label.heightPx
+        ) / 2;
+        return {
+          x: geometry.endScreen.x + geometry.away.x * (loadLabelLeaderGapPx + labelRadius),
+          y: geometry.endScreen.y + geometry.away.y * (loadLabelLeaderGapPx + labelRadius),
+        };
+      }
+
+      function showLoadLabelLeader(track: LoadLabelTrack, fraction: number) {
+        if (!track.leader) return;
+        const geometry = loadLabelLeaderGeometry(track, fraction);
+        updateLoadLabelLeaderGeometry(track.leader, geometry.start, geometry.end);
+      }
+
       function setLabelVisualState(label: LabelSprite, state: 'base' | 'hover' | 'selected') {
         const texture = label.stateTextures?.[state] ?? label.texture;
-        if (label.material.map === texture) return;
-        label.material.map = texture;
-        label.material.needsUpdate = true;
+        label.material.opacity = state === 'base' ? currentVisualProfile.baseLabelOpacity : 1;
+        if (label.material.map !== texture) {
+          label.material.map = texture;
+          label.material.needsUpdate = true;
+        }
       }
 
       function labelPrimaryTargetKey(label: LabelSprite) {
@@ -3967,7 +4558,7 @@ export function Viewport3D({
 
       function labelVisibilityState(label: LabelSprite) {
         const permanentlyVisible = currentLabelVisibility[label.kind];
-        const hoverVisible = (!permanentlyVisible || hoveredTargetSource === 'label') && labelMatchesHover(label);
+        const hoverVisible = labelMatchesHover(label);
         const swapCompactForExpanded = !label.hoverOnly && hoverVisible && Boolean(expandedCounterpartFor(label));
         if (swapCompactForExpanded) {
           return { permanentlyVisible, hoverVisible, visible: false };
@@ -3989,13 +4580,28 @@ export function Viewport3D({
         return Boolean(label.hoverOnly) && visibility.hoverVisible;
       }
 
+      const temporaryExpansionActive = labels.some((label) => (
+        Boolean(label.hoverOnly) && labelMatchesHover(label)
+      ));
+
       labels.forEach((label) => {
         const targetScale = new THREE.Vector3(label.widthPx * worldUnitsPerPixel, label.heightPx * worldUnitsPerPixel, 1);
         const visibility = labelVisibilityState(label);
         const selected = labelMatchesFocusedTarget(label);
         const hovered = labelMatchesHover(label);
-        const visualState = selected ? 'selected' : hovered ? 'hover' : 'base';
-        if (!visibility.visible) {
+        const visualState = hovered ? 'hover' : 'base';
+        if (temporaryExpansionActive && !label.hoverOnly && visibility.visible && label.wasVisible) {
+          const center = toScreen(label.sprite.position);
+          label.sprite.visible = pointIsOnScreen(center, visibleBounds);
+          if (!label.sprite.visible) return;
+          if (label.placement === 'load-line' && label.loadTrack) {
+            showLoadLabelLeader(label.loadTrack, label.loadTrack.labelFraction ?? 0.5);
+          }
+          placedLabels.push(compactLabelRect(center, label));
+          applyLabelPose(label, label.sprite.position, targetScale, visualState);
+          return;
+        }
+        if (!visibility.visible || (!selected && !hovered && currentVisualProfile.baseLabelOpacity <= 0.02)) {
           label.sprite.visible = false;
           label.wasVisible = false;
           label.transition = undefined;
@@ -4006,8 +4612,171 @@ export function Viewport3D({
         label.sprite.visible = pointIsOnScreen(rawAnchorScreen, visibleBounds);
         if (!label.sprite.visible) return;
         const anchorScreen = rawAnchorScreen;
+        if (label.hoverOnly) {
+          const compact = compactCounterpartFor(label);
+          if (compact) {
+            const compactCenter = toScreen(compact.sprite.position);
+            if (label.kind === 'member' && compact.kind === 'member') {
+              applyLabelPose(label, screenPointToWorld(compactCenter, compactCenter.z), targetScale, visualState);
+              return;
+            }
+            if (label.kind === 'node' && compact.kind === 'node') {
+              const cardinalDirections: LabelPlacementDirection[] = ['below', 'above', 'right', 'left'];
+              const compactOffset = {
+                x: compactCenter.x - anchorScreen.x,
+                y: compactCenter.y - anchorScreen.y,
+              };
+              const inferredDirection: LabelPlacementDirection = Math.abs(compactOffset.x) > Math.abs(compactOffset.y)
+                ? compactOffset.x < 0 ? 'left' : 'right'
+                : compactOffset.y < 0 ? 'above' : 'below';
+              const expansionDirection = compact.placementDirection && cardinalDirections.includes(compact.placementDirection)
+                ? compact.placementDirection
+                : inferredDirection;
+              const expansionVectors: Record<'below' | 'above' | 'right' | 'left', { x: number; y: number }> = {
+                below: { x: 0, y: 1 },
+                above: { x: 0, y: -1 },
+                right: { x: 1, y: 0 },
+                left: { x: -1, y: 0 },
+              };
+              const center = expandedLabelCenterAlongDirection(
+                compactCenter,
+                { width: compact.widthPx, height: compact.heightPx },
+                { width: label.widthPx, height: label.heightPx },
+                expansionVectors[expansionDirection as keyof typeof expansionVectors],
+              );
+              applyLabelPose(label, screenPointToWorld(center, compactCenter.z), targetScale, visualState);
+              return;
+            }
+            if (label.kind === 'load' && label.placement === 'load-line' && label.loadTrack) {
+              const expansionDirection = oppositeProjectedDirection(label.anchor, label.loadTrack.direction);
+              if (expansionDirection) {
+                const center = expandedLabelCenterAlongDirection(
+                  compactCenter,
+                  { width: compact.widthPx, height: compact.heightPx },
+                  { width: label.widthPx, height: label.heightPx },
+                  expansionDirection,
+                );
+                showLoadLabelLeader(label.loadTrack, label.loadTrack.labelFraction ?? 0.5);
+                applyLabelPose(label, screenPointToWorld(center, compactCenter.z), targetScale, visualState);
+                return;
+              }
+            }
+            const horizontalGap = (compact.widthPx + label.widthPx) / 2 + 8;
+            const verticalGap = (compact.heightPx + label.heightPx) / 2 + 8;
+            const candidates = [
+              { x: 0, y: 0 },
+              { x: horizontalGap, y: 0 },
+              { x: -horizontalGap, y: 0 },
+              { x: 0, y: verticalGap },
+              { x: 0, y: -verticalGap },
+              { x: horizontalGap, y: verticalGap },
+              { x: -horizontalGap, y: verticalGap },
+              { x: horizontalGap, y: -verticalGap },
+              { x: -horizontalGap, y: -verticalGap },
+            ];
+            let bestCenter: { x: number; y: number } = compactCenter;
+            let bestScore = Number.POSITIVE_INFINITY;
+            candidates.forEach((offset, index) => {
+              const unclampedCenter = { x: compactCenter.x + offset.x, y: compactCenter.y + offset.y };
+              const center = clampLabelCenter(unclampedCenter, label, visibleBounds);
+              const rect = screenRect(center, label.widthPx, label.heightPx);
+              const overlapArea = placedLabels.reduce((sum, existing) => sum + rectOverlapArea(rect, existing), 0);
+              const overflowArea = viewportOverflowArea(rect, visibleBounds);
+              const clampDistance = Math.hypot(center.x - unclampedCenter.x, center.y - unclampedCenter.y);
+              const score = overlapArea * 20000 + overflowArea * 50000 + clampDistance * 100 + index;
+              if (score < bestScore) {
+                bestScore = score;
+                bestCenter = center;
+              }
+            });
+            applyLabelPose(label, screenPointToWorld(bestCenter, compactCenter.z), targetScale, visualState);
+            return;
+          }
+        }
+        if (label.placement === 'load-line' && label.loadTrack) {
+          const trackStart = toScreen(label.loadTrack.start);
+          const trackEnd = toScreen(label.loadTrack.end);
+          const trackLengthPx = Math.hypot(trackEnd.x - trackStart.x, trackEnd.y - trackStart.y);
+          const fractions = viewportLoadLeaderFractions(Math.min(39, Math.max(5, Math.ceil(trackLengthPx / 14))));
+          const structuralObstacles = structuralObstacleRects();
+          let bestCenter: { x: number; y: number } = anchorScreen;
+          let bestRect: ReturnType<typeof screenRect> | undefined;
+          let bestFraction = 0.5;
+          let bestDepth = trackStart.z;
+          let bestScore = Number.POSITIVE_INFINITY;
+          let bestBlockingOverlapArea = Number.POSITIVE_INFINITY;
+          let bestOverflowArea = Number.POSITIVE_INFINITY;
+          fractions.forEach((fraction, fractionIndex) => {
+            const geometry = loadLabelLeaderGeometry(label.loadTrack!, fraction);
+            const center = loadLabelCalloutCenter(geometry, label);
+            const rect = compactLabelRect(center, label);
+            const labelOverlapArea = placedLabels.reduce((sum, existing) => sum + rectOverlapArea(rect, existing), 0);
+            const structuralOverlapArea = structuralObstacles.reduce((sum, existing) => sum + rectOverlapArea(rect, existing), 0);
+            const overflowArea = viewportOverflowArea(rect, visibleBounds);
+            const score =
+              (labelOverlapArea + structuralOverlapArea) * 20000
+              + overflowArea * 50000
+              + fractionIndex;
+            if (score < bestScore) {
+              bestScore = score;
+              bestBlockingOverlapArea = labelOverlapArea + structuralOverlapArea;
+              bestOverflowArea = overflowArea;
+              bestCenter = center;
+              bestRect = rect;
+              bestFraction = fraction;
+              bestDepth = geometry.startScreen.z;
+            }
+          });
+          if ((bestBlockingOverlapArea > 0 || bestOverflowArea > 0) && !hovered && !selected) {
+            label.sprite.visible = false;
+            label.wasVisible = false;
+            label.transition = undefined;
+            return;
+          }
+          label.loadTrack.labelFraction = bestFraction;
+          showLoadLabelLeader(label.loadTrack, bestFraction);
+          placedLabels.push(bestRect ?? compactLabelRect(bestCenter, label));
+          applyLabelPose(label, screenPointToWorld(bestCenter, bestDepth), targetScale, visualState);
+          return;
+        }
+        if (label.placement === 'load-point') {
+          const candidates = [
+            { x: 0, y: 0 },
+            ...labelOrthogonalCandidates(label),
+          ];
+          let bestCenter: { x: number; y: number } = anchorScreen;
+          let bestRect: ReturnType<typeof screenRect> | undefined;
+          let bestScore = Number.POSITIVE_INFINITY;
+          let bestBlockingOverlapArea = Number.POSITIVE_INFINITY;
+          const structuralObstacles = structuralObstacleRects();
+          candidates.forEach((offset, index) => {
+            const unclampedCenter = { x: anchorScreen.x + offset.x, y: anchorScreen.y + offset.y };
+            const center = clampLabelCenter(unclampedCenter, label, visibleBounds);
+            const rect = compactLabelRect(center, label);
+            const labelOverlapArea = placedLabels.reduce((sum, existing) => sum + rectOverlapArea(rect, existing), 0);
+            const structuralOverlapArea = structuralObstacles.reduce((sum, existing) => sum + rectOverlapArea(rect, existing), 0);
+            const overflowArea = viewportOverflowArea(rect, visibleBounds);
+            const clampDistance = Math.hypot(center.x - unclampedCenter.x, center.y - unclampedCenter.y);
+            const score = (labelOverlapArea + structuralOverlapArea) * 20000 + overflowArea * 50000 + clampDistance * 100 + index;
+            if (score < bestScore) {
+              bestScore = score;
+              bestBlockingOverlapArea = labelOverlapArea + structuralOverlapArea;
+              bestCenter = center;
+              bestRect = rect;
+            }
+          });
+          if (bestBlockingOverlapArea > 0 && !hovered && !selected) {
+            label.sprite.visible = false;
+            label.wasVisible = false;
+            label.transition = undefined;
+            return;
+          }
+          placedLabels.push(bestRect ?? compactLabelRect(bestCenter, label));
+          applyLabelPose(label, screenPointToWorld(bestCenter, anchorScreen.z), targetScale, visualState);
+          return;
+        }
         if (label.placement === 'pinned') {
-          const rect = screenRect(anchorScreen, label.widthPx, label.heightPx);
+          const rect = compactLabelRect(anchorScreen, label);
           const overlapArea = placedLabels.reduce((sum, existing) => sum + rectOverlapArea(rect, existing), 0);
           if (overlapArea > 0 && !visibility.hoverVisible) {
             label.sprite.visible = false;
@@ -4017,18 +4786,56 @@ export function Viewport3D({
           applyLabelPose(label, labelAnchor, targetScale, visualState);
           return;
         }
+        if (label.placement === 'anchored') {
+          let bestCenter: { x: number; y: number } = anchorScreen;
+          let bestRect: ReturnType<typeof screenRect> | undefined;
+          let bestScore = Number.POSITIVE_INFINITY;
+          let bestOverlapArea = Number.POSITIVE_INFINITY;
+          supportLabelOffsetCandidates(label.offset, label.widthPx, label.heightPx).forEach((offset, index) => {
+            const unclampedCenter = { x: anchorScreen.x + offset.x, y: anchorScreen.y + offset.y };
+            const center = clampLabelCenter(unclampedCenter, label, visibleBounds);
+            const rect = compactLabelRect(center, label);
+            const overlapArea = placedLabels.reduce((sum, existing) => sum + rectOverlapArea(rect, existing), 0);
+            const clampDistance = Math.hypot(center.x - unclampedCenter.x, center.y - unclampedCenter.y);
+            const preferredDistance = Math.hypot(offset.x - label.offset.x, offset.y - label.offset.y);
+            const score = overlapArea * 20000 + clampDistance * 100 + preferredDistance + index;
+            if (score < bestScore) {
+              bestScore = score;
+              bestOverlapArea = overlapArea;
+              bestCenter = center;
+              bestRect = rect;
+            }
+          });
+          if (bestOverlapArea > 0 && !hovered && !selected) {
+            label.sprite.visible = false;
+            label.wasVisible = false;
+            label.transition = undefined;
+            return;
+          }
+          placedLabels.push(bestRect ?? compactLabelRect(bestCenter, label));
+          const targetPosition = screenPointToWorld(bestCenter, anchorScreen.z);
+          applyLabelPose(label, targetPosition, targetScale, visualState);
+          return;
+        }
         let best = label.offset;
         let bestRect: ReturnType<typeof screenRect> | undefined;
         let bestScore = Number.POSITIVE_INFINITY;
+        let bestLabelOverlapArea = Number.POSITIVE_INFINITY;
         let bestDirection: LabelPlacementDirection | undefined;
-        let retainedPlacement: { offset: { x: number; y: number }; rect: ReturnType<typeof screenRect>; score: number; direction: LabelPlacementDirection } | undefined;
+        let retainedPlacement: { offset: { x: number; y: number }; rect: ReturnType<typeof screenRect>; score: number; labelOverlapArea: number; direction: LabelPlacementDirection } | undefined;
         const stabilizePlacement = shouldStabilizeLabelPlacement(label, visibility);
-        const modelObstacles = modelObstacleRects();
+        const modelObstacles = modelObstacleRects().filter((rect) => !(
+          label.kind === 'node'
+          && anchorScreen.x >= rect.left
+          && anchorScreen.x <= rect.right
+          && anchorScreen.y >= rect.top
+          && anchorScreen.y <= rect.bottom
+        ));
         for (const offset of labelOrthogonalCandidates(label)) {
           const unclampedCenter = { x: anchorScreen.x + offset.x, y: anchorScreen.y + offset.y };
           const center = clampLabelCenter(unclampedCenter, label, visibleBounds);
           const effectiveOffset = { ...offset, x: center.x - anchorScreen.x, y: center.y - anchorScreen.y };
-          const rect = screenRect(center, label.widthPx, label.heightPx);
+          const rect = compactLabelRect(center, label);
           const labelOverlapArea = placedLabels.reduce((sum, existing) => sum + rectOverlapArea(rect, existing), 0);
           const modelOverlapArea = modelObstacles.reduce((sum, existing) => sum + rectOverlapArea(rect, existing), 0);
           const overflowArea = viewportOverflowArea(rect, visibleBounds);
@@ -4041,10 +4848,11 @@ export function Viewport3D({
             clampDistance * 2 +
             offset.preference;
           if (stabilizePlacement && offset.direction === label.placementDirection) {
-            retainedPlacement = { offset: effectiveOffset, rect, score, direction: offset.direction };
+            retainedPlacement = { offset: effectiveOffset, rect, score, labelOverlapArea, direction: offset.direction };
           }
           if (score < bestScore) {
             bestScore = score;
+            bestLabelOverlapArea = labelOverlapArea;
             best = effectiveOffset;
             bestRect = rect;
             bestDirection = offset.direction;
@@ -4057,13 +4865,20 @@ export function Viewport3D({
         ) {
           best = retainedPlacement.offset;
           bestRect = retainedPlacement.rect;
+          bestLabelOverlapArea = retainedPlacement.labelOverlapArea;
           bestDirection = retainedPlacement.direction;
         }
-        label.placementDirection = stabilizePlacement ? bestDirection : undefined;
+        label.placementDirection = bestDirection;
+        if (bestLabelOverlapArea > 0 && !hovered && !selected) {
+          label.sprite.visible = false;
+          label.wasVisible = false;
+          label.transition = undefined;
+          return;
+        }
         if (bestRect) {
           placedLabels.push(bestRect);
         } else {
-          placedLabels.push(screenRect({ x: anchorScreen.x + best.x, y: anchorScreen.y + best.y }, label.widthPx, label.heightPx));
+          placedLabels.push(compactLabelRect({ x: anchorScreen.x + best.x, y: anchorScreen.y + best.y }, label));
         }
         const targetPosition = labelAnchor.clone()
           .addScaledVector(right, best.x * worldUnitsPerPixel)
@@ -4642,8 +5457,9 @@ export function Viewport3D({
       });
       for (const item of symbolSprites) {
         const rawOffset = item.offset ?? { x: 0, y: 0 };
-        const offset = rawOffset;
-        const symbolScale = item.tone === 'support' ? 0.94 : 1;
+        const overviewScale = item.focused ? 1 : currentVisualProfile.symbolScale;
+        const offset = { x: rawOffset.x * overviewScale, y: rawOffset.y * overviewScale };
+        const symbolScale = (item.tone === 'support' ? SUPPORT_SYMBOL_SCALE : 1) * overviewScale;
         let screenOffset = { x: offset.x, y: offset.y };
         if (item.direction) {
           const p = toScreen(item.anchor);
@@ -4662,11 +5478,21 @@ export function Viewport3D({
           .addScaledVector(right, screenOffset.x * worldUnitsPerPixel)
           .addScaledVector(up, -screenOffset.y * worldUnitsPerPixel);
         item.sprite.scale.set(item.widthPx * symbolScale * worldUnitsPerPixel, item.heightPx * symbolScale * worldUnitsPerPixel, 1);
+        item.material.opacity = item.proposed ? currentVisualProfile.detail : 1;
+        if (item.halo) {
+          item.halo.sprite.position.copy(item.sprite.position);
+          item.halo.sprite.scale.set(
+            (item.widthPx * symbolScale + 4) * worldUnitsPerPixel,
+            (item.heightPx * symbolScale + 4) * worldUnitsPerPixel,
+            1,
+          );
+        }
         if (item.direction) {
           const p = toScreen(item.anchor);
           const tail = toScreen(item.anchor.clone().addScaledVector(item.direction, -1));
           const angle = Math.atan2(p.y - tail.y, p.x - tail.x) - Math.PI / 2;
           item.material.rotation = angle;
+          if (item.halo) item.halo.material.rotation = angle;
         } else {
           item.material.rotation = 0;
         }
@@ -4693,6 +5519,9 @@ export function Viewport3D({
       renderer.domElement.removeEventListener('pointercancel', handlePointerCancel);
       window.removeEventListener('keydown', handleSelectionModifier);
       window.removeEventListener('keyup', handleSelectionModifier);
+      document.removeEventListener('pointermove', handleStrandChordPointerMove, true);
+      document.removeEventListener('pointerup', handleStrandChordPointerUp, true);
+      document.removeEventListener('pointercancel', handleStrandChordPointerUp, true);
       if (resizeRenderLoopId) cancelAnimationFrame(resizeRenderLoopId);
       ro.disconnect();
       controls.removeEventListener('start', markCameraInteractionStart);
@@ -4721,26 +5550,24 @@ export function Viewport3D({
       symbolSprites.forEach((symbol) => {
         symbol.texture.dispose();
         symbol.material.dispose();
+        symbol.halo?.material.dispose();
       });
-      arrowHeadObjects.forEach((mesh) => mesh.geometry.dispose());
       nodeObjects.forEach((o) => o.geometry.dispose());
       baseMemberHaloMat.dispose();
       memberBatchMat.dispose();
       previewMemberHaloMat.dispose();
       previewMemberBatchMat.dispose();
-      selectedMemberHaloMat.dispose();
       selectedMemberBatchMat.dispose();
-      hoverMemberHaloMat.dispose();
       hoverMemberMat.dispose();
       loadMat.dispose();
       focusedLoadMat.dispose();
       loadHaloMat.dispose();
       focusedLoadHaloMat.dispose();
+      hoverLoadHaloMat.dispose();
       releaseHaloMat.dispose();
       allReleaseMats.forEach((material) => material.dispose());
-      loadHeadMat.dispose();
-      focusedLoadHeadMat.dispose();
       nodeMat.dispose();
+      proposedSupportNodeMat.dispose();
       focusedNodeMat.dispose();
       selectedNodeFillMat.dispose();
       hoverNodeFillMat.dispose();

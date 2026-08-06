@@ -12,8 +12,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
-import { Field, FieldContent, FieldGroup, FieldLabel } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
 import {
   Item,
   ItemActions,
@@ -23,7 +21,6 @@ import {
   ItemMedia,
   ItemTitle,
 } from '@/components/ui/item';
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import {
   FRAIA_AI_MODEL_ID,
@@ -40,9 +37,6 @@ type RuntimeEvent = {
   type?: string;
   message?: string;
   url?: string;
-  userCode?: string;
-  verificationUri?: string;
-  prompt?: { type?: string; message?: string; options?: Array<{ id: string; label: string }> };
 };
 
 function providerState(provider: NonNullable<AiProviderCatalogue['providers']>[number]) {
@@ -54,7 +48,6 @@ export function AiProvidersDialog({ open, onOpenChange }: { open: boolean; onOpe
   const [busyAction, setBusyAction] = useState<'refresh' | 'sign-in' | 'disconnect' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [runtimeEvent, setRuntimeEvent] = useState<RuntimeEvent | null>(null);
-  const [promptAnswer, setPromptAnswer] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -135,12 +128,6 @@ export function AiProvidersDialog({ open, onOpenChange }: { open: boolean; onOpe
     }
   }
 
-  async function answerPrompt(event: RuntimeEvent) {
-    if (!event.flowId) return;
-    await window.fraia.aiAnswerAuthPrompt({ flowId: event.flowId, value: promptAnswer ?? '' });
-    setPromptAnswer(null);
-  }
-
   const secureStorage = catalogue?.secureCredentialStorageAvailable ?? catalogue?.secure_credential_storage_available;
   const freshness = catalogue?.catalogue?.refreshedAt ?? catalogue?.catalogue?.refreshed_at;
 
@@ -215,15 +202,6 @@ export function AiProvidersDialog({ open, onOpenChange }: { open: boolean; onOpe
                   </AlertDescription>
                 </Alert>
               )}
-              {runtimeEvent?.type === 'device_code' && (
-                <Alert>
-                  <ExternalLink />
-                  <AlertTitle>Finish signing in with ChatGPT</AlertTitle>
-                  <AlertDescription>
-                    Open {runtimeEvent.verificationUri} and enter code <strong>{runtimeEvent.userCode}</strong>.
-                  </AlertDescription>
-                </Alert>
-              )}
               {runtimeEvent?.type === 'auth_url' && (
                 <Alert>
                   <ExternalLink />
@@ -241,52 +219,6 @@ export function AiProvidersDialog({ open, onOpenChange }: { open: boolean; onOpe
                   <AlertTitle>ChatGPT sign-in failed</AlertTitle>
                   <AlertDescription>{runtimeEvent.message}</AlertDescription>
                 </Alert>
-              )}
-              {runtimeEvent?.type === 'prompt' && runtimeEvent.flowId && (
-                <form onSubmit={(submitEvent) => { submitEvent.preventDefault(); void answerPrompt(runtimeEvent); }}>
-                  <FieldGroup>
-                    <Field>
-                      <FieldContent>
-                        <FieldLabel htmlFor="chatgpt-auth-prompt">
-                          {runtimeEvent.prompt?.message ?? 'Authentication response'}
-                        </FieldLabel>
-                        {runtimeEvent.prompt?.type === 'select' ? (
-                          <Select
-                            value={promptAnswer}
-                            items={[
-                              { value: null, label: 'Choose an option' },
-                              ...(runtimeEvent.prompt.options ?? []).map((option) => ({ value: option.id, label: option.label })),
-                            ]}
-                            onValueChange={(value) => {
-                              if (typeof value === 'string') setPromptAnswer(value);
-                            }}
-                          >
-                            <SelectTrigger id="chatgpt-auth-prompt" className="w-full">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectGroup>
-                                <SelectItem value={null}>Choose an option</SelectItem>
-                                {(runtimeEvent.prompt.options ?? []).map((option) => (
-                                  <SelectItem key={option.id} value={option.id}>{option.label}</SelectItem>
-                                ))}
-                              </SelectGroup>
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <Input
-                            id="chatgpt-auth-prompt"
-                            type={runtimeEvent.prompt?.type === 'secret' ? 'password' : 'text'}
-                            autoComplete="off"
-                            value={promptAnswer ?? ''}
-                            onChange={(event) => setPromptAnswer(event.target.value)}
-                          />
-                        )}
-                      </FieldContent>
-                      <Button type="submit" disabled={!promptAnswer?.trim()}>Continue</Button>
-                    </Field>
-                  </FieldGroup>
-                </form>
               )}
             </>
           )}

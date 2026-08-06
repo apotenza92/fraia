@@ -206,9 +206,69 @@ test("fake Pi runtime signs in with ChatGPT, uses Luna, completes, cancels, and 
   try {
     let page = await electronApp.firstWindow()
     await page.waitForLoadState("domcontentloaded")
-    expect(await electronApp.evaluate(({ Menu }) => (
-      Menu.getApplicationMenu()?.items.map((item) => item.label) ?? []
-    ))).not.toContain("Developer")
+    const applicationMenu = await electronApp.evaluate(({ Menu }) => (
+      Menu.getApplicationMenu()?.items.map((item) => ({
+        label: item.label,
+        submenu: item.submenu?.items.map((submenuItem) => ({
+          accelerator: submenuItem.accelerator?.toString() ?? null,
+          role: submenuItem.role ?? null,
+        })) ?? [],
+      })) ?? []
+    ))
+    expect(applicationMenu.map((item) => item.label)).not.toContain("Developer")
+    const viewMenuRoles = applicationMenu.find((item) => item.label === "View")?.submenu
+      .map((item) => item.role)
+    expect(viewMenuRoles).toEqual(expect.arrayContaining([
+      "reload",
+      "forcereload",
+      "resetzoom",
+      "zoomin",
+      "zoomout",
+      "togglefullscreen",
+    ]))
+    for (const role of ["reload", "forcereload", "resetzoom", "zoomin", "zoomout"]) {
+      expect(applicationMenu.find((item) => item.label === "View")?.submenu
+        .find((item) => item.role === role)?.accelerator).toBeTruthy()
+    }
+    const activateViewRole = (role: string) => electronApp.evaluate(({ BrowserWindow, Menu }, targetRole) => {
+      const window = BrowserWindow.getAllWindows()[0]
+      const item = Menu.getApplicationMenu()?.items
+        .find((menuItem) => menuItem.label === "View")?.submenu?.items
+        .find((menuItem) => menuItem.role === targetRole)
+      if (!window || !item) throw new Error(`Missing View menu role: ${targetRole}`)
+      item.click(undefined, window, window.webContents)
+    }, role)
+
+    expect(await electronApp.evaluate(({ BrowserWindow }) => (
+      BrowserWindow.getAllWindows()[0]?.webContents.getZoomFactor()
+    ))).toBe(1)
+    await activateViewRole("zoomin")
+    await expect.poll(() => electronApp.evaluate(({ BrowserWindow }) => (
+      BrowserWindow.getAllWindows()[0]?.webContents.getZoomFactor()
+    ))).toBeGreaterThan(1)
+    await activateViewRole("resetzoom")
+    await expect.poll(() => electronApp.evaluate(({ BrowserWindow }) => (
+      BrowserWindow.getAllWindows()[0]?.webContents.getZoomFactor()
+    ))).toBe(1)
+    await activateViewRole("zoomout")
+    await expect.poll(() => electronApp.evaluate(({ BrowserWindow }) => (
+      BrowserWindow.getAllWindows()[0]?.webContents.getZoomFactor()
+    ))).toBeLessThan(1)
+    await activateViewRole("resetzoom")
+    await expect.poll(() => electronApp.evaluate(({ BrowserWindow }) => (
+      BrowserWindow.getAllWindows()[0]?.webContents.getZoomFactor()
+    ))).toBe(1)
+
+    await page.evaluate(() => document.documentElement.dataset.reloadProbe = "pending")
+    let reloadComplete = page.waitForEvent("load")
+    await activateViewRole("reload")
+    await reloadComplete
+    await expect.poll(() => page.evaluate(() => document.documentElement.dataset.reloadProbe)).toBeUndefined()
+    await page.evaluate(() => document.documentElement.dataset.reloadProbe = "pending")
+    reloadComplete = page.waitForEvent("load")
+    await activateViewRole("forcereload")
+    await reloadComplete
+    await expect.poll(() => page.evaluate(() => document.documentElement.dataset.reloadProbe)).toBeUndefined()
     await expect(page.getByRole("menuitem", { name: "Developer" })).toHaveCount(0)
     await expect(page.getByRole("menuitem", { name: "Fraia AI…" })).toHaveCount(0)
     await expect(page.getByLabel(/API key/i)).toHaveCount(0)
@@ -235,17 +295,15 @@ test("fake Pi runtime signs in with ChatGPT, uses Luna, completes, cancels, and 
       const style = getComputedStyle(element)
       return {
         scrollbarWidth: style.scrollbarWidth,
-        scrollbarColor: style.scrollbarColor,
         scrollbarGutter: style.scrollbarGutter,
-        maskImage: style.maskImage,
-        webkitMaskImage: style.webkitMaskImage,
+        usesRegistryScrollFade: element.classList.contains("scroll-fade-b"),
+        hasInlineAppearanceOverrides: element.getAttribute("style") !== null,
       }
     })).toEqual({
-      scrollbarWidth: "auto",
-      scrollbarColor: "auto",
-      scrollbarGutter: "auto",
-      maskImage: "none",
-      webkitMaskImage: "none",
+      scrollbarWidth: "thin",
+      scrollbarGutter: "stable",
+      usesRegistryScrollFade: true,
+      hasInlineAppearanceOverrides: false,
     })
     expect((await new AxeBuilder({ page }).setLegacyMode().analyze()).violations).toEqual([])
     await electronApp.close()

@@ -24,6 +24,16 @@ function resolveApplicationMetadata(packageMetadata = {}) {
   });
 }
 
+function resolveRuntimeApplicationMetadata(packageMetadata = {}, packaged = true) {
+  const metadata = resolveApplicationMetadata(packageMetadata);
+  if (packaged) return metadata;
+  return Object.freeze({
+    ...metadata,
+    productName: `${metadata.productName} Dev`,
+    userDataDirectoryName: `${metadata.userDataDirectoryName} Dev`,
+  });
+}
+
 function resolveUserDataDirectory({
   appDataPath,
   configuredPath,
@@ -36,5 +46,6 @@ function resolveUserDataDirectory({
 
 module.exports = {
   resolveApplicationMetadata,
+  resolveRuntimeApplicationMetadata,
   resolveUserDataDirectory,
 };

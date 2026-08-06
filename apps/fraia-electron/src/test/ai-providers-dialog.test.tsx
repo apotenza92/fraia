@@ -43,7 +43,6 @@ function installFraia(overrides: Record<string, unknown> = {}) {
       aiRefreshCatalog: vi.fn(async () => catalogue('disconnected')),
       aiDisconnect: vi.fn(async () => catalogue('disconnected')),
       aiStartOAuth: vi.fn(async () => ({ flowId: 'flow-test' })),
-      aiAnswerAuthPrompt: vi.fn(),
       onAiRuntimeStatus: vi.fn(() => () => {}),
       ...overrides,
     },

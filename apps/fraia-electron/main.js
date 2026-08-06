@@ -6,20 +6,20 @@ const os = require('node:os');
 const path = require('node:path');
 const { round, selectedBudget } = require('./scripts/perf-budgets.cjs');
 const { FakeFraiaAiRuntime, FraiaAiRuntime, publicFraiaCatalogue } = require('./ai-runtime.cjs');
-const { resolveApplicationMetadata, resolveUserDataDirectory } = require('./application-metadata.cjs');
+const { resolveRuntimeApplicationMetadata, resolveUserDataDirectory } = require('./application-metadata.cjs');
 const { nativePlatformArch, resolveCalculixRuntime, resolveSidecarLaunch } = require('./package-boundary.cjs');
 const { configureAutoUpdates } = require('./update-manager.cjs');
 const { MAIN_WINDOW_GEOMETRY, resolveMainWindowGeometry } = require('./window-geometry.cjs');
 const packageMetadata = require('./package.json');
 const developmentChannel = process.env.FRAIA_RELEASE_CHANNEL
   || (packageMetadata.version.includes('-beta.') ? 'beta' : 'stable');
-const applicationMetadata = resolveApplicationMetadata(app.isPackaged
+const applicationMetadata = resolveRuntimeApplicationMetadata(app.isPackaged
   ? packageMetadata
   : {
       ...packageMetadata,
       fraiaReleaseChannel: developmentChannel,
       productName: developmentChannel === 'beta' ? 'Fraia Beta' : 'Fraia',
-    });
+    }, app.isPackaged);
 
 app.setName(applicationMetadata.productName);
 
@@ -31,6 +31,16 @@ const resolvedUserDataDir = resolveUserDataDirectory({
 });
 fs.mkdirSync(resolvedUserDataDir, { recursive: true });
 app.setPath('userData', resolvedUserDataDir);
+if (!app.isPackaged) {
+  safeLog(`[dev-runtime] ${applicationMetadata.productName} user data: ${resolvedUserDataDir}`);
+}
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock({
+  productName: applicationMetadata.productName,
+});
+if (!hasSingleInstanceLock) {
+  app.quit();
+}
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 const sidecarPort = 43000 + Math.floor(Math.random() * 1000);
@@ -780,6 +790,19 @@ function installApplicationMenu() {
         { label: `Quit ${applicationMetadata.productName}`, role: 'quit' },
       ],
     },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -832,6 +855,11 @@ function createWindow() {
   }
   return mainWindow;
 }
+
+app.on('second-instance', () => {
+  if (!hasSingleInstanceLock) return;
+  createWindow();
+});
 
 function scheduleElectronCapture(window) {
   window.webContents.once('did-finish-load', () => {
@@ -955,9 +983,6 @@ ipcMain.handle('fraia:aiStartOAuth', async (_event, payload) => {
   }
   return (await ensureAiRuntime()).startOAuth(FRAIA_AI_PROVIDER_ID);
 });
-ipcMain.handle('fraia:aiAnswerAuthPrompt', async (_event, payload) =>
-  (await ensureAiRuntime()).answerAuthPrompt(payload?.flowId, payload?.value)
-);
 ipcMain.handle('fraia:aiCancelAuth', async (_event, payload) =>
   (await ensureAiRuntime()).cancelAuth(payload?.flowId)
 );

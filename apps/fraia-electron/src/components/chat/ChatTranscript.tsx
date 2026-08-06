@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { Spinner } from '@/components/ui/spinner';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Button } from '@/components/ui/button';
@@ -13,14 +13,6 @@ import {
   MessageScrollerViewport,
 } from '@/components/ui/message-scroller';
 
-const nativeScrollbarStyle: CSSProperties = {
-  scrollbarColor: 'auto',
-  scrollbarGutter: 'auto',
-  scrollbarWidth: 'auto',
-  WebkitMaskImage: 'none',
-  maskImage: 'none',
-};
-
 export function ChatTranscript({
   children,
   busy = false,
@@ -32,10 +24,10 @@ export function ChatTranscript({
     <MessageScrollerProvider
       autoScroll
       defaultScrollPosition="last-anchor"
-      scrollPreviousItemPeek={40}
+      scrollPreviousItemPeek={0}
     >
       <MessageScroller>
-        <MessageScrollerViewport style={nativeScrollbarStyle}>
+        <MessageScrollerViewport>
           <MessageScrollerContent aria-busy={busy} className="gap-3 p-3">
             {children}
           </MessageScrollerContent>
@@ -49,15 +41,19 @@ export function ChatTranscript({
 export function ChatTranscriptMessage({
   author,
   children,
+  details,
   messageId,
+  scrollAnchor,
 }: {
   author: 'assistant' | 'user';
   children: ReactNode;
+  details?: ReactNode;
   messageId: string;
+  scrollAnchor?: boolean;
 }) {
   const userMessage = author === 'user';
   return (
-    <MessageScrollerItem messageId={messageId} scrollAnchor={userMessage}>
+    <MessageScrollerItem messageId={messageId} scrollAnchor={scrollAnchor ?? !userMessage}>
       <Message
         align={userMessage ? 'end' : 'start'}
         aria-label={userMessage ? 'You' : 'Fraia AI'}
@@ -67,7 +63,26 @@ export function ChatTranscriptMessage({
           <Bubble align={userMessage ? 'end' : 'start'} variant={userMessage ? 'default' : 'ghost'}>
             <BubbleContent>{children}</BubbleContent>
           </Bubble>
+          {details ? <div className="p-px">{details}</div> : null}
         </MessageContent>
+      </Message>
+    </MessageScrollerItem>
+  );
+}
+
+export function ChatTranscriptPanel({
+  children,
+  messageId,
+  scrollAnchor = false,
+}: {
+  children: ReactNode;
+  messageId: string;
+  scrollAnchor?: boolean;
+}) {
+  return (
+    <MessageScrollerItem messageId={messageId} scrollAnchor={scrollAnchor}>
+      <Message aria-label="Fraia AI" data-author="assistant">
+        <MessageContent className="p-px">{children}</MessageContent>
       </Message>
     </MessageScrollerItem>
   );

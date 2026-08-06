@@ -3,10 +3,10 @@ import { Send } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Empty, EmptyContent, EmptyDescription, EmptyTitle } from '@/components/ui/empty';
-import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field';
+import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field';
 import { MessageScrollerItem } from '@/components/ui/message-scroller';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -107,7 +107,19 @@ function CheckboxRow({
   );
 }
 
-export function SchemeChatPanel({ state, scheme, surface, onState }: { state: WorkbenchState | null; scheme: EngineeringScheme; surface: string; onState: (s: WorkbenchState) => void }) {
+export function SchemeChatPanel({
+  state,
+  scheme,
+  surface,
+  onState,
+  showHeader = true,
+}: {
+  state: WorkbenchState | null;
+  scheme: EngineeringScheme;
+  surface: string;
+  onState: (s: WorkbenchState) => void;
+  showHeader?: boolean;
+}) {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [analysing, setAnalysing] = useState(false);
@@ -271,7 +283,7 @@ export function SchemeChatPanel({ state, scheme, surface, onState }: { state: Wo
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-0">
-      <div className="flex shrink-0 flex-col gap-2 border-b p-2">
+      {showHeader ? <div className="flex shrink-0 flex-col gap-2 border-b p-2">
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-baseline gap-2">
             <span className="text-sm font-medium">Fraia AI</span>
@@ -297,7 +309,24 @@ export function SchemeChatPanel({ state, scheme, surface, onState }: { state: Wo
         )}
         </div>
         )}
-      </div>
+      </div> : showStatus ? (
+        <div className="flex shrink-0 flex-col gap-1.5 p-2">
+          {!aiReady && <Alert><AlertDescription>Open Fraia → Fraia AI and sign in with ChatGPT.</AlertDescription></Alert>}
+          {providerError && <Button onClick={refreshProvider} size="sm" variant="secondary">Retry provider check</Button>}
+          {analysisError && (
+            <Alert variant="destructive">
+              <AlertDescription>{analysisError}</AlertDescription>
+              <Button onClick={analyseOption} disabled={analysing} size="sm" variant="secondary">Retry option analysis</Button>
+            </Alert>
+          )}
+          {sendError && (
+            <Alert variant="destructive">
+              <AlertDescription>{sendError}</AlertDescription>
+              <Button onClick={() => respond(draft)} disabled={busy || !draft.trim()} size="sm" variant="secondary">Retry send</Button>
+            </Alert>
+          )}
+        </div>
+      ) : null}
 
       <div className="min-h-0 flex-1 overflow-hidden">
         <ChatTranscript busy={busy || analysing}>
@@ -316,7 +345,7 @@ export function SchemeChatPanel({ state, scheme, surface, onState }: { state: Wo
             </Alert></MessageScrollerItem>
           )}
           {!visibleMessages.length && (
-            <MessageScrollerItem>
+            <MessageScrollerItem className="p-px">
               {analysing ? (
                 <Card>
                   <CardContent>
@@ -344,19 +373,22 @@ export function SchemeChatPanel({ state, scheme, surface, onState }: { state: Wo
                 key={messageKey}
                 messageId={messageKey}
                 author={userMessage ? 'user' : 'assistant'}
-              >
-                <ChatMessageText text={displayMessageText(message.text)} />
-                {!!replyGroups.length && (
-                  <div className="mt-2 flex flex-col gap-2">
+                details={(!!replyGroups.length || !!replies.length) ? (
+                  <>
+                  {!!replyGroups.length && (
+                  <div className="flex flex-col gap-2">
                     {replyGroups.map((group, groupIndex) => {
                       const groupKey = groupAnswerKey(messageKey, groupIndex);
                       const selected = groupedSelections[groupKey] ?? group.defaultReplies;
                       return (
                       <Card key={`${group.title}-${group.prompt ?? ''}-${groupIndex}`}>
+                        <CardHeader>
+                          <CardTitle>{group.title}</CardTitle>
+                          {group.prompt && <CardDescription>{group.prompt}</CardDescription>}
+                        </CardHeader>
                         <CardContent>
                         <FieldSet className="gap-2">
-                        <FieldLegend className="mb-0">{group.title}</FieldLegend>
-                        {group.prompt && <FieldDescription>{group.prompt}</FieldDescription>}
+                        <FieldLegend className="sr-only">{group.title}</FieldLegend>
                         <FieldGroup className="gap-1">
                           {group.replies.map((reply, replyIndex) => (
                             <CheckboxRow
@@ -396,7 +428,7 @@ export function SchemeChatPanel({ state, scheme, surface, onState }: { state: Wo
                   </div>
                 )}
                 {!replyGroups.length && !!replies.length && (
-                  <div className="mt-2 flex flex-col gap-2">
+                  <div className="flex flex-col gap-2">
                     {replies.map((reply, replyIndex) => (
                       <div key={`${reply}-${replyIndex}`} className="flex items-stretch gap-2">
                         <Button
@@ -428,6 +460,10 @@ export function SchemeChatPanel({ state, scheme, surface, onState }: { state: Wo
                     ))}
                   </div>
                 )}
+                  </>
+                ) : undefined}
+              >
+                <ChatMessageText text={displayMessageText(message.text)} />
               </ChatTranscriptMessage>
             );
           })}

@@ -91,4 +91,121 @@ describe('Base Model ChatGPT authentication', () => {
     await waitFor(() => expect(aiDisconnect).toHaveBeenCalledWith({ providerId: 'openai-codex' }));
     expect(await screen.findByRole('button', { name: 'Sign in required' })).toBeVisible();
   });
+
+  it('keeps the design-option handoff and generation progress inside the chat', async () => {
+    Object.defineProperty(window, 'fraia', {
+      configurable: true,
+      value: {
+        agentProviderStatus: vi.fn(async () => providerStatus(true)),
+        onAiRuntimeStatus: vi.fn(() => () => {}),
+      },
+    });
+    const state: WorkbenchState = {
+      overview: { projectDir: '/projects/frame-a' },
+      agentState: {
+        sessions: [{
+          id: 'session-pre-solve',
+          surface: 'pre_solve',
+          title: 'Base Model Guide',
+          status: 'active',
+          messages: [{ author: 'assistant', text: 'I have captured the fixed briefing boundaries.', mode: 'pi' }],
+        }],
+        settingsBySurface: {
+          pre_solve: { providerId: 'openai-codex', modelId: 'gpt-5.6-luna' },
+        },
+      },
+      baseModelBrief: {
+        version: 1,
+        readiness: { readyForSchemas: true },
+      },
+    };
+    const onGenerateOptions = vi.fn();
+    const { rerender } = render(
+      <BaseChatPanel
+        state={state}
+        onState={vi.fn()}
+        onGenerateOptions={onGenerateOptions}
+      />,
+    );
+    const user = userEvent.setup();
+
+    expect(await screen.findByText('Explore design options')).toBeVisible();
+    expect(screen.getByText('Your Base Model brief is ready. Fraia can now develop distinct structural approaches for side-by-side review.')).toBeVisible();
+    expect(screen.getByText('You can also keep chatting with the Base Model Guide to refine the model or adjust the brief. Generate options whenever you are ready.')).toBeVisible();
+    const generate = screen.getByRole('button', { name: 'Generate design options' });
+    expect(generate.closest('[data-slot="message"]')).toHaveAttribute('data-author', 'assistant');
+    expect(generate.closest('[data-message-id="base-design-options-handoff"]')).toHaveAttribute('data-scroll-anchor', 'false');
+    expect(generate.closest('[data-slot="card"]')?.closest('[data-slot="bubble-content"]')).toBeNull();
+    await user.click(generate);
+    expect(onGenerateOptions).toHaveBeenCalledOnce();
+
+    rerender(
+      <BaseChatPanel
+        state={state}
+        onState={vi.fn()}
+        onGenerateOptions={onGenerateOptions}
+        generatingOptions
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Generate design options' })).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Fraia AI is generating design options');
+    expect(screen.getByText('Reviewing the confirmed Base Model brief')).toBeVisible();
+    expect(screen.getByRole('log')).toHaveAttribute('aria-busy', 'true');
+  });
+
+  it('treats an omitted hard-constraints answer as none', async () => {
+    const agentRespondSession = vi.fn(async () => ({ overview: { projectDir: '/projects/frame-a' } }));
+    Object.defineProperty(window, 'fraia', {
+      configurable: true,
+      value: {
+        agentProviderStatus: vi.fn(async () => providerStatus(true)),
+        agentRespondSession,
+        onAiRuntimeStatus: vi.fn(() => () => {}),
+      },
+    });
+    const state: WorkbenchState = {
+      overview: { projectDir: '/projects/frame-a' },
+      agentState: {
+        sessions: [{
+          id: 'session-pre-solve',
+          surface: 'pre_solve',
+          title: 'Base Model Guide',
+          status: 'active',
+          messages: [{
+            author: 'assistant',
+            text: 'One final boundary question.',
+            mode: 'pi',
+            suggestedReplyGroups: [{
+              title: 'Hard constraints',
+              prompt: 'Are there any fixed boundaries or no-go zones?',
+              replies: [],
+              defaultReplies: [],
+            }],
+          }],
+        }],
+        settingsBySurface: {
+          pre_solve: { providerId: 'openai-codex', modelId: 'gpt-5.6-luna' },
+        },
+      },
+      baseModelBrief: {
+        version: 1,
+        readiness: { readyForSchemas: false },
+      },
+    };
+    const user = userEvent.setup();
+    const { container } = render(<BaseChatPanel state={state} onState={vi.fn()} />);
+
+    const sendAnswers = await screen.findByRole('button', { name: 'Send selected answers' });
+    const groupedReplyCard = container.querySelector('[data-slot="card"]');
+    expect(groupedReplyCard).not.toBeNull();
+    expect(groupedReplyCard?.querySelector('[data-slot="card-header"]')).not.toBeNull();
+    expect(groupedReplyCard?.querySelector('[data-slot="card-title"]')).toHaveTextContent('Hard constraints');
+    expect(groupedReplyCard?.closest('[data-slot="bubble-content"]')).toBeNull();
+    expect(sendAnswers).toBeEnabled();
+    await user.click(sendAnswers);
+
+    await waitFor(() => expect(agentRespondSession).toHaveBeenCalledWith(expect.objectContaining({
+      text: 'Hard constraints: None',
+    })));
+  });
 });

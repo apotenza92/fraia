@@ -9,6 +9,13 @@ const DEFAULT_TURN_TIMEOUT_MS = 120_000;
 const MAX_REQUEST_BYTES = 8 * 1024 * 1024;
 const FRAIA_AI_PROVIDER_ID = 'openai-codex';
 const FRAIA_AI_MODEL_ID = 'gpt-5.6-luna';
+const FRAIA_AI_BROWSER_LOGIN_METHOD = 'browser';
+
+function automaticOAuthPromptAnswer(prompt) {
+  if (prompt?.type !== 'select') return null;
+  const optionIds = new Set((prompt.options ?? []).map((option) => option.id));
+  return optionIds.has(FRAIA_AI_BROWSER_LOGIN_METHOD) ? FRAIA_AI_BROWSER_LOGIN_METHOD : null;
+}
 
 function publicFraiaCatalogue(catalogue) {
   return {
@@ -354,22 +361,30 @@ class FraiaAiRuntime {
     }
     const flowId = crypto.randomUUID();
     const abortController = new AbortController();
-    const pendingPrompts = [];
-    this.authFlows.set(flowId, { providerId, abortController, pendingPrompts });
+    this.authFlows.set(flowId, { providerId, abortController });
     const emit = (event) => this.emitStatus({ kind: 'authentication', flowId, providerId, ...event });
     void this.modelRuntime.login(providerId, 'oauth', {
       signal: abortController.signal,
       notify: (event) => {
+        if (event.type === 'device_code') {
+          throw new Error('Fraia supports ChatGPT browser sign-in only.');
+        }
         emit(event);
-        const url = event.type === 'auth_url' ? event.url : event.type === 'device_code' ? event.verificationUri : null;
+        const url = event.type === 'auth_url' ? event.url : null;
         if (url) void this.shell?.openExternal?.(url);
       },
-      prompt: (prompt) => new Promise((resolve, reject) => {
-        const entry = { resolve, reject };
-        pendingPrompts.push(entry);
-        emit({ type: 'prompt', prompt: { ...prompt, signal: undefined } });
-        prompt.signal?.addEventListener('abort', () => reject(new Error('Authentication prompt was cancelled.')), { once: true });
-      }),
+      prompt: (prompt) => {
+        const automaticAnswer = automaticOAuthPromptAnswer(prompt);
+        if (automaticAnswer) return Promise.resolve(automaticAnswer);
+        if (prompt?.type !== 'manual_code') {
+          return Promise.reject(new Error('Fraia supports ChatGPT browser sign-in only.'));
+        }
+        return new Promise((_resolve, reject) => {
+          const cancel = () => reject(new Error('Authentication prompt was cancelled.'));
+          prompt.signal?.addEventListener('abort', cancel, { once: true });
+          abortController.signal.addEventListener('abort', cancel, { once: true });
+        });
+      },
     }).then(async () => {
       emit({ type: 'complete' });
       await this.refreshCatalog('authentication');
@@ -381,19 +396,10 @@ class FraiaAiRuntime {
     return { flowId };
   }
 
-  answerAuthPrompt(flowId, value) {
-    const flow = this.authFlows.get(flowId);
-    const prompt = flow?.pendingPrompts.shift();
-    if (!prompt) throw new Error('No authentication prompt is awaiting a response.');
-    prompt.resolve(String(value ?? ''));
-    return { ok: true };
-  }
-
   cancelAuth(flowId) {
     const flow = this.authFlows.get(flowId);
     if (!flow) return { ok: false };
     flow.abortController.abort();
-    for (const prompt of flow.pendingPrompts) prompt.reject(new Error('Authentication cancelled.'));
     this.authFlows.delete(flowId);
     return { ok: true };
   }
