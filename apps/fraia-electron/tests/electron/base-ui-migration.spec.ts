@@ -101,6 +101,60 @@ test("desktop shell preserves keyboard and accessibility contracts", async () =>
       "minimum desktop bounds should not overflow the document",
     ).toEqual({ horizontalOverflow: false, verticalOverflow: false })
 
+    const releaseNotes = Array.from(
+      { length: 40 },
+      (_, index) => `• Change ${index + 1} keeps the update details readable inside the dialog.`,
+    ).join("\n")
+    await electronApp.evaluate(({ BrowserWindow }, notes) => {
+      BrowserWindow.getAllWindows()[0]?.webContents.send("fraia:updateStatus", {
+        channel: "beta",
+        currentVersion: "0.0.6",
+        enabled: true,
+        frequency: "daily",
+        phase: "ready",
+        releaseNotes: notes,
+        trustedMetadata: true,
+        version: "0.0.9",
+      })
+    }, releaseNotes)
+
+    const updateDialog = page.getByRole("dialog", { name: "Fraia 0.0.9 is ready" })
+    const releaseNotesRegion = page.getByRole("region", {
+      name: "Release notes for Fraia 0.0.9",
+    })
+    await expect(updateDialog).toBeVisible()
+    await expect(updateDialog.getByText("What's new")).toBeVisible()
+    await expect(updateDialog.getByText("Automatic checks")).toHaveCount(0)
+    await expect(updateDialog.getByText(/Fraia verifies the update/)).toHaveCount(0)
+    await expect(updateDialog.getByText(/updater works independently/)).toHaveCount(0)
+    await expect(releaseNotesRegion).toBeVisible()
+    expect(await releaseNotesRegion.evaluate((region) => {
+      const dialog = region.closest('[data-slot="dialog-content"]')
+      const footer = dialog?.querySelector('[data-slot="dialog-footer"]')
+      const viewport = region.querySelector('[data-slot="scroll-area-viewport"]')
+      if (!(dialog instanceof HTMLElement)
+        || !(footer instanceof HTMLElement)
+        || !(viewport instanceof HTMLElement)) {
+        throw new Error("Update dialog scroll geometry is incomplete")
+      }
+      const dialogBounds = dialog.getBoundingClientRect()
+      const footerBounds = footer.getBoundingClientRect()
+      const viewportBounds = viewport.getBoundingClientRect()
+      return {
+        dialogInsideWindow: dialogBounds.bottom <= window.innerHeight,
+        footerBelowNotes: footerBounds.top >= viewportBounds.bottom,
+        notesOverflow: viewport.scrollHeight > viewport.clientHeight,
+        viewportHeight: viewport.clientHeight,
+      }
+    })).toEqual({
+      dialogInsideWindow: true,
+      footerBelowNotes: true,
+      notesOverflow: true,
+      viewportHeight: 176,
+    })
+    await page.getByRole("button", { name: "Close", exact: true }).click()
+    await expect(updateDialog).toHaveCount(0)
+
     await page.emulateMedia({ colorScheme: "light" })
     await page.evaluate(() => localStorage.setItem("fraia:theme-mode", "dark"))
     await page.reload()
@@ -111,6 +165,8 @@ test("desktop shell preserves keyboard and accessibility contracts", async () =>
     await expect(page.locator("html")).toHaveAttribute("data-theme-mode", "system")
     await expect(page.locator("html")).not.toHaveClass(/\bdark\b/)
     await expect.poll(() => page.evaluate(() => localStorage.getItem("fraia:theme-mode"))).toBeNull()
+    await page.mouse.move(0, 0)
+    await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveCount(0)
 
     // Electron cannot create the blank Chromium page used by axe's partial-run
     // mode. Legacy mode runs the same rules in the application page and still
@@ -150,9 +206,69 @@ test("fake Pi runtime signs in with ChatGPT, uses Luna, completes, cancels, and 
   try {
     let page = await electronApp.firstWindow()
     await page.waitForLoadState("domcontentloaded")
-    expect(await electronApp.evaluate(({ Menu }) => (
-      Menu.getApplicationMenu()?.items.map((item) => item.label) ?? []
-    ))).not.toContain("Developer")
+    const applicationMenu = await electronApp.evaluate(({ Menu }) => (
+      Menu.getApplicationMenu()?.items.map((item) => ({
+        label: item.label,
+        submenu: item.submenu?.items.map((submenuItem) => ({
+          accelerator: submenuItem.accelerator?.toString() ?? null,
+          role: submenuItem.role ?? null,
+        })) ?? [],
+      })) ?? []
+    ))
+    expect(applicationMenu.map((item) => item.label)).not.toContain("Developer")
+    const viewMenuRoles = applicationMenu.find((item) => item.label === "View")?.submenu
+      .map((item) => item.role)
+    expect(viewMenuRoles).toEqual(expect.arrayContaining([
+      "reload",
+      "forcereload",
+      "resetzoom",
+      "zoomin",
+      "zoomout",
+      "togglefullscreen",
+    ]))
+    for (const role of ["reload", "forcereload", "resetzoom", "zoomin", "zoomout"]) {
+      expect(applicationMenu.find((item) => item.label === "View")?.submenu
+        .find((item) => item.role === role)?.accelerator).toBeTruthy()
+    }
+    const activateViewRole = (role: string) => electronApp.evaluate(({ BrowserWindow, Menu }, targetRole) => {
+      const window = BrowserWindow.getAllWindows()[0]
+      const item = Menu.getApplicationMenu()?.items
+        .find((menuItem) => menuItem.label === "View")?.submenu?.items
+        .find((menuItem) => menuItem.role === targetRole)
+      if (!window || !item) throw new Error(`Missing View menu role: ${targetRole}`)
+      item.click(undefined, window, window.webContents)
+    }, role)
+
+    expect(await electronApp.evaluate(({ BrowserWindow }) => (
+      BrowserWindow.getAllWindows()[0]?.webContents.getZoomFactor()
+    ))).toBe(1)
+    await activateViewRole("zoomin")
+    await expect.poll(() => electronApp.evaluate(({ BrowserWindow }) => (
+      BrowserWindow.getAllWindows()[0]?.webContents.getZoomFactor()
+    ))).toBeGreaterThan(1)
+    await activateViewRole("resetzoom")
+    await expect.poll(() => electronApp.evaluate(({ BrowserWindow }) => (
+      BrowserWindow.getAllWindows()[0]?.webContents.getZoomFactor()
+    ))).toBe(1)
+    await activateViewRole("zoomout")
+    await expect.poll(() => electronApp.evaluate(({ BrowserWindow }) => (
+      BrowserWindow.getAllWindows()[0]?.webContents.getZoomFactor()
+    ))).toBeLessThan(1)
+    await activateViewRole("resetzoom")
+    await expect.poll(() => electronApp.evaluate(({ BrowserWindow }) => (
+      BrowserWindow.getAllWindows()[0]?.webContents.getZoomFactor()
+    ))).toBe(1)
+
+    await page.evaluate(() => document.documentElement.dataset.reloadProbe = "pending")
+    let reloadComplete = page.waitForEvent("load")
+    await activateViewRole("reload")
+    await reloadComplete
+    await expect.poll(() => page.evaluate(() => document.documentElement.dataset.reloadProbe)).toBeUndefined()
+    await page.evaluate(() => document.documentElement.dataset.reloadProbe = "pending")
+    reloadComplete = page.waitForEvent("load")
+    await activateViewRole("forcereload")
+    await reloadComplete
+    await expect.poll(() => page.evaluate(() => document.documentElement.dataset.reloadProbe)).toBeUndefined()
     await expect(page.getByRole("menuitem", { name: "Developer" })).toHaveCount(0)
     await expect(page.getByRole("menuitem", { name: "Fraia AI…" })).toHaveCount(0)
     await expect(page.getByLabel(/API key/i)).toHaveCount(0)
@@ -179,17 +295,15 @@ test("fake Pi runtime signs in with ChatGPT, uses Luna, completes, cancels, and 
       const style = getComputedStyle(element)
       return {
         scrollbarWidth: style.scrollbarWidth,
-        scrollbarColor: style.scrollbarColor,
         scrollbarGutter: style.scrollbarGutter,
-        maskImage: style.maskImage,
-        webkitMaskImage: style.webkitMaskImage,
+        usesRegistryScrollFade: element.classList.contains("scroll-fade-b"),
+        hasInlineAppearanceOverrides: element.getAttribute("style") !== null,
       }
     })).toEqual({
-      scrollbarWidth: "auto",
-      scrollbarColor: "auto",
-      scrollbarGutter: "auto",
-      maskImage: "none",
-      webkitMaskImage: "none",
+      scrollbarWidth: "thin",
+      scrollbarGutter: "stable",
+      usesRegistryScrollFade: true,
+      hasInlineAppearanceOverrides: false,
     })
     expect((await new AxeBuilder({ page }).setLegacyMode().analyze()).violations).toEqual([])
     await electronApp.close()

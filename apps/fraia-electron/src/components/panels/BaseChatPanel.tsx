@@ -1,17 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { ClipboardCheck, ExternalLink, LogOut, RotateCcw, Send } from 'lucide-react';
+import { ClipboardCheck, ExternalLink, LogOut, RotateCcw, Send, Sparkles } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
+import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Spinner } from '@/components/ui/spinner';
 import { Separator } from '@/components/ui/separator';
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { EstimatedAgentProgress, type AgentProgressStage, useEstimatedAgentProgress } from '../chat/AgentProgressIndicator';
 import { ChatMessageText } from '../chat/ChatMessageText';
 import {
@@ -19,6 +18,7 @@ import {
   ChatTranscriptActivity,
   ChatTranscriptCancel,
   ChatTranscriptMessage,
+  ChatTranscriptPanel,
 } from '../chat/ChatTranscript';
 import type { AgentProviderStatus, AgentSession, BaseModelBrief, WorkbenchState } from '../../lib/types';
 import { normalizeWorkbenchState, projectDirOf } from '../../lib/defaultProject';
@@ -42,9 +42,6 @@ type AuthenticationEvent = {
   type?: string;
   message?: string;
   url?: string;
-  userCode?: string;
-  verificationUri?: string;
-  prompt?: { type?: string; message?: string; options?: Array<{ id: string; label: string }> };
 };
 
 const BASE_GUIDE_START_STAGES: AgentProgressStage[] = [
@@ -61,6 +58,14 @@ const BASE_GUIDE_REPLY_STAGES: AgentProgressStage[] = [
   { label: 'Checking support and load assumptions', durationMs: 3600 },
   { label: 'Updating the Base Model brief', durationMs: 3600 },
   { label: 'Preparing the next grouped questions or handoff', durationMs: 3600 },
+];
+
+const DESIGN_OPTION_GENERATION_STAGES: AgentProgressStage[] = [
+  { label: 'Reviewing the confirmed Base Model brief', durationMs: 1800 },
+  { label: 'Developing distinct structural hypotheses', durationMs: 4200 },
+  { label: 'Resolving supports, load paths, and member groups', durationMs: 5200 },
+  { label: 'Checking option intent and engineering provenance', durationMs: 4200 },
+  { label: 'Building the design-option views', durationMs: 3600 },
 ];
 
 function messageReplies(message: any): string[] {
@@ -105,6 +110,11 @@ function messageStartedGuide(message: { mode?: string }) {
   return message.mode !== 'pi_unavailable';
 }
 
+function omissionMeansNoConstraints(group: { title: string; prompt?: string }) {
+  const context = `${group.title} ${group.prompt ?? ''}`.toLowerCase();
+  return /\bhard constraints?\b|\bno-go\b/.test(context);
+}
+
 function agentMessageKey(message: { createdAt?: string; created_at?: string }, index: number) {
   return `${message.createdAt ?? message.created_at ?? index}-${index}`;
 }
@@ -133,10 +143,18 @@ export function BaseChatPanel({
   state,
   onState,
   onHeaderActionChange,
+  onGenerateOptions,
+  generatingOptions = false,
+  hasDesignOptions = false,
+  generationError = null,
 }: {
   state: WorkbenchState | null;
   onState: (s: WorkbenchState) => void;
   onHeaderActionChange?: (action: ReactNode | null) => void;
+  onGenerateOptions?: () => void | Promise<void>;
+  generatingOptions?: boolean;
+  hasDesignOptions?: boolean;
+  generationError?: string | null;
 }) {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
@@ -148,7 +166,6 @@ export function BaseChatPanel({
   const [authenticationAction, setAuthenticationAction] = useState<'sign-in' | 'sign-out' | null>(null);
   const [authenticationError, setAuthenticationError] = useState<string | null>(null);
   const [authenticationEvent, setAuthenticationEvent] = useState<AuthenticationEvent | null>(null);
-  const [authenticationPromptAnswer, setAuthenticationPromptAnswer] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [groupedSelections, setGroupedSelections] = useState<Record<string, string[]>>({});
@@ -193,6 +210,8 @@ export function BaseChatPanel({
   const latestVisibleMessage = visibleMessages[visibleMessages.length - 1];
   const startProgress = useEstimatedAgentProgress(starting, BASE_GUIDE_START_STAGES, 'Finalising node/member-specific guide');
   const replyProgress = useEstimatedAgentProgress(busy, BASE_GUIDE_REPLY_STAGES, 'Finalising the updated Base Model brief');
+  const optionProgress = useEstimatedAgentProgress(generatingOptions, DESIGN_OPTION_GENERATION_STAGES, 'Finalising design options');
+  const interactionBusy = busy || generatingOptions;
   const refreshProvider = useCallback(async () => {
     if (!projectDir) return null;
     try {
@@ -229,7 +248,6 @@ export function BaseChatPanel({
   async function changeAuthentication() {
     if (authenticationAction || authenticationInProgress) return;
     setAuthenticationError(null);
-    setAuthenticationPromptAnswer(null);
     setAuthenticationEvent(null);
 
     if (signedIn) {
@@ -262,20 +280,6 @@ export function BaseChatPanel({
     }
   }
 
-  async function answerAuthenticationPrompt(event: AuthenticationEvent) {
-    if (!event.flowId) return;
-    setAuthenticationError(null);
-    try {
-      await window.fraia.aiAnswerAuthPrompt({
-        flowId: event.flowId,
-        value: authenticationPromptAnswer ?? '',
-      });
-      setAuthenticationPromptAnswer(null);
-    } catch (error: any) {
-      setAuthenticationError(error?.message || 'Could not continue ChatGPT sign-in.');
-    }
-  }
-
   async function startBaseModelGuide() {
     if (!state || !projectDir || guideStarted || startInFlightRef.current) return;
     startInFlightRef.current = true;
@@ -295,7 +299,7 @@ export function BaseChatPanel({
   }
 
   const resetBaseModelGuide = useCallback(async () => {
-    if (!projectDir || !guideStarted || busy || starting || resettingGuide) return;
+    if (!projectDir || !guideStarted || interactionBusy || starting || resettingGuide) return;
     const confirmed = window.confirm('Reset the Base Model Guide and start again? This clears the Base Model chat and brief, but keeps the current geometry and project model.');
     if (!confirmed) return;
     setResettingGuide(true);
@@ -316,11 +320,11 @@ export function BaseChatPanel({
     } finally {
       setResettingGuide(false);
     }
-  }, [busy, guideStarted, onState, projectDir, resettingGuide, starting]);
+  }, [guideStarted, interactionBusy, onState, projectDir, resettingGuide, starting]);
 
   async function respond(text: string) {
     const trimmed = text.trim();
-    if (!trimmed || !projectDir || busy) return;
+    if (!trimmed || !projectDir || interactionBusy) return;
     const requestId = createAgentRequestId(SURFACE);
     activeRequestIdRef.current = requestId;
     activeRequestTextRef.current = trimmed;
@@ -398,14 +402,20 @@ export function BaseChatPanel({
         const note = (groupedNotes[key] ?? '').trim();
         const parts = [...selected, note ? `Other detail: ${note}` : ''];
         const answer = parts.filter(Boolean).join(' ');
-        return answer ? `${group.title}: ${answer}` : '';
+        if (answer) return `${group.title}: ${answer}`;
+        return omissionMeansNoConstraints(group) ? `${group.title}: None` : '';
       })
       .filter(Boolean)
       .join('\n\n');
   }
 
   function groupedAnswerHasContent(messageKey: string, groups: Array<{ title: string; replies: string[]; defaultReplies?: string[] }>) {
-    return groupedAnswerText(messageKey, groups).trim().length > 0;
+    const hasExplicitAnswer = groups.some((group, groupIndex) => {
+      const key = groupAnswerKey(messageKey, groupIndex);
+      const selected = groupedSelections[key] ?? group.defaultReplies ?? [];
+      return selected.length > 0 || Boolean((groupedNotes[key] ?? '').trim());
+    });
+    return hasExplicitAnswer || groups.every(omissionMeansNoConstraints);
   }
 
   function sendGroupedAnswers(messageKey: string, groups: Array<{ title: string; replies: string[]; defaultReplies?: string[] }>) {
@@ -467,15 +477,6 @@ export function BaseChatPanel({
           <AlertDescription>Fraia opened ChatGPT sign-in in your default browser and will update when authorization finishes.</AlertDescription>
         </Alert>
       )}
-      {authenticationEvent?.type === 'device_code' && (
-        <Alert>
-          <ExternalLink />
-          <AlertTitle>Finish signing in with ChatGPT</AlertTitle>
-          <AlertDescription>
-            Open {authenticationEvent.verificationUri} and enter code <strong>{authenticationEvent.userCode}</strong>.
-          </AlertDescription>
-        </Alert>
-      )}
       {authenticationEvent?.type === 'progress' && (
         <p className="text-sm text-muted-foreground" role="status">{authenticationEvent.message}</p>
       )}
@@ -491,50 +492,6 @@ export function BaseChatPanel({
           <AlertDescription>Sign out and reconnect ChatGPT before starting another AI turn.</AlertDescription>
         </Alert>
       )}
-      {authenticationEvent?.type === 'prompt' && authenticationEvent.flowId && (
-        <form onSubmit={(event) => { event.preventDefault(); void answerAuthenticationPrompt(authenticationEvent); }}>
-          <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="base-chat-auth-prompt">
-                {authenticationEvent.prompt?.message ?? 'Authentication response'}
-              </FieldLabel>
-              {authenticationEvent.prompt?.type === 'select' ? (
-                <Select
-                  value={authenticationPromptAnswer}
-                  items={[
-                    { value: null, label: 'Choose an option' },
-                    ...(authenticationEvent.prompt.options ?? []).map((option) => ({ value: option.id, label: option.label })),
-                  ]}
-                  onValueChange={(value) => {
-                    if (typeof value === 'string') setAuthenticationPromptAnswer(value);
-                  }}
-                >
-                  <SelectTrigger id="base-chat-auth-prompt" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value={null}>Choose an option</SelectItem>
-                      {(authenticationEvent.prompt.options ?? []).map((option) => (
-                        <SelectItem key={option.id} value={option.id}>{option.label}</SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Input
-                  id="base-chat-auth-prompt"
-                  type={authenticationEvent.prompt?.type === 'secret' ? 'password' : 'text'}
-                  autoComplete="off"
-                  value={authenticationPromptAnswer ?? ''}
-                  onChange={(event) => setAuthenticationPromptAnswer(event.target.value)}
-                />
-              )}
-              <Button type="submit" size="sm" disabled={!authenticationPromptAnswer?.trim()}>Continue</Button>
-            </Field>
-          </FieldGroup>
-        </form>
-      )}
       {startError && (
         <Alert variant="destructive">
           <AlertDescription>{startError}</AlertDescription>
@@ -545,7 +502,7 @@ export function BaseChatPanel({
       {sendError && (
         <Alert variant="destructive">
           <AlertDescription>{sendError}</AlertDescription>
-          <Button onClick={() => respond(draft)} disabled={busy || !draft.trim()} size="sm" variant="secondary">Retry send</Button>
+          <Button onClick={() => respond(draft)} disabled={interactionBusy || !draft.trim()} size="sm" variant="secondary">Retry send</Button>
         </Alert>
       )}
         </div>
@@ -556,14 +513,14 @@ export function BaseChatPanel({
   const resetGuideButton = useMemo(() => guideStarted ? (
     <Button
       onClick={resetBaseModelGuide}
-      disabled={busy || starting || resettingGuide}
+      disabled={interactionBusy || starting || resettingGuide}
       className="w-full"
       title="Clear the Base Model Guide chat and brief, while keeping the current model geometry"
     >
       {resettingGuide ? <Spinner data-icon="inline-start" /> : <RotateCcw data-icon="inline-start" />}
       {resettingGuide ? 'Resetting...' : 'Reset guide'}
     </Button>
-  ) : null, [busy, guideStarted, resetBaseModelGuide, resettingGuide, starting]);
+  ) : null, [guideStarted, interactionBusy, resetBaseModelGuide, resettingGuide, starting]);
 
   useEffect(() => {
     onHeaderActionChange?.(resetGuideButton);
@@ -601,7 +558,7 @@ export function BaseChatPanel({
       </Field>
       <div className="grid grid-cols-2 gap-2">
         {resetGuideButton ? <div className="min-w-0">{resetGuideButton}</div> : null}
-        <Button className="w-full" onClick={() => respond(draft)} disabled={busy || !draft.trim() || !aiReady}>
+        <Button className="w-full" onClick={() => respond(draft)} disabled={interactionBusy || !draft.trim() || !aiReady}>
           {busy ? <Spinner data-icon="inline-start" /> : <Send data-icon="inline-start" />}
           {busy ? 'Sending...' : 'Send'}
         </Button>
@@ -622,26 +579,29 @@ export function BaseChatPanel({
             key={messageKey}
             messageId={messageKey}
             author={userMessage ? 'user' : 'assistant'}
-          >
-            <ChatMessageText text={message.text} />
-            {!!replyGroups.length && (
-              <div className="mt-2 flex flex-col gap-2">
+            details={(!!replyGroups.length || !!replies.length) ? (
+              <>
+              {!!replyGroups.length && (
+              <div className="flex flex-col gap-2">
                 {replyGroups.map((group, groupIndex) => {
                   const groupKey = groupAnswerKey(messageKey, groupIndex);
                   const selected = groupedSelections[groupKey] ?? group.defaultReplies;
                   return (
                   <Card key={`${group.title}-${group.prompt ?? ''}-${groupIndex}`}>
+                    <CardHeader>
+                      <CardTitle>{group.title}</CardTitle>
+                      {group.prompt && <CardDescription>{group.prompt}</CardDescription>}
+                    </CardHeader>
                     <CardContent>
                     <FieldSet className="gap-2">
-                    <FieldLegend className="mb-0">{group.title}</FieldLegend>
-                    {group.prompt && <FieldDescription>{group.prompt}</FieldDescription>}
+                    <FieldLegend className="sr-only">{group.title}</FieldLegend>
                     <FieldGroup className="gap-1">
                       {group.replies.map((reply, replyIndex) => (
                         <CheckboxRow
                           key={`${reply}-${replyIndex}`}
                           label={reply}
                             checked={selected.includes(reply)}
-                            disabled={busy || !aiReady}
+                            disabled={interactionBusy || !aiReady}
                             onCheckedChange={() => toggleGroupedReply(groupKey, reply, group.defaultReplies)}
                         />
                       ))}
@@ -653,7 +613,7 @@ export function BaseChatPanel({
                       value={groupedNotes[groupKey] ?? ''}
                       rows={2}
                       placeholder="Add your own answer or note for this issue..."
-                      disabled={busy || !aiReady}
+                      disabled={interactionBusy || !aiReady}
                       onChange={(event) => setGroupedNotes((current) => ({ ...current, [groupKey]: event.target.value }))}
                     />
                     </Field>
@@ -663,18 +623,18 @@ export function BaseChatPanel({
                   );
                 })}
                 {latestVisibleMessage === message && (
-                  <Button onClick={() => sendGroupedAnswers(messageKey, replyGroups)} disabled={busy || !aiReady || !groupedAnswerHasContent(messageKey, replyGroups)} className="w-full" size="sm">
+                  <Button onClick={() => sendGroupedAnswers(messageKey, replyGroups)} disabled={interactionBusy || !aiReady || !groupedAnswerHasContent(messageKey, replyGroups)} className="w-full" size="sm">
                     Send selected answers
                   </Button>
                 )}
               </div>
             )}
             {!replyGroups.length && !!replies.length && (
-              <div className="mt-2 flex flex-col gap-2">
+              <div className="flex flex-col gap-2">
                 {replies.map((reply, replyIndex) => (
                   <div key={`${reply}-${replyIndex}`} className="flex items-stretch gap-2">
                     <Button
-                      disabled={busy || !aiReady}
+                      disabled={interactionBusy || !aiReady}
                       onClick={() => selectSuggestedReply(reply)}
                       variant="outline"
                       className="min-w-0 flex-1 justify-start"
@@ -686,7 +646,7 @@ export function BaseChatPanel({
                       <TooltipTrigger
                         render={(
                           <Button
-                            disabled={busy || !aiReady}
+                            disabled={interactionBusy || !aiReady}
                             onClick={() => sendSuggestedReply(reply)}
                             variant="secondary"
                             size="icon-sm"
@@ -702,6 +662,10 @@ export function BaseChatPanel({
                 ))}
               </div>
             )}
+              </>
+            ) : undefined}
+          >
+            <ChatMessageText text={message.text} />
           </ChatTranscriptMessage>
         );
       })}
@@ -716,11 +680,61 @@ export function BaseChatPanel({
           </ChatTranscriptActivity>
         </>
       )}
+      {briefReady(brief) && onGenerateOptions && (
+        generatingOptions ? (
+          <ChatTranscriptActivity label="Fraia AI is generating design options">
+            <EstimatedAgentProgress percent={optionProgress.percent} stageLabel={optionProgress.stageLabel} />
+          </ChatTranscriptActivity>
+        ) : (
+          <ChatTranscriptPanel messageId="base-design-options-handoff">
+            <Card size="sm" className="w-full">
+              <CardHeader>
+                <Badge variant="secondary">
+                  <Sparkles data-icon="inline-start" />
+                  Ready to explore
+                </Badge>
+                <CardTitle>
+                  {hasDesignOptions ? 'Explore a fresh set of design options' : 'Explore design options'}
+                </CardTitle>
+                <CardDescription>
+                  {hasDesignOptions
+                    ? 'Your updated Base Model brief is ready. Fraia can develop a fresh set of structural approaches for side-by-side review, while the current set remains available in History.'
+                    : 'Your Base Model brief is ready. Fraia can now develop distinct structural approaches for side-by-side review.'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">
+                  You can also keep chatting with the Base Model Guide to refine the model or adjust the brief. Generate options whenever you are ready.
+                </p>
+                {generationError ? (
+                  <Alert variant="destructive" className="mt-3">
+                    <AlertDescription>{generationError}</AlertDescription>
+                  </Alert>
+                ) : null}
+              </CardContent>
+              <CardFooter>
+                <Button
+                  type="button"
+                  onClick={onGenerateOptions}
+                  disabled={interactionBusy}
+                  className="w-full"
+                  size="sm"
+                >
+                  <Sparkles data-icon="inline-start" />
+                  {hasDesignOptions ? 'Generate new option set' : 'Generate design options'}
+                </Button>
+              </CardFooter>
+            </Card>
+          </ChatTranscriptPanel>
+        )
+      )}
     </>
   );
 
   const transcript = (
-    <ChatTranscript busy={busy}>{messageList}</ChatTranscript>
+    <ChatTranscript busy={interactionBusy}>
+      {messageList}
+    </ChatTranscript>
   );
 
   if (!guideStarted) {

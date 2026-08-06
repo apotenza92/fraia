@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
-import { ArrowDown, ChevronDown, Circle, Eye, FileSearch, Layers, Magnet, MousePointer2, Move, PanelRightOpen, PencilLine, Play, Scissors, Sparkles, Triangle } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ChevronDown, Circle, Eye, FileSearch, Layers, Magnet, MousePointer2, Move, PanelRightOpen, PencilLine, Play, Scissors, Sparkles, Triangle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -31,12 +30,26 @@ import { normalizeWorkbenchState, projectDirOf } from '../../lib/defaultProject'
 import { APP_HEADER_HEIGHT, CHROME } from './chromeMetrics';
 import { activeBatchFrom, activeDevelopmentPathFrom, decisionStateFrom, developmentPathsFrom, latestComparisonFrom, optionIdForPath, optionRevisions, revisionForOption } from '../../lib/designOptionDecisions';
 import { DesignOptionInspector } from '../options/DesignOptionInspector';
+import { DesignOptionAgentPanel } from '../options/DesignOptionAgentPanel';
 import { DevelopmentPanel } from '../options/DevelopmentPanel';
 import { WorkflowStageBar } from './WorkflowStageBar';
 import { initialWorkflowStage, runtimeWorkflowStage, workflowJourneyFrom, type WorkflowStage } from '../../lib/workflowJourney';
 import { ResizeHandle } from '../domain-ui/ResizeHandle';
 import { DocumentTabBar, documentTabTriggerId, type DocumentTab } from '../domain-ui/DocumentTabBar';
 import { SplitButtonSegment } from '../domain-ui/SplitButtonSegment';
+import { ViewportHelpBar, type ViewportHelpShortcut } from './ViewportHelpBar';
+import {
+  loadStoredViewportCustomNavigationSettings,
+  loadStoredViewportNavigationProfile,
+  loadStoredViewportMouseHandedness,
+  storeViewportCustomNavigationSettings,
+  storeViewportNavigationProfile,
+  storeViewportMouseHandedness,
+  type ViewportCustomNavigationSettings,
+  type ViewportMouseHandedness,
+  type ViewportNavigationProfileId,
+} from '../../lib/viewportNavigation';
+import { toggleAgentTargets } from '../../lib/viewportSelection';
 
 const WORKSPACE_PANEL_MIN_RATIO = 0.22;
 const WORKSPACE_PANEL_MAX_RATIO = 0.4;
@@ -57,10 +70,10 @@ const OPTION_INSPECTOR_WIDTH = 340;
 const DOCUMENT_PANEL_ID = 'fraia-current-model-panel';
 
 const DEFAULT_LABEL_VISIBILITY: ViewportLabelVisibility = {
-  node: false,
-  member: false,
-  support: false,
-  load: false,
+  node: true,
+  member: true,
+  support: true,
+  load: true,
 };
 
 type RenderPanel = 'groups' | null;
@@ -117,12 +130,6 @@ type PendingMemberStart = {
   source?: { kind: 'free' } | { kind: 'node'; id: string } | { kind: 'member'; id: string };
 };
 type MemberPreviewTopology = Pick<ViewportEditOverlay, 'previewMemberSegments' | 'previewNodes' | 'previewSplitMemberSegments' | 'memberSplitDimensions'>;
-type ViewportShortcutHint = {
-  key: string;
-  keys: string[];
-  label: string;
-};
-
 type SnapContext = {
   start?: Point3 | null;
   snapLock?: SnapLock | null;
@@ -192,6 +199,10 @@ function toggleExpandedTarget(scene: RenderScene, current: AgentTarget[], target
   const expanded = expandMemberTargets(scene, [target]);
   if (!current.some((item) => sameTarget(item, target))) return addTargets(current, expanded);
   return expandMemberTargets(scene, removeTargets(current, expanded));
+}
+
+function toggleExpandedTargets(scene: RenderScene, current: AgentTarget[], targets: AgentTarget[]) {
+  return expandMemberTargets(scene, toggleAgentTargets(current, expandMemberTargets(scene, targets)));
 }
 
 function loadStoredLabelVisibility(): ViewportLabelVisibility {
@@ -438,8 +449,6 @@ const PLANE_AXES: Record<WorldPlane, [AxisId, AxisId]> = {
   yz: ['y', 'z'],
 };
 
-const INFERENCE_MODES: SnapInferenceMode[] = ['auto', 'plane', '3d'];
-const MEMBER_DRAWING_PLANES: WorldPlane[] = ['xy', 'xz', 'yz'];
 const SNAP_GUIDE_LENGTH = 1.2;
 const INFERENCE_COMPONENT_EPS = 0.01;
 const CANONICAL_AXIS_SNAP_SCORE_BONUS = 0.1;
@@ -509,77 +518,10 @@ function closestCameraPlane(ray?: ViewportRay | null): WorldPlane {
   return 'yz';
 }
 
-function nextInferenceMode(mode: SnapInferenceMode): SnapInferenceMode {
-  const current = INFERENCE_MODES.indexOf(mode);
-  return INFERENCE_MODES[(current + 1) % INFERENCE_MODES.length] ?? 'auto';
-}
-
-function cameraPlaneScore(plane: WorldPlane, ray?: ViewportRay | null) {
-  const direction = ray ? normalizeVector(ray.direction) : null;
-  if (!direction) return plane === 'xy' ? 1 : 0;
-  return Math.abs(dot(planeNormalVector(plane), direction));
-}
-
-function smartMemberDrawingPlaneOrder(ray?: ViewportRay | null): WorldPlane[] {
-  return [...MEMBER_DRAWING_PLANES].sort((a, b) => {
-    const scoreDelta = cameraPlaneScore(b, ray) - cameraPlaneScore(a, ray);
-    if (Math.abs(scoreDelta) > 1e-6) return scoreDelta;
-    return MEMBER_DRAWING_PLANES.indexOf(a) - MEMBER_DRAWING_PLANES.indexOf(b);
-  });
-}
-
-function nextMemberDrawingPlane(plane: WorldPlane | null, ray?: ViewportRay | null): WorldPlane | null {
-  const planes = smartMemberDrawingPlaneOrder(ray);
-  if (!plane) return planes[0] ?? null;
-  const next = planes[planes.indexOf(plane) + 1];
-  return next ?? null;
-}
-
 function planeSnapLabel(plane: WorldPlane) {
   if (plane === 'xy') return 'XY Frame';
   if (plane === 'xz') return 'XZ Plan';
   return 'YZ Side';
-}
-
-function memberDrawingPlaneLabel(plane: WorldPlane | null) {
-  return `Plane: ${plane ? plane.toUpperCase() : 'Auto'}`;
-}
-
-function axisLetterClass(axis: string) {
-  if (axis === 'X') return 'text-red-500 dark:text-red-400';
-  if (axis === 'Y') return 'text-green-500 dark:text-green-400';
-  return 'text-blue-500 dark:text-blue-400';
-}
-
-function coloredAxisLabel(text: string) {
-  return text.split('').map((character, index) => (
-    character === 'X' || character === 'Y' || character === 'Z'
-      ? <span key={index} className={axisLetterClass(character)}>{character}</span>
-      : character
-  ));
-}
-
-function ViewportShortcutHints({ hints }: { hints: ViewportShortcutHint[] }) {
-  return (
-    <div className="flex max-w-full flex-row flex-wrap justify-center gap-1.5">
-      {hints.map((hint) => (
-        <Badge
-          key={hint.key}
-          variant="outline"
-        >
-          <KbdGroup>
-            {hint.keys.map((keyLabel, index) => (
-              <span key={`${hint.key}-${keyLabel}`} className="contents">
-                {index > 0 ? <span className="text-muted-foreground/70">/</span> : null}
-                <Kbd>{keyLabel}</Kbd>
-              </span>
-            ))}
-          </KbdGroup>
-          <span>{hint.label}</span>
-        </Badge>
-      ))}
-    </div>
-  );
 }
 
 function planeForAxes(axes: AxisId[]): WorldPlane | null {
@@ -1996,9 +1938,15 @@ function ViewportRegion({
   pendingMemberStart,
   activePanel,
   cameraScopeKey,
+  navigationProfileId,
+  customNavigationSettings,
+  mouseHandedness,
   menuDismissOverlayActive,
   onSelectTarget,
   onSelectionGesture,
+  onNavigationProfileId,
+  onCustomNavigationSettings,
+  onMouseHandedness,
   onPendingMemberStart,
   onActivePanel,
   onTool,
@@ -2018,9 +1966,15 @@ function ViewportRegion({
   pendingMemberStart: PendingMemberStart | null;
   activePanel: RenderPanel;
   cameraScopeKey: string;
+  navigationProfileId: ViewportNavigationProfileId;
+  customNavigationSettings: ViewportCustomNavigationSettings;
+  mouseHandedness: ViewportMouseHandedness;
   menuDismissOverlayActive: boolean;
   onSelectTarget: (target: AgentTarget | null) => void;
   onSelectionGesture: (gesture: ViewportSelectionGesture) => void;
+  onNavigationProfileId: (profileId: ViewportNavigationProfileId) => void;
+  onCustomNavigationSettings: (settings: ViewportCustomNavigationSettings) => void;
+  onMouseHandedness: (handedness: ViewportMouseHandedness) => void;
   onPendingMemberStart: (start: PendingMemberStart | null) => void;
   onActivePanel: (panel: RenderPanel) => void;
   onTool: (tool: BaseEditTool) => void;
@@ -2063,22 +2017,28 @@ function ViewportRegion({
   const exactPreviewAxis = activeTool === 'member' && (snappedPointer?.axis === 'x' || snappedPointer?.axis === 'y' || snappedPointer?.axis === 'z')
     ? snappedPointer.axis
     : undefined;
-  const viewportStatusBubbles = [
-    ...(activeTool === 'member' && activePreviewStart
-      ? [{ key: 'member-plane', label: memberDrawingPlaneLabel(memberDrawingPlane) }]
-      : []),
+  const toolStatus = activeTool === 'select'
+    ? 'Select'
+    : activeTool === 'node'
+      ? 'Node'
+      : activeTool === 'member'
+        ? 'Member'
+        : activeTool === 'move'
+          ? 'Move'
+          : 'Split';
+  const viewportStatus = [
+    toolStatus,
+    ...(activeTool === 'member' ? [`Plane ${memberDrawingPlane ? memberDrawingPlane.toUpperCase() : 'Auto'}`] : []),
     ...(activePreviewStart && snappedPointer && snapLock?.kind === 'axis'
-      ? [{ key: 'axis-lock', label: `Axis lock: ${snapLock.axis.toUpperCase()}` }]
+      ? [`Axis lock ${snapLock.axis.toUpperCase()}`]
       : exactPreviewAxis && snapOptions.axes && !objectSnapActive
-        ? [{ key: 'axis-snap', label: `Axis snap: ${exactPreviewAxis.toUpperCase()}` }]
+        ? [`Axis snap ${exactPreviewAxis.toUpperCase()}`]
         : []),
-  ];
-  const viewportShortcutHints: ViewportShortcutHint[] = activeTool === 'member' && activePreviewStart
+  ].join(' · ');
+  const viewportContextualShortcuts: ViewportHelpShortcut[] = activeTool === 'member' && activePreviewStart
     ? [
-        { key: 'plane', keys: ['Tab'], label: 'Plane' },
-        { key: 'axis-lock', keys: ['1', '2', '3'], label: 'Axis lock' },
-        { key: 'snap-off', keys: ['Shift'], label: 'Snap off' },
-        { key: 'cancel', keys: ['Esc'], label: 'Cancel' },
+        { id: 'axis-lock', keys: ['1', '2', '3'], label: 'Toggle axis lock' },
+        { id: 'snap-off', keys: ['Shift'], label: 'Temporarily disable snaps' },
       ]
     : [];
   const inferenceLabel = activeTool === 'member' && activePreviewStart && !objectSnapActive && !exactPreviewAxis
@@ -2334,17 +2294,6 @@ function ViewportRegion({
         return;
       }
       if (editingText || !activePreviewStart) return;
-      if (event.key === 'Tab') {
-        event.preventDefault();
-        setSnapLock(null);
-        if (activeTool === 'member') {
-          setInferenceMode('auto');
-          setMemberDrawingPlane((plane) => nextMemberDrawingPlane(plane, pointerInfo?.ray ?? null));
-        } else {
-          setInferenceMode((mode) => nextInferenceMode(mode));
-        }
-        return;
-      }
       if (event.key === '1') {
         event.preventDefault();
         toggleKeyboardAxisLock('x');
@@ -2373,7 +2322,7 @@ function ViewportRegion({
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [activePreviewStart, activeTool, cancelToolSession, editPending, focusedTargets, onEdit, onSelectTarget, onTool, pointerInfo?.ray, scene]);
+  }, [activePreviewStart, activeTool, cancelToolSession, editPending, focusedTargets, onEdit, onSelectTarget, onTool, scene]);
 
   useEffect(() => {
     setSnapLock(null);
@@ -2422,83 +2371,69 @@ function ViewportRegion({
     };
   }, [panelWidthMode]);
 
+  const availableCanvasWidth = Math.max(0, renderAreaWidth - leftInset - (panelOpen ? panelWidth : 0));
+
   return (
-    <div ref={renderAreaRef} className="relative h-full min-w-70 flex-1 bg-background">
-      <Viewport3D
-        scene={scene}
-        focusedTargets={focusedTargets}
-        labelVisibility={labelVisibility}
-        editOverlay={editOverlay}
-        selectionEnabled={activeTool === 'select'}
-        cameraScopeKey={cameraScopeKey}
-        fitInsets={{
-          left: leftInset,
-          right: panelOpen ? panelWidth : 0,
-          bottom: 0,
-        }}
-        onSelectTarget={handleSelectTarget}
-        onSelectionGesture={onSelectionGesture}
-        onViewportClick={handleViewportClick}
-        onViewportPointerMove={handleViewportMove}
-      />
-      {viewportStatusBubbles.length ? (
-        <div
-          className="pointer-events-none absolute top-3 z-20 flex justify-center"
-          style={{
-            left: Math.max(12, leftInset + 12),
-            right: panelOpen ? panelWidth + 12 : 12,
+    <div ref={renderAreaRef} className="flex h-full min-w-70 flex-1 flex-col bg-background">
+      <div className="relative min-h-0 flex-1">
+        <Viewport3D
+          scene={scene}
+          focusedTargets={focusedTargets}
+          labelVisibility={labelVisibility}
+          editOverlay={editOverlay}
+          selectionEnabled={activeTool === 'select'}
+          cameraScopeKey={cameraScopeKey}
+          navigationProfileId={navigationProfileId}
+          customNavigationSettings={customNavigationSettings}
+          fitInsets={{
+            left: leftInset,
+            right: panelOpen ? panelWidth : 0,
+            bottom: 0,
           }}
-        >
-          <div className="flex max-w-full flex-row flex-wrap justify-center gap-1.5">
-            {viewportStatusBubbles.map((item) => (
-              <Badge
-                key={item.key}
-                variant="outline"
-              >
-                {coloredAxisLabel(item.label)}
-              </Badge>
-            ))}
-          </div>
-        </div>
-      ) : null}
-      {viewportShortcutHints.length ? (
-        <div
-          className="pointer-events-none absolute bottom-3 z-20 flex justify-center"
-          style={{
-            left: Math.max(12, leftInset + 12),
-            right: panelOpen ? panelWidth + 12 : 12,
-          }}
-        >
-          <ViewportShortcutHints hints={viewportShortcutHints} />
-        </div>
-      ) : null}
-      {menuDismissOverlayActive ? (
-        <div
-          aria-hidden="true"
-          className="absolute inset-y-0 left-0 z-30"
-          style={{ right: panelOpen ? panelWidth : 0 }}
-          onPointerDownCapture={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            onDismissToolbarMenu();
-          }}
+          onSelectTarget={handleSelectTarget}
+          onSelectionGesture={onSelectionGesture}
+          onViewportClick={handleViewportClick}
+          onViewportPointerMove={handleViewportMove}
         />
-      ) : null}
-      {panelOpen ? (
-        <div className="absolute inset-y-0 right-0">
-          <DockedSidePanel
-            side="right"
-            width={panelWidth}
-            onResizeStart={startPanelResize}
-            onResizeValue={setPanelWidthFromKeyboard}
-            resizeMin={GROUPS_PANEL_MIN}
-            resizeMax={groupsPanelMaxWidth(renderAreaWidth)}
-            resizeLabel="Resize render sidebar"
-          >
-            <SchemeGroupsPanelContent scene={scene} />
-          </DockedSidePanel>
-        </div>
-      ) : null}
+        {menuDismissOverlayActive ? (
+          <div
+            aria-hidden="true"
+            className="absolute inset-y-0 left-0 z-30"
+            style={{ right: panelOpen ? panelWidth : 0 }}
+            onPointerDownCapture={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onDismissToolbarMenu();
+            }}
+          />
+        ) : null}
+        {panelOpen ? (
+          <div className="absolute inset-y-0 right-0">
+            <DockedSidePanel
+              side="right"
+              width={panelWidth}
+              onResizeStart={startPanelResize}
+              onResizeValue={setPanelWidthFromKeyboard}
+              resizeMin={GROUPS_PANEL_MIN}
+              resizeMax={groupsPanelMaxWidth(renderAreaWidth)}
+              resizeLabel="Resize render sidebar"
+            >
+              <SchemeGroupsPanelContent scene={scene} />
+            </DockedSidePanel>
+          </div>
+        ) : null}
+      </div>
+      <ViewportHelpBar
+        availableWidth={availableCanvasWidth}
+        status={viewportStatus}
+        navigationProfileId={navigationProfileId}
+        customNavigationSettings={customNavigationSettings}
+        mouseHandedness={mouseHandedness}
+        contextualShortcuts={viewportContextualShortcuts}
+        onNavigationProfileId={onNavigationProfileId}
+        onCustomNavigationSettings={onCustomNavigationSettings}
+        onMouseHandedness={onMouseHandedness}
+      />
     </div>
   );
 }
@@ -2532,12 +2467,16 @@ export function AppShell({
   const [active, setActive] = useState<ActiveView>({ kind: 'base' });
   const [workspacePanel, setWorkspacePanel] = useState<WorkspacePanel>(START_GEOMETRY_ONLY ? null : 'base-chat');
   const [workflowStage, setWorkflowStage] = useState<WorkflowStage>(() => initialWorkflowStage(state));
+  const [optionAgentOpen, setOptionAgentOpen] = useState(false);
   const [narrowWorkflowInspector, setNarrowWorkflowInspector] = useState(() => window.innerWidth < AUTO_COLLAPSE_WIDTH);
   const [inspectorSheetOpen, setInspectorSheetOpen] = useState(false);
   const [selectedTargets, setSelectedTargets] = useState<AgentTarget[]>([]);
   const [editPending, setEditPending] = useState(false);
   const [legendOpen, setLegendOpen] = useState(false);
   const [labelVisibility, setLabelVisibility] = useState<ViewportLabelVisibility>(() => loadStoredLabelVisibility());
+  const [navigationProfileId, setNavigationProfileId] = useState<ViewportNavigationProfileId>(() => loadStoredViewportNavigationProfile());
+  const [customNavigationSettings, setCustomNavigationSettings] = useState<ViewportCustomNavigationSettings>(() => loadStoredViewportCustomNavigationSettings());
+  const [mouseHandedness, setMouseHandedness] = useState<ViewportMouseHandedness>(() => loadStoredViewportMouseHandedness());
   const [activeTool, setActiveTool] = useState<BaseEditTool>('select');
   const [snapOptions, setSnapOptions] = useState<SnapOptions>(DEFAULT_SNAP_OPTIONS);
   const [memberDrawingOptions, setMemberDrawingOptions] = useState<MemberDrawingOptions>(DEFAULT_MEMBER_DRAWING_OPTIONS);
@@ -2548,6 +2487,7 @@ export function AppShell({
   const [workspacePanelWidth, setWorkspacePanelWidth] = useState(defaultWorkspacePanelWidth);
   const [workspacePanelWidthMode, setWorkspacePanelWidthMode] = useState<'default' | 'manual'>('default');
   const [generatingOptions, setGeneratingOptions] = useState(false);
+  const [generationError, setGenerationError] = useState<string | null>(null);
   const [decisionBusy, setDecisionBusy] = useState(false);
   const [analysisBusy, setAnalysisBusy] = useState(false);
   const [workflowError, setWorkflowError] = useState<string | null>(null);
@@ -2587,7 +2527,7 @@ export function AppShell({
   const workspacePanelOpen = Boolean(workspacePanel && !evidenceActive);
   const activeSceneHasSchemeGroups = sceneHasSchemeGroups(activeScene);
   const viewportMode: ViewportViewMode = activeScheme || workspacePanel === 'design-options' || developmentActive ? 'scheme' : 'base';
-  const cameraScopeKey = activeOptionId ? `scheme:${activeOptionId}` : active.kind;
+  const cameraScopeKey = activeDocumentId;
   const showWorkspaceToolbar = !evidenceActive;
 
   useEffect(() => {
@@ -2612,6 +2552,7 @@ export function AppShell({
     if (initialStage === 'base') {
       setActive({ kind: 'base' });
       setWorkspacePanel('base-chat');
+      setOptionAgentOpen(false);
       return;
     }
     const revisions = optionRevisions(activeBatch);
@@ -2624,6 +2565,7 @@ export function AppShell({
     }
     if (optionId) setActive({ kind: 'scheme', id: optionId });
     setWorkspacePanel('design-options');
+    setOptionAgentOpen(false);
   }, [activeBatch, activePath, journey.hasEligibleActivePath, state, workspace.schemes]);
 
   useEffect(() => {
@@ -2635,12 +2577,14 @@ export function AppShell({
     if (resolvedStage === 'base') {
       setActive({ kind: 'base' });
       setWorkspacePanel('base-chat');
+      setOptionAgentOpen(false);
       return;
     }
     const firstIncluded = optionRevisions(activeBatch).find((revision) => revision.included);
     const optionId = firstIncluded?.optionId ?? firstIncluded?.option_id ?? workspace.schemes[0]?.id;
     if (optionId) setActive({ kind: 'scheme', id: optionId });
     setWorkspacePanel('design-options');
+    setOptionAgentOpen(false);
   }, [activeBatch, state, workflowStage, workspace.schemes]);
 
   const handleWorkspaceTool = useCallback((tool: BaseEditTool) => {
@@ -2655,11 +2599,13 @@ export function AppShell({
       setActive({ kind: 'base' });
       setWorkspacePanel('base-chat');
       setWorkflowStage('base');
+      setOptionAgentOpen(false);
     }
     if (!designOptionsEnabled && workspacePanel === 'design-options') {
       setActive({ kind: 'base' });
       setWorkspacePanel('base-chat');
       setWorkflowStage('base');
+      setOptionAgentOpen(false);
     }
   }, [activeOptionId, designOptionsEnabled, workspace.schemes, workspacePanel]);
 
@@ -2671,6 +2617,7 @@ export function AppShell({
   function selectScheme(id: string) {
     setActive({ kind: 'scheme', id });
     setWorkspacePanel('design-options');
+    setOptionAgentOpen(workflowStage === 'options');
   }
 
   function focusWorkflowHeading() {
@@ -2682,6 +2629,7 @@ export function AppShell({
   function openBaseSurface() {
     setActive({ kind: 'base' });
     setWorkspacePanel('base-chat');
+    setOptionAgentOpen(false);
   }
 
   function openDesignOptionsSurface() {
@@ -2697,10 +2645,12 @@ export function AppShell({
     setPendingMemberStart(null);
     setActiveRenderPanel(null);
     setWorkspacePanel('design-options');
+    setOptionAgentOpen(false);
   }
 
   function openAnalysisSurface() {
     if (!journey.stages.find((stage) => stage.stage === 'analysis')?.available) return;
+    setOptionAgentOpen(false);
     const activePathOptionId = activePath ? optionIdForPath(activePath) : '';
     const activePathIsIncluded = journey.includedOptionIds.includes(activePathOptionId);
     if (activePath && activePathIsIncluded && journey.hasEligibleActivePath) {
@@ -2757,12 +2707,23 @@ export function AppShell({
   }, [activeScene]);
 
   const handleViewportSelectionGesture = useCallback((gesture: ViewportSelectionGesture) => {
-    setSelectedTargets((current) => (
-      gesture.operation === 'remove'
-        ? expandMemberTargets(activeScene, removeTargets(current, expandMemberTargets(activeScene, gesture.targets)))
-        : addTargets(current, expandMemberTargets(activeScene, gesture.targets))
-    ));
+    setSelectedTargets((current) => toggleExpandedTargets(activeScene, current, gesture.targets));
   }, [activeScene]);
+
+  const handleNavigationProfileId = useCallback((profileId: ViewportNavigationProfileId) => {
+    setNavigationProfileId(profileId);
+    storeViewportNavigationProfile(profileId);
+  }, []);
+
+  const handleCustomNavigationSettings = useCallback((settings: ViewportCustomNavigationSettings) => {
+    setCustomNavigationSettings(settings);
+    storeViewportCustomNavigationSettings(settings);
+  }, []);
+
+  const handleMouseHandedness = useCallback((handedness: ViewportMouseHandedness) => {
+    setMouseHandedness(handedness);
+    storeViewportMouseHandedness(handedness);
+  }, []);
 
   const handleLabelVisibility = useCallback((visibility: ViewportLabelVisibility) => {
     setLabelVisibility(visibility);
@@ -2826,7 +2787,7 @@ export function AppShell({
     }
     const projectDir = projectDirOf(state);
     setGeneratingOptions(true);
-    setWorkflowError(null);
+    setGenerationError(null);
     try {
       const response = await window.fraia.generateDesignOptions({
         projectDir,
@@ -2844,12 +2805,13 @@ export function AppShell({
           throw new Error(diagnostic?.message ? `${diagnostic.message}${detail}` : response?.message ?? 'Design options were not generated.');
         }
         setActive({ kind: 'scheme', id: nextSchemes[0].id });
+        setOptionAgentOpen(false);
       }
       setWorkflowStage('options');
       setWorkspacePanel('design-options');
       focusWorkflowHeading();
     } catch (error: any) {
-      setWorkflowError(error?.message || 'Could not generate design options.');
+      setGenerationError(error?.message || 'Could not generate design options.');
     } finally {
       setGeneratingOptions(false);
     }
@@ -2983,32 +2945,84 @@ export function AppShell({
 
   function workspacePanelTitle() {
     if (workflowStage === 'analysis') return 'Analysis & Comparison';
-    if (workflowStage === 'options') return 'Design Options';
+    if (workflowStage === 'options') return optionAgentOpen && activeScheme ? activeScheme.name : 'Design Options';
     return 'Base Model';
   }
 
   function workspacePanelHeaderLeading() {
+    if (workflowStage === 'options' && optionAgentOpen) {
+      return (
+        <Button
+          aria-label="Back to design options"
+          title="Back to design options"
+          onClick={() => {
+            setOptionAgentOpen(false);
+            focusWorkflowHeading();
+          }}
+          variant="ghost"
+          size="icon-sm"
+        >
+          <ArrowLeft />
+        </Button>
+      );
+    }
     return null;
   }
 
   function workspacePanelContent() {
     if (workspacePanel === 'base-chat') {
-      return <BaseChatPanel state={state} onState={onState} />;
+      return (
+        <BaseChatPanel
+          state={state}
+          onState={(nextState) => {
+            setGenerationError(null);
+            onState(nextState);
+          }}
+          onGenerateOptions={generateDesignOptions}
+          generatingOptions={generatingOptions}
+          hasDesignOptions={workspace.schemes.length > 0}
+          generationError={generationError}
+        />
+      );
     }
     if (workspacePanel === 'development' && activeScheme && displayedDevelopmentPath) {
       return <DevelopmentPanel scheme={activeScheme} path={displayedDevelopmentPath} onOpenEvidence={() => openEvidence(activeScheme.id)} onBackToComparison={() => { setActive({ kind: 'scheme', id: activeScheme.id }); setWorkspacePanel('design-options'); }} />;
     }
-    return <DesignOptionsPanel active={active} schemes={workspace.schemes} batch={activeBatch} batches={decisionStateFrom(state).batches} stage={workflowStage === 'analysis' ? 'analysis' : 'options'} busy={decisionBusy} onSelectScheme={selectScheme} onIncludedChange={setOptionIncluded} />;
+    if (workflowStage === 'options' && optionAgentOpen && activeScheme) {
+      return (
+        <DesignOptionAgentPanel
+          state={state}
+          scheme={activeScheme}
+          revision={revisionForOption(state, activeScheme.id)}
+          busy={decisionBusy}
+          onState={onState}
+          onIncludedChange={(included) => setOptionIncluded(activeScheme.id, included)}
+        />
+      );
+    }
+    return (
+      <DesignOptionsPanel
+        active={active}
+        schemes={workspace.schemes}
+        batch={activeBatch}
+        batches={decisionStateFrom(state).batches}
+        stage={workflowStage === 'analysis' ? 'analysis' : 'options'}
+        busy={decisionBusy}
+        onSelectScheme={selectScheme}
+        onIncludedChange={setOptionIncluded}
+        onCompare={() => navigateToWorkflowStage('analysis')}
+      />
+    );
   }
 
   function optionInspector() {
-    if (workflowStage === 'base' || !activeScheme) return null;
+    if (workflowStage !== 'analysis' || !activeScheme) return null;
     return (
       <DesignOptionInspector
         state={state}
         scheme={activeScheme}
         revision={revisionForOption(state, activeScheme.id)}
-        stage={workflowStage === 'analysis' ? 'analysis' : 'options'}
+        stage="analysis"
         comparisonCurrent={journey.hasExactCurrentAnalysis}
         developmentPaths={developmentPaths}
         activePathId={activePath?.id ?? null}
@@ -3113,16 +3127,6 @@ export function AppShell({
               <Button aria-label="Back to current work" title="Back to current work" onClick={returnFromEvidence} variant="outline" size="sm">
                 Back to current work
               </Button>
-            ) : workflowStage === 'base' && active.kind === 'base' && workspacePanel === 'base-chat' && baseBriefReady(state) ? (
-              <Button
-                onClick={generateDesignOptions}
-                disabled={generatingOptions}
-                size="sm"
-                title="Generate a traceable design-option batch from the current Base Model brief"
-              >
-                {generatingOptions ? <Spinner data-icon="inline-start" /> : <Sparkles data-icon="inline-start" />}
-                {generatingOptions ? 'Generating options…' : workspace.schemes.length ? 'Generate new option set' : 'Generate options'}
-              </Button>
             ) : workflowStage === 'analysis' ? (
               <div className="flex items-center gap-2">
                 {narrowWorkflowInspector && activeScheme ? (
@@ -3140,10 +3144,6 @@ export function AppShell({
                   {analysisBusy ? 'Analysing…' : journey.hasExactCurrentAnalysis ? 'Analysis current' : journey.missingOrStaleOptionIds.length ? 'Analyse options' : 'Refresh comparison'}
                 </Button>
               </div>
-            ) : narrowWorkflowInspector && activeScheme ? (
-              <Button onClick={() => setInspectorSheetOpen(true)} variant="outline" size="sm">
-                <PanelRightOpen data-icon="inline-start" /> Option details
-              </Button>
             ) : null}
           >
             {showWorkspaceToolbar ? (
@@ -3217,9 +3217,15 @@ export function AppShell({
                     pendingMemberStart={pendingMemberStart}
                     activePanel={activeRenderPanel}
                     cameraScopeKey={cameraScopeKey}
+                    navigationProfileId={navigationProfileId}
+                    customNavigationSettings={customNavigationSettings}
+                    mouseHandedness={mouseHandedness}
                     menuDismissOverlayActive={openToolbarMenu !== null}
                     onSelectTarget={handleViewportSelectTarget}
                     onSelectionGesture={handleViewportSelectionGesture}
+                    onNavigationProfileId={handleNavigationProfileId}
+                    onCustomNavigationSettings={handleCustomNavigationSettings}
+                    onMouseHandedness={handleMouseHandedness}
                     onPendingMemberStart={setPendingMemberStart}
                     onActivePanel={setActiveRenderPanel}
                     onTool={handleWorkspaceTool}
@@ -3227,7 +3233,7 @@ export function AppShell({
                     onDismissToolbarMenu={() => setOpenToolbarMenu(null)}
                     editPending={editPending}
                   />
-                  {!narrowWorkflowInspector && workflowStage !== 'base' && activeScheme ? (
+                  {!narrowWorkflowInspector && workflowStage === 'analysis' && activeScheme ? (
                     <div className="h-full shrink-0" style={{ width: OPTION_INSPECTOR_WIDTH }}>
                       {optionInspector()}
                     </div>
@@ -3236,7 +3242,7 @@ export function AppShell({
               )}
             </div>
           </WorkspaceBody>
-          <Sheet open={inspectorSheetOpen && narrowWorkflowInspector && Boolean(activeScheme) && workflowStage !== 'base'} onOpenChange={setInspectorSheetOpen}>
+          <Sheet open={inspectorSheetOpen && narrowWorkflowInspector && Boolean(activeScheme) && workflowStage === 'analysis'} onOpenChange={setInspectorSheetOpen}>
             <SheetContent side="right" className="w-[min(90vw,420px)] p-0" showCloseButton>
               <SheetHeader className="sr-only">
                 <SheetTitle>Option details</SheetTitle>

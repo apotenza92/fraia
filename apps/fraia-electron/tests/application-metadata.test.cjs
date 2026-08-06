@@ -7,6 +7,7 @@ const asar = require('@electron/asar');
 
 const {
   resolveApplicationMetadata,
+  resolveRuntimeApplicationMetadata,
   resolveUserDataDirectory,
 } = require('../application-metadata.cjs');
 const {
@@ -47,6 +48,19 @@ test('saved window bounds override the first-launch geometry without changing th
 
 test('defaults development metadata to the stable identity', () => {
   assert.deepEqual(resolveApplicationMetadata(), {
+    channel: 'stable',
+    productName: 'Fraia',
+    userDataDirectoryName: 'Fraia',
+  });
+});
+
+test('unpackaged development uses a visibly distinct identity and data directory', () => {
+  assert.deepEqual(resolveRuntimeApplicationMetadata({}, false), {
+    channel: 'stable',
+    productName: 'Fraia Dev',
+    userDataDirectoryName: 'Fraia Dev',
+  });
+  assert.deepEqual(resolveRuntimeApplicationMetadata({}, true), {
     channel: 'stable',
     productName: 'Fraia',
     userDataDirectoryName: 'Fraia',

@@ -26,7 +26,6 @@ contextBridge.exposeInMainWorld('fraia', {
   aiProviders: () => ipcRenderer.invoke('fraia:aiProviders'),
   aiRefreshCatalog: () => ipcRenderer.invoke('fraia:aiRefreshCatalog'),
   aiStartOAuth: (payload) => ipcRenderer.invoke('fraia:aiStartOAuth', payload),
-  aiAnswerAuthPrompt: (payload) => ipcRenderer.invoke('fraia:aiAnswerAuthPrompt', payload),
   aiCancelAuth: (payload) => ipcRenderer.invoke('fraia:aiCancelAuth', payload),
   aiDisconnect: (payload) => ipcRenderer.invoke('fraia:aiDisconnect', payload),
   onAiRuntimeStatus: (listener) => {

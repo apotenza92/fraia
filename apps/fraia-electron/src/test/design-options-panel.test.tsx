@@ -61,7 +61,7 @@ describe('DesignOptionsPanel', () => {
     expect(screen.queryByRole('button', { name: 'batch-previous' })).not.toBeInTheDocument();
   });
 
-  it('keeps excluded options recoverable only in the shortlisting stage', async () => {
+  it('keeps excluded options visible and recoverable in the shortlisting stage', async () => {
     const user = userEvent.setup();
     const onIncludedChange = vi.fn();
     const current = batch('batch-current', 'active', false);
@@ -79,10 +79,36 @@ describe('DesignOptionsPanel', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Excluded options (1)' }));
-    const checkbox = screen.getByRole('checkbox', { name: 'Include Option A for analysis' });
+    const checkbox = screen.getByRole('checkbox', { name: 'Include Option A for comparison' });
     expect(checkbox).not.toBeDisabled();
     await user.click(checkbox);
     expect(onIncludedChange).toHaveBeenCalledWith('option-a', true);
+  });
+
+  it('opens an option from its row and advances the selected set to comparison', async () => {
+    const user = userEvent.setup();
+    const current = batch('batch-current', 'active');
+    const onSelectScheme = vi.fn();
+    const onCompare = vi.fn();
+
+    render(
+      <DesignOptionsPanel
+        active={{ kind: 'scheme', id: 'option-a' }}
+        schemes={[scheme]}
+        batch={current}
+        batches={[current]}
+        stage="options"
+        busy={false}
+        onSelectScheme={onSelectScheme}
+        onIncludedChange={vi.fn()}
+        onCompare={onCompare}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /Option A/ }));
+    expect(onSelectScheme).toHaveBeenCalledWith('option-a');
+
+    await user.click(screen.getByRole('button', { name: 'Compare 1' }));
+    expect(onCompare).toHaveBeenCalledOnce();
   });
 });

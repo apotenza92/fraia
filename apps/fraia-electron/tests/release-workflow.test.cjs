@@ -408,6 +408,13 @@ test('native updater menu exposes manual checking and every supported persisted 
   assert.match(mainProcess, /setFrequency/);
 });
 
+test('application menu delegates reload and whole-window zoom shortcuts to Electron roles', () => {
+  for (const role of ['reload', 'forceReload', 'resetZoom', 'zoomIn', 'zoomOut', 'togglefullscreen']) {
+    assert.match(mainProcess, new RegExp(`role: ['"]${role}['"]`));
+  }
+  assert.doesNotMatch(mainProcess, /accelerator:\s*['"](?:Cmd|Command|Ctrl|Control)/);
+});
+
 test('packaged updater code ships TUF verification for Windows and Linux', () => {
   assert.match(builder, /'update-manager\.cjs'/);
   assert.match(builder, /'tuf-update-feed\.cjs'/);
@@ -431,7 +438,7 @@ test('packaged updater code ships TUF verification for Windows and Linux', () =>
     'utf8',
   );
   assert.match(updateDialog, /Restart and update/);
-  assert.match(updateDialog, /Install when Fraia closes/);
+  assert.match(updateDialog, />\s*Later\s*</);
   assert.match(updateDialog, /ProgressLabel/);
   assert.match(updateDialog, /formatEta/);
 });

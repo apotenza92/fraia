@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -60,7 +60,7 @@ describe('UpdateDialog', () => {
     expect(screen.getByText('Checking for updates')).toBeVisible();
   });
 
-  it('makes deferred installation explicit and keeps restart available', async () => {
+  it('keeps the ready state focused on release notes and install actions', async () => {
     const onInstall = vi.fn();
     const onOpenChange = vi.fn();
     renderDialog({
@@ -70,15 +70,39 @@ describe('UpdateDialog', () => {
       version: '0.0.6',
     }, { onInstall, onOpenChange });
 
-    expect(screen.getByText(/install the update when the app closes/i)).toBeVisible();
+    expect(screen.getByRole('dialog', { name: 'Fraia 0.0.6 is ready' })).toBeVisible();
+    expect(screen.getByText("What's new")).toBeVisible();
     expect(screen.getByText('Improved update feedback.')).toBeVisible();
-    expect(screen.getByText(/updater works independently of package managers/i)).toBeVisible();
+    expect(screen.queryByText(/Fraia verifies the update/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/updater works independently of package managers/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Automatic checks')).not.toBeInTheDocument();
+    expect(screen.queryByText(/install the update when the app closes/i)).not.toBeInTheDocument();
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole('button', { name: 'Install when Fraia closes' }));
+    await user.click(screen.getByRole('button', { name: 'Later' }));
     expect(onOpenChange).toHaveBeenCalledWith(false);
     await user.click(screen.getByRole('button', { name: 'Restart and update' }));
     expect(onInstall).toHaveBeenCalledOnce();
+  });
+
+  it('keeps long release notes inside a keyboard-scrollable viewport', () => {
+    const releaseNotes = Array.from(
+      { length: 24 },
+      (_, index) => `• Change ${index + 1} keeps update details readable without escaping the dialog.`,
+    ).join('\n');
+
+    renderDialog({
+      ...baseStatus,
+      phase: 'ready',
+      releaseNotes,
+      version: '0.0.9',
+    });
+
+    const notes = screen.getByRole('region', { name: 'Release notes for Fraia 0.0.9' });
+    expect(notes).toHaveClass('h-44');
+    expect(notes).toHaveAttribute('tabindex', '0');
+    expect(notes.querySelector('[data-slot="scroll-area-viewport"]')).not.toBeNull();
+    expect(within(notes).getByText(/Change 24 keeps update details readable/)).toBeInTheDocument();
   });
 
   it('explains Linux package-manager ownership without claiming the in-app updater is broken', () => {

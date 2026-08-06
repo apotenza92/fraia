@@ -1,12 +1,14 @@
-import { ChevronRight, History } from 'lucide-react';
+import { ChevronRight, History, Scale } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Empty, EmptyDescription } from '@/components/ui/empty';
+import { Field, FieldLabel } from '@/components/ui/field';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
+import { cn } from '@/lib/utils';
 import type { DesignOptionBatchState, DesignOptionRevisionState, EngineeringScheme } from '../../lib/types';
 
 export type ActiveView =
@@ -19,15 +21,25 @@ export type ActiveView =
 export type WorkspacePanel = 'base-chat' | 'design-options' | 'development' | null;
 
 function conciseSchemeTitle(scheme: EngineeringScheme) {
-  return scheme.name.trim().replace(/^schema\s+/i, '').replace(/^scheme\s+/i, '').replace(/^option\s+/i, '').trim() || scheme.name;
+  const title = scheme.name.trim().replace(/^schema\s+/i, '').replace(/^scheme\s+/i, '').replace(/^option\s+/i, '').trim();
+  return title.length > 1 ? title : scheme.name;
 }
 
-function analysisLabel(revision: DesignOptionRevisionState) {
-  const status = revision.analysisStatus ?? revision.analysis_status;
-  if (status === 'current') return 'Analysed';
-  if (status === 'failed') return 'Needs attention';
-  if (status === 'stale') return 'Outdated';
-  return 'Not analysed';
+function conciseSchemeDetail(scheme: EngineeringScheme) {
+  const band = (scheme.intent?.explorationBand ?? scheme.intent?.exploration_band)?.trim();
+  const objectiveTags = scheme.intent?.objectiveTags ?? scheme.intent?.objective_tags ?? [];
+  const objective = objectiveTags.find((tag) => tag.trim().toLowerCase() !== band?.toLowerCase());
+  if (band || objective) {
+    const parts = [band, objective]
+      .filter((value): value is string => Boolean(value?.trim()))
+      .map((value) => value.replace(/[_-]+/g, ' ').replace(/^./, (character) => character.toUpperCase()));
+    return parts.join(' · ');
+  }
+  const detail = scheme.summary?.trim()
+    || scheme.comparison?.connectionImplication?.trim()
+    || scheme.comparison?.supportStrategy?.trim()
+    || 'Open this option to review its structural approach.';
+  return detail.split(/(?<=[.!?])\s+/)[0] ?? detail;
 }
 
 function DesignOptionItem({
@@ -36,7 +48,7 @@ function DesignOptionItem({
   optionNumber,
   scheme,
   revision,
-  onInspect,
+  onOpen,
   onIncludedChange,
 }: {
   active: boolean;
@@ -44,29 +56,31 @@ function DesignOptionItem({
   optionNumber: number;
   scheme: EngineeringScheme;
   revision: DesignOptionRevisionState;
-  onInspect: () => void;
+  onOpen: () => void;
   onIncludedChange: (included: boolean) => void;
 }) {
   const id = `include-option-${scheme.id.replace(/[^a-z0-9]+/gi, '-')}`;
   return (
-    <Card aria-current={active ? 'true' : undefined}>
-      <CardContent className="flex items-start gap-2 p-3">
-        <Checkbox id={id} checked={revision.included} disabled={readOnly} aria-label={`Include ${scheme.name} for analysis`} onCheckedChange={(checked) => onIncludedChange(checked === true)} />
-        <Button type="button" onClick={onInspect} variant="ghost" className="h-auto min-w-0 flex-1 flex-col items-stretch justify-start gap-0 p-0">
-          <div className="flex items-center gap-2">
-            <Badge variant={active ? 'default' : 'secondary'}>{optionNumber}</Badge>
-            <div className="truncate font-medium" title={scheme.name}>{conciseSchemeTitle(scheme)}</div>
-          </div>
-          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{scheme.summary}</p>
-          <div className="mt-2 flex flex-wrap gap-1">
-            <Badge variant="outline">{analysisLabel(revision)}</Badge>
-            {scheme.analysisSummary?.maxUtilization != null ? <Badge variant="outline">u {scheme.analysisSummary.maxUtilization.toFixed(2)}</Badge> : null}
-            {scheme.approximateMassKg != null ? <Badge variant="outline">{scheme.approximateMassKg.toFixed(0)} kg</Badge> : null}
-          </div>
-        </Button>
-        <Button aria-label={`Inspect ${scheme.name}`} onClick={onInspect} size="icon-sm" variant="ghost"><ChevronRight /></Button>
-      </CardContent>
-    </Card>
+    <div className={cn('flex min-w-0 items-center gap-2 px-2 py-2', active && 'bg-muted/50')} aria-current={active ? 'true' : undefined}>
+      <Button type="button" onClick={onOpen} variant="ghost" className="h-auto min-w-0 flex-1 justify-start gap-3 px-2 py-2">
+        <Badge variant="outline" className="shrink-0">{optionNumber}</Badge>
+        <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left">
+          <span className="w-full truncate font-medium" title={scheme.name}>{conciseSchemeTitle(scheme)}</span>
+          <span className="w-full truncate text-xs text-muted-foreground" title={conciseSchemeDetail(scheme)}>{conciseSchemeDetail(scheme)}</span>
+        </span>
+        <ChevronRight data-icon="inline-end" />
+      </Button>
+      <Field orientation="horizontal" data-disabled={readOnly || undefined} className="w-auto shrink-0">
+        <Checkbox
+          id={id}
+          checked={revision.included}
+          disabled={readOnly}
+          aria-label={`Include ${scheme.name} for comparison`}
+          onCheckedChange={(checked) => onIncludedChange(checked === true)}
+        />
+        <FieldLabel htmlFor={id} className="sr-only">Include {scheme.name} for comparison</FieldLabel>
+      </Field>
+    </div>
   );
 }
 
@@ -79,6 +93,7 @@ export function DesignOptionsPanel({
   busy,
   onSelectScheme,
   onIncludedChange,
+  onCompare,
 }: {
   active: ActiveView;
   schemes: EngineeringScheme[];
@@ -88,38 +103,73 @@ export function DesignOptionsPanel({
   busy: boolean;
   onSelectScheme: (id: string) => void;
   onIncludedChange: (id: string, included: boolean) => void;
+  onCompare?: () => void;
 }) {
   const revisions = batch?.optionRevisions ?? batch?.option_revisions ?? [];
   const entries = schemes.flatMap((scheme, index) => {
     const revision = revisions.find((candidate) => (candidate.optionId ?? candidate.option_id) === scheme.id);
     return revision ? [{ scheme, revision, index }] : [];
   });
-  const included = entries.filter(({ revision }) => revision.included);
-  const excluded = entries.filter(({ revision }) => !revision.included);
+  const includedCount = entries.filter(({ revision }) => revision.included).length;
   const historicalBatches = batches.filter((candidate) => candidate.id !== batch?.id);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 border-b p-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2"><span className="truncate font-medium">{stage === 'analysis' ? 'Options in comparison' : 'Included for analysis'}</span><Badge variant="secondary">{included.length}</Badge></div>
-          {stage === 'options' && historicalBatches.length ? (
+      <ScrollArea className="min-h-0 flex-1">
+        {entries.length ? (
+          <div className="flex flex-col">
+            {entries.map(({ scheme, revision, index }) => {
+              const optionId = active.kind === 'scheme'
+                ? active.id
+                : active.kind === 'development'
+                  ? active.optionId
+                  : null;
+              return (
+                <div key={scheme.id}>
+                  {index > 0 ? <Separator /> : null}
+                  <DesignOptionItem
+                    active={optionId === scheme.id}
+                    readOnly={stage === 'analysis'}
+                    optionNumber={index + 1}
+                    scheme={scheme}
+                    revision={revision}
+                    onOpen={() => onSelectScheme(scheme.id)}
+                    onIncludedChange={(checked) => !busy && onIncludedChange(scheme.id, checked)}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <Empty className="h-full">
+            <EmptyDescription>No design options are available.</EmptyDescription>
+          </Empty>
+        )}
+      </ScrollArea>
+
+      <Separator />
+      <div className="flex shrink-0 items-center justify-between gap-2 p-2">
+        <div className="flex min-w-0 items-center gap-2">
+          {historicalBatches.length ? (
             <Popover>
               <PopoverTrigger render={<Button variant="outline" size="sm" />}>
                 <History data-icon="inline-start" /> History
               </PopoverTrigger>
               <PopoverContent align="start" className="w-80 p-2">
                 <div className="px-2 py-1 text-sm font-medium">Previous option batches</div>
-                <p className="px-2 pb-2 text-xs text-muted-foreground">Read-only references. Regenerate from Base Model to create a current batch.</p>
+                <p className="px-2 pb-2 text-xs text-muted-foreground">Read-only references from earlier Base Model states.</p>
                 <ScrollArea className="max-h-72">
                   <div className="flex flex-col gap-2">
                     {[...historicalBatches].reverse().map((historical) => {
-                      const revisions = historical.optionRevisions ?? historical.option_revisions ?? [];
+                      const historicalRevisions = historical.optionRevisions ?? historical.option_revisions ?? [];
                       return (
                         <Card key={historical.id}>
                           <CardContent className="flex flex-col gap-1 p-3">
-                            <div className="flex items-center justify-between gap-2"><span className="truncate font-medium">{historical.id}</span><Badge variant="outline">{historical.status}</Badge></div>
-                            <span className="text-xs text-muted-foreground">{revisions.length} option revision{revisions.length === 1 ? '' : 's'} · {historical.generatedAt ?? historical.generated_at}</span>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="truncate font-medium">{historical.id}</span>
+                              <Badge variant="outline">{historical.status}</Badge>
+                            </div>
+                            <span className="text-xs text-muted-foreground">{historicalRevisions.length} option revision{historicalRevisions.length === 1 ? '' : 's'} · {historical.generatedAt ?? historical.generated_at}</span>
                           </CardContent>
                         </Card>
                       );
@@ -129,38 +179,16 @@ export function DesignOptionsPanel({
               </PopoverContent>
             </Popover>
           ) : null}
+          <span className="truncate text-sm text-muted-foreground">
+            {stage === 'analysis' ? `${includedCount} in comparison` : `${includedCount} selected`}
+          </span>
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">{stage === 'analysis' ? 'Return to Design Options to change the shortlist.' : 'Untick concepts to remove them from further analysis. Nothing is deleted.'}</p>
-        {batch?.status === 'outdated' ? <Badge variant="destructive" className="mt-2">Base Model changed · regenerate options</Badge> : null}
+        {stage === 'options' ? (
+          <Button onClick={onCompare} disabled={!includedCount || busy}>
+            <Scale data-icon="inline-start" /> Compare {includedCount}
+          </Button>
+        ) : null}
       </div>
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="flex flex-col gap-2 p-2">
-          {included.map(({ scheme, revision, index }) => (
-            <DesignOptionItem key={scheme.id} active={(active.kind === 'scheme' || active.kind === 'development') && (active.kind === 'scheme' ? active.id : active.optionId) === scheme.id} readOnly={stage === 'analysis'} optionNumber={index + 1} scheme={scheme} revision={revision} onInspect={() => onSelectScheme(scheme.id)} onIncludedChange={(checked) => !busy && onIncludedChange(scheme.id, checked)} />
-          ))}
-          {!included.length ? (
-            <Empty className="min-h-24">
-              <EmptyDescription>Include at least one option before moving to Analysis &amp; Comparison.</EmptyDescription>
-            </Empty>
-          ) : null}
-          {excluded.length ? (
-            <Card>
-              <CardContent className="p-2">
-                <Collapsible>
-                  <CollapsibleTrigger render={<Button variant="ghost" className="w-full justify-start" />}>
-                    Excluded options ({excluded.length})
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="mt-2 flex flex-col gap-2">
-                    {excluded.map(({ scheme, revision, index }) => (
-                      <DesignOptionItem key={scheme.id} active={(active.kind === 'scheme' || active.kind === 'development') && (active.kind === 'scheme' ? active.id : active.optionId) === scheme.id} readOnly={stage === 'analysis'} optionNumber={index + 1} scheme={scheme} revision={revision} onInspect={() => onSelectScheme(scheme.id)} onIncludedChange={(checked) => !busy && onIncludedChange(scheme.id, checked)} />
-                    ))}
-                  </CollapsibleContent>
-                </Collapsible>
-              </CardContent>
-            </Card>
-          ) : null}
-        </div>
-      </ScrollArea>
     </div>
   );
 }

@@ -5,6 +5,38 @@ All notable user-facing changes to Fraia are documented here. Fraia follows
 workflow uses the matching version section below as the authoritative GitHub
 release notes and macOS updater notes.
 
+## [0.0.10] - 2026-08-06
+
+### Changed
+
+- Viewport labels now retain their semantic colours, resolve collisions more
+  reliably, expand independently, and keep proposed-support labels anchored to
+  their passive green support markers. Compact member labels show `SW` on its
+  own line, while expanded labels show `Self weight` without separate arrows.
+- Selection now prioritises nodes and members over overlapping load graphics,
+  uses restrained amber geometry-only highlights, clears predictably on an
+  empty click, and supports containment, crossing, and lasso selection without
+  making proposed supports selectable.
+- The canvas has a persistent Controls bar with accurate mouse diagrams,
+  right- and left-handed help, authentic engineering-app navigation profiles,
+  and a separate persistent Custom mouse profile. Fraia continues to default
+  to SPACE GASS navigation.
+- New files open in an isometric view and remember their camera independently
+  after the user moves it.
+- New assistant replies remain positioned at the top of the latest response,
+  and the Base Model handoff into Design Options is clearer and more compact.
+- ChatGPT sign-in now uses browser authorization directly without asking users
+  to paste a redirect URL.
+- Development launches now use one identifiable, single-owner Fraia Dev
+  process with isolated user data and reliable stale-launch recovery.
+- The update dialog now presents release readiness and release notes more
+  directly with less redundant chrome.
+
+### Updating
+
+- Stable and Beta installations update to separately packaged `0.0.10`
+  application identities on their existing channels.
+
 ## [0.0.9] - 2026-08-05
 
 ### Changed
