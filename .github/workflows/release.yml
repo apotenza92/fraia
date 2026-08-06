@@ -629,6 +629,26 @@ jobs:
             test "$(find "publish/feed/$CHANNEL" -type f | wc -l | tr -d ' ')" = 6
           done
 
+      - name: Build deterministic tap-owned Homebrew publication bundle
+        working-directory: apps/fraia-electron
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/build-homebrew-publication.cjs \
+            --channel "${{ needs.prepare.outputs.channel }}" \
+            --tag "${{ github.ref_name }}" \
+            --assets "$GITHUB_WORKSPACE/publish/assets" \
+            --output "$RUNNER_TEMP/homebrew-publication"
+          python3 scripts/create-homebrew-archive.py \
+            "$RUNNER_TEMP/homebrew-publication" \
+            "$GITHUB_WORKSPACE/publish/assets/homebrew-publication.tar.gz"
+          printf '%s\n' homebrew-publication.tar.gz >> "$GITHUB_WORKSPACE/expected-assets.txt"
+          LC_ALL=C sort -u -o "$GITHUB_WORKSPACE/expected-assets.txt" "$GITHUB_WORKSPACE/expected-assets.txt"
+
       - name: Upload verified release bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -1022,3 +1042,80 @@ jobs:
             relative="${expected_feed#expected/feed/}"
             cmp "$expected_feed" "feed-publication/feed/$relative"
           done < <(find expected/feed -type f | LC_ALL=C sort)
+
+  homebrew-native-validation:
+    name: Homebrew ${{ matrix.channel }} (${{ matrix.architecture }})
+    needs: [prepare, verify-publication]
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: ${{ fromJSON(needs.prepare.outputs.channels) }}
+        architecture: [arm64, x64]
+    runs-on: ${{ matrix.architecture == 'arm64' && 'macos-15' || 'macos-15-intel' }}
+    steps:
+      - name: Download and verify the attested publication bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release download "${{ github.ref_name }}" --repo "${{ github.repository }}" --pattern homebrew-publication.tar.gz
+          gh attestation verify homebrew-publication.tar.gz --repo "${{ github.repository }}"
+          mkdir publication
+          tar -xzf homebrew-publication.tar.gz -C publication
+          (cd publication && shasum -a 256 -c SHA256SUMS)
+      - name: Install and launch the exact release through Homebrew
+        shell: bash
+        run: |
+          set -euo pipefail
+          cask_name="${{ matrix.channel == 'stable' && 'fraia.rb' || 'fraia@beta.rb' }}"
+          application="${{ matrix.channel == 'stable' && 'Fraia.app' || 'Fraia Beta.app' }}"
+          cask="$PWD/publication/Casks/$cask_name"
+          brew install --cask "$cask"
+          app="/Applications/$application"
+          test -d "$app"
+          open "$app"
+          for _ in {1..30}; do pgrep -f "$app/Contents/MacOS/" >/dev/null && break; sleep 1; done
+          pgrep -f "$app/Contents/MacOS/" >/dev/null
+          pkill -f "$app/Contents/MacOS/" || true
+          brew uninstall --cask "${{ matrix.channel == 'stable' && 'fraia' || 'fraia@beta' }}"
+
+  dispatch-homebrew-publication:
+    name: Dispatch and await tap-owned Homebrew publication
+    needs: [prepare, homebrew-native-validation]
+    runs-on: ubuntu-24.04
+    environment: homebrew-dispatch
+    permissions:
+      contents: read
+    steps:
+      - name: Mint dispatch-only tap token
+        id: dispatcher
+        uses: actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42 # v2
+        with:
+          app-id: ${{ vars.HOMEBREW_DISPATCHER_APP_ID }}
+          private-key: ${{ secrets.HOMEBREW_DISPATCHER_PRIVATE_KEY }}
+          owner: apotenza92
+          repositories: homebrew-tap
+      - name: Dispatch trusted publication and wait for exact correlation
+        env:
+          GH_TOKEN: ${{ steps.dispatcher.outputs.token }}
+          TAP_REPOSITORY: apotenza92/homebrew-tap
+        shell: bash
+        run: |
+          set -euo pipefail
+          correlation="${GITHUB_REPOSITORY}:${GITHUB_RUN_ID}:${GITHUB_RUN_ATTEMPT}:${GITHUB_REF_NAME}"
+          started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          jq -n --arg product fraia --arg tag "$GITHUB_REF_NAME" --arg release_commit "$GITHUB_SHA" \
+            --arg source_run_id "$GITHUB_RUN_ID" --arg source_run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg correlation_id "$correlation" \
+            '{event_type:"publish-homebrew-v1",client_payload:{product:$product,tag:$tag,release_commit:$release_commit,source_run_id:$source_run_id,source_run_attempt:$source_run_attempt,correlation_id:$correlation_id}}' |
+            gh api --method POST "repos/$TAP_REPOSITORY/dispatches" --input -
+          run_id=''
+          for _ in {1..30}; do
+            run_id="$(gh api "repos/$TAP_REPOSITORY/actions/workflows/publish-homebrew.yml/runs?event=repository_dispatch&per_page=30" \
+              --jq ".workflow_runs[] | select(.display_title == \"$correlation\" and .created_at >= \"$started\") | .id" | head -n1)"
+            [[ -n "$run_id" ]] && break
+            sleep 2
+          done
+          [[ -n "$run_id" ]]
+          gh run watch "$run_id" --repo "$TAP_REPOSITORY" --exit-status
