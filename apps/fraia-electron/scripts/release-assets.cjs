@@ -4,6 +4,7 @@ const path = require('node:path');
 const { CALCULIX_SOURCE_ASSET_NAME } = require('../calculix-source-contract.cjs');
 
 const CHANNELS = new Set(['stable', 'beta']);
+const RELEASE_AUXILIARY_ASSETS = ['homebrew-publication.tar.gz'];
 
 function requireChannel(channel) {
   if (!CHANNELS.has(channel)) {
@@ -81,8 +82,15 @@ function writeChecksums(directory) {
   fs.writeFileSync(path.join(directory, 'SHA256SUMS'), `${lines.join('\n')}\n`, { mode: 0o644 });
 }
 
-function assembleReleaseAssets(channelsValue, inputDirectories, outputDirectory) {
+function assembleReleaseAssets(channelsValue, inputDirectories, outputDirectory, auxiliaryAssetNames = []) {
   const channels = normalizeChannels(channelsValue);
+  const reviewedAuxiliaryAssets = [...new Set(auxiliaryAssetNames)].sort();
+  const unreviewedAuxiliaryAssets = reviewedAuxiliaryAssets.filter(
+    (name) => !RELEASE_AUXILIARY_ASSETS.includes(name),
+  );
+  if (unreviewedAuxiliaryAssets.length > 0) {
+    throw new Error(`Unreviewed release auxiliary assets: ${unreviewedAuxiliaryAssets.join(', ')}`);
+  }
   fs.rmSync(outputDirectory, { recursive: true, force: true });
   fs.mkdirSync(outputDirectory, { recursive: true });
   const seen = new Set();
@@ -94,11 +102,15 @@ function assembleReleaseAssets(channelsValue, inputDirectories, outputDirectory)
       fs.copyFileSync(path.join(directory, name), path.join(outputDirectory, name), fs.constants.COPYFILE_EXCL);
     }
   }
-  const expectedWithoutChecksums = expectedReleaseAssetNames(channels).filter((name) => name !== 'SHA256SUMS');
+  const expectedWithoutChecksums = [
+    ...expectedReleaseAssetNames(channels).filter((name) => name !== 'SHA256SUMS'),
+    ...reviewedAuxiliaryAssets,
+  ].sort();
   compareExact(expectedWithoutChecksums, actualFileNames(outputDirectory), 'Release candidate assets');
   writeChecksums(outputDirectory);
-  compareExact(expectedReleaseAssetNames(channels), actualFileNames(outputDirectory), 'Public release assets');
-  return expectedReleaseAssetNames(channels);
+  const expectedAssets = [...expectedReleaseAssetNames(channels), ...reviewedAuxiliaryAssets].sort();
+  compareExact(expectedAssets, actualFileNames(outputDirectory), 'Public release assets');
+  return expectedAssets;
 }
 
 function main(argv = process.argv.slice(2)) {
@@ -106,6 +118,9 @@ function main(argv = process.argv.slice(2)) {
   const channelsIndex = argv.indexOf('--channels');
   const outputIndex = argv.indexOf('--output');
   const inputIndices = argv.flatMap((value, index) => value === '--input' ? [index] : []);
+  const auxiliaryAssetIndices = argv.flatMap(
+    (value, index) => value === '--allow-auxiliary-asset' ? [index] : [],
+  );
   if ((channelIndex < 0 && channelsIndex < 0) || outputIndex < 0 || inputIndices.length === 0) {
     throw new Error('Usage: release-assets.cjs --channels stable[,beta] --output DIR --input DIR [--input DIR]');
   }
@@ -113,6 +128,7 @@ function main(argv = process.argv.slice(2)) {
     argv[(channelsIndex >= 0 ? channelsIndex : channelIndex) + 1],
     inputIndices.map((index) => path.resolve(argv[index + 1])),
     path.resolve(argv[outputIndex + 1]),
+    auxiliaryAssetIndices.map((index) => argv[index + 1]),
   );
   process.stdout.write(`${names.join('\n')}\n`);
 }
@@ -124,4 +140,5 @@ module.exports = {
   expectedChannelAssetNames,
   expectedReleaseAssetNames,
   normalizeChannels,
+  RELEASE_AUXILIARY_ASSETS,
 };
