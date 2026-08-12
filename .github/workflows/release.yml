@@ -1060,8 +1060,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release download "${{ github.ref_name }}" --repo "${{ github.repository }}" --pattern homebrew-publication.tar.gz
-          gh attestation verify homebrew-publication.tar.gz --repo "${{ github.repository }}"
+          for attempt in 1 2 3 4; do
+            rm -f homebrew-publication.tar.gz
+            if gh release download "${{ github.ref_name }}" --repo "${{ github.repository }}" --pattern homebrew-publication.tar.gz &&
+              gh attestation verify homebrew-publication.tar.gz --repo "${{ github.repository }}"; then
+              break
+            fi
+            if [ "$attempt" -eq 4 ]; then
+              echo "Public bundle download or attestation verification failed after $attempt attempts." >&2
+              exit 1
+            fi
+            sleep "$((attempt * 5))"
+          done
           mkdir publication
           tar -xzf homebrew-publication.tar.gz -C publication
           (cd publication && shasum -a 256 -c SHA256SUMS)
