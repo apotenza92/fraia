@@ -13,11 +13,11 @@ const stableIcon = readFileSync(resolve(root, 'assets/fraia-icon.svg'), 'utf8');
 const publishedStableIcon = readFileSync(resolve(root, 'docs/assets/icons/icon.svg'), 'utf8');
 const betaIcon = readFileSync(resolve(root, 'assets/fraia-icon-beta.svg'), 'utf8');
 const publishedBetaIcon = readFileSync(resolve(root, 'docs/assets/icons/beta/icon.svg'), 'utf8');
-const productDescription = 'Fraia is a desktop structural engineering workbench for modelling structural schemes, running preliminary analysis, and developing traceable design options.';
+const productDescription = 'Fraia turns structural intent into traceable models, preliminary analysis, and design options.';
 const earlyStageDisclaimer = 'Fraia is early-stage software for preliminary work. It does not replace project-specific engineering judgement or code-compliant design.';
 const productSummary = [
-  'Fraia provides a visual workspace for building structural models, applying supports, releases, and loads, and reviewing preliminary analysis results.',
-  'Projects keep models, analysis runs, and outputs organised so structural options can be developed and compared without losing the reasoning behind them.'
+  'Build structural schemes in a visual workspace. Apply supports, releases, and loads, then review preliminary analysis results in context.',
+  'Fraia keeps authored models, analysis runs, and outputs connected. You can develop and compare options without losing the engineering reasoning behind them.'
 ];
 
 async function loadDownloadPage({ architecture = '', platform = '', releases = [], userAgent = '' } = {}) {
@@ -140,18 +140,18 @@ test('uses a stable release that promotes a newer Fraia Beta identity', async ()
   assert.match(hero(dom).label, /121 MB/);
 });
 
-test('uses the maintained blue stable and purple beta colour schemes', async () => {
+test('uses the maintained Carbon stable and Oxide beta colour schemes', async () => {
   const dom = await loadDownloadPage({ architecture: 'arm64', platform: 'macOS' });
   const document = dom.window.document;
   const styles = () => dom.window.getComputedStyle(document.body);
 
-  assert.equal(styles().getPropertyValue('--accent').trim(), '#244bc1');
-  assert.match(styles().getPropertyValue('--background'), /#edf2ff/);
+  assert.equal(styles().getPropertyValue('--accent').trim(), '#24211f');
+  assert.match(styles().getPropertyValue('--background'), /#f5f1eb/);
 
   document.getElementById('channel-beta').click();
 
-  assert.equal(styles().getPropertyValue('--accent').trim(), '#6f2aaa');
-  assert.match(styles().getPropertyValue('--background'), /#f3e9ff/);
+  assert.equal(styles().getPropertyValue('--accent').trim(), '#b95232');
+  assert.match(styles().getPropertyValue('--background'), /#f6ebe3/);
   assert.match(document.getElementById('app-icon').src, /assets\/icons\/beta\/icon\.svg$/);
 });
 

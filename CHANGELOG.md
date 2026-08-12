@@ -5,6 +5,22 @@ All notable user-facing changes to Fraia are documented here. Fraia follows
 workflow uses the matching version section below as the authoritative GitHub
 release notes and macOS updater notes.
 
+## [0.0.11] - 2026-08-12
+
+### Changed
+
+- Fraia now uses a compact anchored-vault symbol that remains clear across
+  macOS, Windows, Linux, GitHub, and the public download page.
+- Stable uses the Carbon and Chalk mark. Beta uses the Oxide and Oxide Light
+  mark from the same warm Fraia brand palette.
+- The public product description and download page now use the new Fraia brand
+  system while leaving the application interface theme unchanged.
+
+### Updating
+
+- Stable and Beta installations update to separately packaged `0.0.11`
+  application identities on their existing channels.
+
 ## [0.0.10] - 2026-08-06
 
 ### Changed

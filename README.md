@@ -5,7 +5,7 @@
 <h1 align="center">Fraia</h1>
 
 <p align="center">
-  Fraia is a desktop structural engineering workbench for modelling structural schemes, running preliminary analysis, and developing traceable design options.
+  Fraia turns structural intent into traceable models, preliminary analysis, and design options.
 </p>
 
 <p align="center">
@@ -14,9 +14,9 @@
   <a href="https://github.com/apotenza92/fraia/issues">Report an issue</a>
 </p>
 
-Fraia provides a visual workspace for building structural models, applying supports, releases, and loads, and reviewing preliminary analysis results.
+Build structural schemes in a visual workspace. Apply supports, releases, and loads, then review preliminary analysis results in context.
 
-Projects keep models, analysis runs, and outputs organised so structural options can be developed and compared without losing the reasoning behind them.
+Fraia keeps authored models, analysis runs, and outputs connected. You can develop and compare options without losing the engineering reasoning behind them.
 
 > [!IMPORTANT]
 > Fraia is early-stage software for preliminary work. It does not replace project-specific engineering judgement or code-compliant design.
