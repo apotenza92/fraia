@@ -9,12 +9,12 @@
       "size": 943
     },
     "apps/fraia-electron/build/macos/Fraia.icon/Assets/01-artwork.svg": {
-      "sha256": "596580a2870054bc6acfa713017be9a269d41db4b5c80e7bb124c99eaa2dc677",
-      "size": 694
+      "sha256": "7d862d45ffb6490f654f1504b77993e915fd3e24f03dfb90091ce5eee16dc4f3",
+      "size": 758
     },
     "apps/fraia-electron/build/macos/Fraia.icon/Assets/01-artwork-dark.svg": {
-      "sha256": "ce4b03e2448ef948978afb99eac03f7bc48c0f86a03341a82ba4c75fd1aead40",
-      "size": 704
+      "sha256": "3637842f6323ad13efdd0b805f67d85118f79c432ec81f1dbf02662377dbe6a8",
+      "size": 768
     }
   },
   "outputs": {
