@@ -5,6 +5,7 @@ This map identifies the maintained source for each documentation concern. Update
 ## Public product surface
 
 - [`index.html`](index.html) — standalone Fraia desktop download page prepared for publication at `apotenza92.github.io/fraia`.
+- [`fraia-brand-system.md`](fraia-brand-system.md) — canonical icon, colour palette, channel identity, and marketing voice.
 
 ## Core architecture
 
