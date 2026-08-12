@@ -813,6 +813,7 @@ jobs:
           node source/apps/fraia-electron/scripts/release-assets.cjs \
             --channels "${{ needs.prepare.outputs.channels_csv }}" \
             --output /tmp/reassembled-assets \
+            --allow-auxiliary-asset homebrew-publication.tar.gz \
             --input publish/assets > expected-assets.txt
           rm -rf /tmp/reassembled-assets
           if [ "${{ needs.prepare.outputs.channel }}" = beta ]; then

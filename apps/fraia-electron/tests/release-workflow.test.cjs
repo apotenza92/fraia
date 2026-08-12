@@ -296,6 +296,14 @@ test('each publication atomically advances only higher-SemVer identity-isolated 
   assert.match(changelog, /^# Changelog/m);
 });
 
+test('publication revalidates the reviewed Homebrew auxiliary asset explicitly', () => {
+  const publish = jobSource('publish');
+  assert.match(
+    publish,
+    /release-assets\.cjs[\s\S]*--allow-auxiliary-asset homebrew-publication\.tar\.gz/,
+  );
+});
+
 test('published TUF metadata refreshes on a trusted schedule without changing targets', () => {
   assert.match(workflow, /group: fraia-updater-publication/);
   assert.match(tufMetadataRefresh, /schedule:/);

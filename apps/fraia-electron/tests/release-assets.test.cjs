@@ -52,6 +52,39 @@ test('release assembly rejects collisions and unexpected or missing assets', () 
   fs.rmSync(root, { recursive: true, force: true });
 });
 
+test('publication reassembly accepts only the reviewed Homebrew auxiliary asset', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-assets-auxiliary-'));
+  const input = path.join(root, 'input');
+  const output = path.join(root, 'output');
+  fs.mkdirSync(input);
+  for (const name of expectedReleaseAssetNames('stable').filter((name) => name !== 'SHA256SUMS')) {
+    fs.writeFileSync(path.join(input, name), name);
+  }
+  fs.writeFileSync(path.join(input, 'homebrew-publication.tar.gz'), 'homebrew');
+
+  assert.throws(
+    () => assembleReleaseAssets('stable', [input], output),
+    /Unexpected: homebrew-publication\.tar\.gz/,
+  );
+  const assembled = assembleReleaseAssets(
+    'stable',
+    [input],
+    output,
+    ['homebrew-publication.tar.gz'],
+  );
+  assert.ok(assembled.includes('homebrew-publication.tar.gz'));
+  assert.match(
+    fs.readFileSync(path.join(output, 'SHA256SUMS'), 'utf8'),
+    /homebrew-publication\.tar\.gz/,
+  );
+  assert.throws(
+    () => assembleReleaseAssets('stable', [input], output, ['unknown.tar.gz']),
+    /Unreviewed release auxiliary assets: unknown\.tar\.gz/,
+  );
+
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
 test('stable-inclusive release assembly accepts both identities and one shared provenance set', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-stable-inclusive-assets-'));
   const input = path.join(root, 'input');
