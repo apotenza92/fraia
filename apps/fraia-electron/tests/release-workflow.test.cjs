@@ -306,6 +306,9 @@ test('publication revalidates the reviewed Homebrew auxiliary asset explicitly',
 
 test('Homebrew native validation installs the candidate from a disposable local tap', () => {
   const validation = jobSource('homebrew-native-validation');
+  assert.match(validation, /for attempt in 1 2 3 4/);
+  assert.match(validation, /gh release download[\s\S]*gh attestation verify/);
+  assert.match(validation, /failed after \$attempt attempts/);
   assert.match(validation, /Library\/Taps\/fraia-validation\/homebrew-release/);
   assert.match(validation, /brew install --cask "fraia-validation\/release\/\$\{cask_name%\.rb\}"/);
   assert.match(validation, /brew uninstall --cask "fraia-validation\/release\/\$\{cask_name%\.rb\}"/);
