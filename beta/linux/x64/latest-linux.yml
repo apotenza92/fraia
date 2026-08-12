@@ -1,46 +1,30 @@
-version: 0.0.10
+version: 0.0.11
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.10/Fraia-Beta-Linux-x64.AppImage
-    sha512: Uv8vaQO8RYBocmnSgTVvCZJOfMz4HXnn51zgiqtwPC4KsfR4+K7Ccpaiuuc38GcV42rAKsLf4dhcHg1r164TQg==
-    size: 106858155
-    blockMapSize: 112319
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.10/Fraia-Beta-Linux-x64.deb
-    sha512: U27hCqJzP6PX7T9Iy4GRKJCJs7aPNk80C3wdIPrxQ4uzhbjq8G1/bkYpbNbZNGmcAO4UajysIs4G3rZT+NtyVg==
-    size: 106428444
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.10/Fraia-Beta-Linux-x64.rpm
-    sha512: YokMmv/aAWlYO8IOq7KTR9RfplBWGxTbA1vsg3/4PdNeQ3xPf9XtwlqXzFrBz7wRal5UjzApw9TUMR8TQKuUZQ==
-    size: 93625045
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.10/Fraia-Beta-Linux-x64.AppImage
-sha512: Uv8vaQO8RYBocmnSgTVvCZJOfMz4HXnn51zgiqtwPC4KsfR4+K7Ccpaiuuc38GcV42rAKsLf4dhcHg1r164TQg==
-releaseName: Fraia Beta 0.0.10
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.11/Fraia-Beta-Linux-x64.AppImage
+    sha512: F4y5kWDyUTuL1OuLMKUO7l797rg6gdd0z3Fm2u/p+HfFQQc6m6pf1RQcnkV1zelu+2DIwSwvoiv2qWDWCuZaqQ==
+    size: 106968964
+    blockMapSize: 112536
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.11/Fraia-Beta-Linux-x64.deb
+    sha512: FMeMHdE082thRyoBYN7HpNDZdjY/Gh65YrUZAsMnKaqkzE1kUcw29XGKAKzek7CenhNoPMMowhujSziRufN+BQ==
+    size: 106538176
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.11/Fraia-Beta-Linux-x64.rpm
+    sha512: l/6FIa2WvCOLkvk8Hfo/zlJ4mKHsDud8Px8Xj9XBc5F9p5vBeUPTcF/CeAstKp3u0YMnthdq+TPgUqOI2xri7Q==
+    size: 93732833
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.11/Fraia-Beta-Linux-x64.AppImage
+sha512: F4y5kWDyUTuL1OuLMKUO7l797rg6gdd0z3Fm2u/p+HfFQQc6m6pf1RQcnkV1zelu+2DIwSwvoiv2qWDWCuZaqQ==
+releaseName: Fraia Beta 0.0.11
 releaseNotes: |-
   ### Changed
 
-  - Viewport labels now retain their semantic colours, resolve collisions more
-    reliably, expand independently, and keep proposed-support labels anchored to
-    their passive green support markers. Compact member labels show `SW` on its
-    own line, while expanded labels show `Self weight` without separate arrows.
-  - Selection now prioritises nodes and members over overlapping load graphics,
-    uses restrained amber geometry-only highlights, clears predictably on an
-    empty click, and supports containment, crossing, and lasso selection without
-    making proposed supports selectable.
-  - The canvas has a persistent Controls bar with accurate mouse diagrams,
-    right- and left-handed help, authentic engineering-app navigation profiles,
-    and a separate persistent Custom mouse profile. Fraia continues to default
-    to SPACE GASS navigation.
-  - New files open in an isometric view and remember their camera independently
-    after the user moves it.
-  - New assistant replies remain positioned at the top of the latest response,
-    and the Base Model handoff into Design Options is clearer and more compact.
-  - ChatGPT sign-in now uses browser authorization directly without asking users
-    to paste a redirect URL.
-  - Development launches now use one identifiable, single-owner Fraia Dev
-    process with isolated user data and reliable stale-launch recovery.
-  - The update dialog now presents release readiness and release notes more
-    directly with less redundant chrome.
+  - Fraia now uses a compact anchored-vault symbol that remains clear across
+    macOS, Windows, Linux, GitHub, and the public download page.
+  - Stable uses the Carbon and Chalk mark. Beta uses the Oxide and Oxide Light
+    mark from the same warm Fraia brand palette.
+  - The public product description and download page now use the new Fraia brand
+    system while leaving the application interface theme unchanged.
 
   ### Updating
 
-  - Stable and Beta installations update to separately packaged `0.0.10`
+  - Stable and Beta installations update to separately packaged `0.0.11`
     application identities on their existing channels.
-releaseDate: 2026-08-06T09:41:22.738Z
+releaseDate: 2026-08-12T09:25:44.709Z

@@ -1,46 +1,30 @@
-version: 0.0.10
+version: 0.0.11
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.10/Fraia-Linux-arm64.AppImage
-    sha512: V43wQJiE0DACBmM0mWRAWAAikHBdA1fKdkZZBSxTusYCTeoW+XH4LLX+w/eZraNO4E5BDEQDuYjWqoNHo4Tz/Q==
-    size: 100482599
-    blockMapSize: 104819
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.10/Fraia-Linux-arm64.deb
-    sha512: arIB8GZoFWa6J/5Rzmh8ojvBwJ4QIOOCDbg4BFfWvZbTZlgGSbEOFCPX+LRjKYfHl3OKIfzNA9znH8txGziZKg==
-    size: 100626508
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.10/Fraia-Linux-arm64.rpm
-    sha512: +F0/LXg4hRGmdBY6n64GbLrzSBj/mSIaG9zQIKLBHN0977Rwxif29BfkY+kXRY2qblhLSb1Mt7d/LMr1zhnoJQ==
-    size: 87995333
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.10/Fraia-Linux-arm64.AppImage
-sha512: V43wQJiE0DACBmM0mWRAWAAikHBdA1fKdkZZBSxTusYCTeoW+XH4LLX+w/eZraNO4E5BDEQDuYjWqoNHo4Tz/Q==
-releaseName: Fraia 0.0.10
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.11/Fraia-Linux-arm64.AppImage
+    sha512: 3H7FYTLKfJOPVmN38Mf6CpB7MGuuk8MGuCP5yrIlWnKciIQRHCNff+/VbzURhB83DcJIKk9nho3wmAcFhmchig==
+    size: 100573065
+    blockMapSize: 105173
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.11/Fraia-Linux-arm64.deb
+    sha512: KOU1VWH9psNi8GMzASQly/7ff45VYkgpLrO6BeQd/a9zsWRXLA/3w1eQBScXwUnUJIFFKGtaCu4NA0wTHSdckA==
+    size: 100714564
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.11/Fraia-Linux-arm64.rpm
+    sha512: DBIGEUbgRLwDZkDNk/SOALFbpZLw5p6EOXhS6cSSFNdFh/XMa9QDCF6sOq79vTkex1V4+I1XK2Qsv8oX5H3gIg==
+    size: 88102109
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.11/Fraia-Linux-arm64.AppImage
+sha512: 3H7FYTLKfJOPVmN38Mf6CpB7MGuuk8MGuCP5yrIlWnKciIQRHCNff+/VbzURhB83DcJIKk9nho3wmAcFhmchig==
+releaseName: Fraia 0.0.11
 releaseNotes: |-
   ### Changed
 
-  - Viewport labels now retain their semantic colours, resolve collisions more
-    reliably, expand independently, and keep proposed-support labels anchored to
-    their passive green support markers. Compact member labels show `SW` on its
-    own line, while expanded labels show `Self weight` without separate arrows.
-  - Selection now prioritises nodes and members over overlapping load graphics,
-    uses restrained amber geometry-only highlights, clears predictably on an
-    empty click, and supports containment, crossing, and lasso selection without
-    making proposed supports selectable.
-  - The canvas has a persistent Controls bar with accurate mouse diagrams,
-    right- and left-handed help, authentic engineering-app navigation profiles,
-    and a separate persistent Custom mouse profile. Fraia continues to default
-    to SPACE GASS navigation.
-  - New files open in an isometric view and remember their camera independently
-    after the user moves it.
-  - New assistant replies remain positioned at the top of the latest response,
-    and the Base Model handoff into Design Options is clearer and more compact.
-  - ChatGPT sign-in now uses browser authorization directly without asking users
-    to paste a redirect URL.
-  - Development launches now use one identifiable, single-owner Fraia Dev
-    process with isolated user data and reliable stale-launch recovery.
-  - The update dialog now presents release readiness and release notes more
-    directly with less redundant chrome.
+  - Fraia now uses a compact anchored-vault symbol that remains clear across
+    macOS, Windows, Linux, GitHub, and the public download page.
+  - Stable uses the Carbon and Chalk mark. Beta uses the Oxide and Oxide Light
+    mark from the same warm Fraia brand palette.
+  - The public product description and download page now use the new Fraia brand
+    system while leaving the application interface theme unchanged.
 
   ### Updating
 
-  - Stable and Beta installations update to separately packaged `0.0.10`
+  - Stable and Beta installations update to separately packaged `0.0.11`
     application identities on their existing channels.
-releaseDate: 2026-08-06T09:41:55.511Z
+releaseDate: 2026-08-12T09:24:07.563Z

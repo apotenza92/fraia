@@ -1,6 +1,6 @@
 Fraia updater-feed publication bundle
 Channel: beta
-Tag: v0.0.10
-Commit: a4af2903fb31a6f321e5aa6f61ceb0e48c2c0be5
+Tag: v0.0.11
+Commit: 67951a775e814943e00043adbda662610192f4de
 Destination: updates branch / beta
 Publication: tag workflow, after explicit stable-release and beta-release approval

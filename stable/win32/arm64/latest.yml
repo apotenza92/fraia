@@ -1,58 +1,26 @@
-version: 0.0.10
+version: 0.0.11
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.10/Fraia-Windows-arm64-Setup.exe
-    sha512: rB0grwgqJcHAZzkGg58kMu3DMg+4ALAfZDUvLGmR1Dg1gpwx6IA+0tACYt9GdZEKdGBJKfqvKkn75/KmSQ3W5g==
-    size: 114140903
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.10/Fraia-Windows-arm64-Setup.exe
-sha512: rB0grwgqJcHAZzkGg58kMu3DMg+4ALAfZDUvLGmR1Dg1gpwx6IA+0tACYt9GdZEKdGBJKfqvKkn75/KmSQ3W5g==
-releaseName: Fraia 0.0.10
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.11/Fraia-Windows-arm64-Setup.exe
+    sha512: +Z8GJjxkDPV22NNWB/OmAHrcSyXqZBj9O6c8gNX8BycTmsqoIJlwmhRh11P9vLnxQPlFQb6wVhPC/C2bwdOV+A==
+    size: 114162243
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.11/Fraia-Windows-arm64-Setup.exe
+sha512: +Z8GJjxkDPV22NNWB/OmAHrcSyXqZBj9O6c8gNX8BycTmsqoIJlwmhRh11P9vLnxQPlFQb6wVhPC/C2bwdOV+A==
+releaseName: Fraia 0.0.11
 releaseNotes: "### Changed\r
 
   \r
 
-  - Viewport labels now retain their semantic colours, resolve collisions more\r
+  - Fraia now uses a compact anchored-vault symbol that remains clear across\r
 
-  \  reliably, expand independently, and keep proposed-support labels anchored to\r
+  \  macOS, Windows, Linux, GitHub, and the public download page.\r
 
-  \  their passive green support markers. Compact member labels show `SW` on its\r
+  - Stable uses the Carbon and Chalk mark. Beta uses the Oxide and Oxide Light\r
 
-  \  own line, while expanded labels show `Self weight` without separate arrows.\r
+  \  mark from the same warm Fraia brand palette.\r
 
-  - Selection now prioritises nodes and members over overlapping load graphics,\r
+  - The public product description and download page now use the new Fraia brand\r
 
-  \  uses restrained amber geometry-only highlights, clears predictably on an\r
-
-  \  empty click, and supports containment, crossing, and lasso selection without\r
-
-  \  making proposed supports selectable.\r
-
-  - The canvas has a persistent Controls bar with accurate mouse diagrams,\r
-
-  \  right- and left-handed help, authentic engineering-app navigation profiles,\r
-
-  \  and a separate persistent Custom mouse profile. Fraia continues to default\r
-
-  \  to SPACE GASS navigation.\r
-
-  - New files open in an isometric view and remember their camera independently\r
-
-  \  after the user moves it.\r
-
-  - New assistant replies remain positioned at the top of the latest response,\r
-
-  \  and the Base Model handoff into Design Options is clearer and more compact.\r
-
-  - ChatGPT sign-in now uses browser authorization directly without asking users\r
-
-  \  to paste a redirect URL.\r
-
-  - Development launches now use one identifiable, single-owner Fraia Dev\r
-
-  \  process with isolated user data and reliable stale-launch recovery.\r
-
-  - The update dialog now presents release readiness and release notes more\r
-
-  \  directly with less redundant chrome.\r
+  \  system while leaving the application interface theme unchanged.\r
 
   \r
 
@@ -60,7 +28,7 @@ releaseNotes: "### Changed\r
 
   \r
 
-  - Stable and Beta installations update to separately packaged `0.0.10`\r
+  - Stable and Beta installations update to separately packaged `0.0.11`\r
 
   \  application identities on their existing channels."
-releaseDate: 2026-08-06T09:45:18.829Z
+releaseDate: 2026-08-12T09:29:55.759Z
