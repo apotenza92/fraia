@@ -1071,15 +1071,18 @@ jobs:
           set -euo pipefail
           cask_name="${{ matrix.channel == 'stable' && 'fraia.rb' || 'fraia@beta.rb' }}"
           application="${{ matrix.channel == 'stable' && 'Fraia.app' || 'Fraia Beta.app' }}"
-          cask="$PWD/publication/Casks/$cask_name"
-          brew install --cask "$cask"
+          tap_root="$(brew --repository)/Library/Taps/fraia-validation/homebrew-release"
+          mkdir -p "$tap_root/Casks"
+          cp "$PWD/publication/Casks/$cask_name" "$tap_root/Casks/$cask_name"
+          brew install --cask "fraia-validation/release/${cask_name%.rb}"
           app="/Applications/$application"
           test -d "$app"
           open "$app"
           for _ in {1..30}; do pgrep -f "$app/Contents/MacOS/" >/dev/null && break; sleep 1; done
           pgrep -f "$app/Contents/MacOS/" >/dev/null
           pkill -f "$app/Contents/MacOS/" || true
-          brew uninstall --cask "${{ matrix.channel == 'stable' && 'fraia' || 'fraia@beta' }}"
+          brew uninstall --cask "fraia-validation/release/${cask_name%.rb}"
+          rm -rf "$(brew --repository)/Library/Taps/fraia-validation"
 
   dispatch-homebrew-publication:
     name: Dispatch and await tap-owned Homebrew publication
