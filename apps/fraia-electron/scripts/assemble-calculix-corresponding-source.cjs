@@ -91,14 +91,30 @@ function writeDeterministicTar(outputPath, entries) {
 }
 
 async function download(url, destination) {
-  const response = await fetch(url, { redirect: 'follow' });
-  if (!response.ok || !response.body) {
-    throw new Error(`Download failed (${response.status}) for ${url}`);
-  }
   const temporary = `${destination}.partial`;
-  if (fs.existsSync(temporary)) fs.rmSync(temporary);
-  await pipeline(response.body, fs.createWriteStream(temporary, { flags: 'wx', mode: 0o600 }));
-  fs.renameSync(temporary, destination);
+  let lastError;
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    try {
+      if (fs.existsSync(temporary)) fs.rmSync(temporary);
+      const response = await fetch(url, {
+        redirect: 'follow',
+        signal: AbortSignal.timeout(120_000),
+      });
+      if (!response.ok || !response.body) {
+        throw new Error(`Download failed (${response.status}) for ${url}`);
+      }
+      await pipeline(response.body, fs.createWriteStream(temporary, { flags: 'wx', mode: 0o600 }));
+      fs.renameSync(temporary, destination);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (fs.existsSync(temporary)) fs.rmSync(temporary);
+      if (attempt === 4) break;
+      process.stderr.write(`Retrying pinned source download after attempt ${attempt}/4 failed: ${error.message}\n`);
+      await new Promise((resolve) => setTimeout(resolve, attempt * 5_000));
+    }
+  }
+  throw new Error(`Pinned source download failed after 4 attempts for ${url}: ${lastError?.message || lastError}`);
 }
 
 async function requireSourceInputs(cacheDirectory, offline = false) {

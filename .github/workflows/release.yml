@@ -1035,6 +1035,7 @@ jobs:
   homebrew-native-validation:
     name: Homebrew ${{ matrix.channel }} (${{ matrix.architecture }})
     needs: [prepare, verify-publication]
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -1064,23 +1065,47 @@ jobs:
           tar -xzf homebrew-publication.tar.gz -C publication
           (cd publication && shasum -a 256 -c SHA256SUMS)
       - name: Install and launch the exact release through Homebrew
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          HOMEBREW_NO_INSTALL_CLEANUP: '1'
         shell: bash
         run: |
           set -euo pipefail
+          run_with_timeout() {
+            local timeout_seconds="$1"
+            shift
+            python3 - "$timeout_seconds" "$@" <<'PY'
+          import subprocess
+          import sys
+          try:
+              completed = subprocess.run(sys.argv[2:], timeout=int(sys.argv[1]), check=False)
+          except subprocess.TimeoutExpired:
+              print(f"Command timed out after {sys.argv[1]} seconds: {' '.join(sys.argv[2:])}", file=sys.stderr)
+              raise SystemExit(124)
+          raise SystemExit(completed.returncode)
+          PY
+          }
           cask_name="${{ matrix.channel == 'stable' && 'fraia.rb' || 'fraia@beta.rb' }}"
           application="${{ matrix.channel == 'stable' && 'Fraia.app' || 'Fraia Beta.app' }}"
           tap_root="$(brew --repository)/Library/Taps/fraia-validation/homebrew-release"
+          token="fraia-validation/release/${cask_name%.rb}"
+          cleanup() {
+            pkill -f "/Applications/$application/Contents/MacOS/" || true
+            run_with_timeout 120 brew uninstall --cask "$token" || true
+            rm -rf "$(brew --repository)/Library/Taps/fraia-validation"
+          }
+          trap cleanup EXIT
           mkdir -p "$tap_root/Casks"
           cp "$PWD/publication/Casks/$cask_name" "$tap_root/Casks/$cask_name"
-          brew install --cask "fraia-validation/release/${cask_name%.rb}"
+          echo "Installing $token with a 12-minute limit."
+          run_with_timeout 720 brew install --verbose --cask "$token"
           app="/Applications/$application"
           test -d "$app"
-          open "$app"
+          echo "Launching $app."
+          run_with_timeout 30 open -n "$app"
           for _ in {1..30}; do pgrep -f "$app/Contents/MacOS/" >/dev/null && break; sleep 1; done
           pgrep -f "$app/Contents/MacOS/" >/dev/null
-          pkill -f "$app/Contents/MacOS/" || true
-          brew uninstall --cask "fraia-validation/release/${cask_name%.rb}"
-          rm -rf "$(brew --repository)/Library/Taps/fraia-validation"
+          echo "$application launched successfully."
 
   dispatch-homebrew-publication:
     name: Dispatch and await tap-owned Homebrew publication

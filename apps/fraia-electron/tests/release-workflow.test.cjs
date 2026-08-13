@@ -307,12 +307,15 @@ test('publication revalidates the reviewed Homebrew auxiliary asset explicitly',
 
 test('Homebrew native validation installs the candidate from a disposable local tap', () => {
   const validation = jobSource('homebrew-native-validation');
+  assert.match(validation, /timeout-minutes: 20/);
   assert.match(validation, /for attempt in 1 2 3 4/);
   assert.match(validation, /gh release download[\s\S]*gh attestation verify/);
   assert.match(validation, /failed after \$attempt attempts/);
   assert.match(validation, /Library\/Taps\/fraia-validation\/homebrew-release/);
-  assert.match(validation, /brew install --cask "fraia-validation\/release\/\$\{cask_name%\.rb\}"/);
-  assert.match(validation, /brew uninstall --cask "fraia-validation\/release\/\$\{cask_name%\.rb\}"/);
+  assert.match(validation, /HOMEBREW_NO_AUTO_UPDATE/);
+  assert.match(validation, /run_with_timeout 720 brew install --verbose --cask "\$token"/);
+  assert.match(validation, /run_with_timeout 120 brew uninstall --cask "\$token"/);
+  assert.match(validation, /trap cleanup EXIT/);
   assert.match(validation, /rm -rf "\$\(brew --repository\)\/Library\/Taps\/fraia-validation"/);
   assert.doesNotMatch(validation, /brew install --cask "\$cask"/);
 });
@@ -399,6 +402,8 @@ test('native package checks pin the reviewed macOS icon toolchain and determinis
   assert.match(continuousIntegration, /Retrying once after a verified Xcode AssetCatalogAgent infrastructure crash/);
   assert.match(signedMacosBuild, /AssetCatalogAgent-AssetRuntime/);
   assert.match(signedMacosBuild, /runElectronBuilderWithActoolRetry/);
+  assert.match(signedMacosBuild, /A timestamp was expected but was not found/);
+  assert.match(signedMacosBuild, /attempt <= 3/);
 });
 
 test('native runtime audit uses Bash for strict Linux container execution', () => {

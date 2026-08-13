@@ -12,6 +12,13 @@ const {
   correspondingSourceUrl,
 } = require('../calculix-source-contract.cjs');
 const { writeDeterministicTar } = require('../scripts/assemble-calculix-corresponding-source.cjs');
+const sourceAssembler = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'assemble-calculix-corresponding-source.cjs'), 'utf8');
+
+test('corresponding-source downloads have bounded retries and per-attempt timeouts', () => {
+  assert.match(sourceAssembler, /attempt <= 4/);
+  assert.match(sourceAssembler, /AbortSignal\.timeout\(120_000\)/);
+  assert.match(sourceAssembler, /failed after 4 attempts/);
+});
 const { verifyCorrespondingSource } = require('../scripts/verify-calculix-corresponding-source.cjs');
 const { SUPPORTED_TARGETS } = require('../package-boundary.cjs');
 const packageMetadata = require('../package.json');
