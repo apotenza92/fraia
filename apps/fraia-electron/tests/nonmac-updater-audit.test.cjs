@@ -10,6 +10,7 @@ const {
   installedPackageDigest,
   installedPackageVersion,
   prepareSignedTarget,
+  waitForPath,
   waitForPathRemoval,
   windowsUnpackedDirectoryName,
 } = require('../scripts/test-nonmac-update.cjs');
@@ -119,6 +120,20 @@ test('native updater cleanup waits for confirmed uninstaller removal', () => {
   } finally {
     fs.rmSync(retainedPath, { recursive: true, force: true });
   }
+});
+
+test('native updater audit waits for an asynchronous predecessor install', () => {
+  const installedPath = path.join(os.tmpdir(), `fraia-installed-${process.pid}`);
+  fs.writeFileSync(installedPath, 'installed');
+  try {
+    assert.doesNotThrow(() => waitForPath(installedPath, { timeoutMs: 10 }));
+  } finally {
+    fs.rmSync(installedPath, { force: true });
+  }
+  assert.throws(
+    () => waitForPath(installedPath, { timeoutMs: 10, intervalMs: 1 }),
+    /Timed out waiting for the native installer/,
+  );
 });
 
 test('native updater workflow performs real TUF-backed Windows and AppImage replacements', () => {
