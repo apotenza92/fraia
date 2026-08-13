@@ -264,7 +264,11 @@ test('release packages reuse one validated renderer and one native sidecar per t
     assert.match(source, /needs: \[prepare, validate, build-sidecar\]/);
     assert.match(source, /name: fraia-validated-renderer/);
     assert.match(source, /Download reviewed native sidecar/);
-    assert.match(source, /tar -xzf "\$RUNNER_TEMP\/native-sidecar\/native-sidecar\.tar\.gz"/);
+    if (job === 'package-windows') {
+      assert.match(source, /cygpath -u "\$RUNNER_TEMP"/);
+    } else {
+      assert.match(source, /tar -xzf "\$RUNNER_TEMP\/native-sidecar\/native-sidecar\.tar\.gz"/);
+    }
     assert.doesNotMatch(source, /npm run build(?:\s|$)|npm run build:sidecar/);
   }
 });

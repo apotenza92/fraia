@@ -472,7 +472,7 @@ jobs:
 
       - name: Restore reviewed native sidecar
         shell: bash
-        run: tar -xzf "$RUNNER_TEMP/native-sidecar/native-sidecar.tar.gz" -C apps/fraia-electron
+        run: tar -xzf "$(cygpath -u "$RUNNER_TEMP")/native-sidecar/native-sidecar.tar.gz" -C apps/fraia-electron
 
       - name: Build Windows installer
         working-directory: apps/fraia-electron
