@@ -24,19 +24,26 @@ function run(command, args, { env = process.env, capture = false, allowFailure =
   return result;
 }
 
+function sleep(milliseconds) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
 function runElectronBuilderWithActoolRetry(args, { env, outputDir }) {
-  const first = run('npx', args, { env, capture: true, allowFailure: true });
-  if (first.stdout) process.stdout.write(first.stdout);
-  if (first.stderr) process.stderr.write(first.stderr);
-  if (first.status === 0) return;
-  const output = `${first.stdout || ''}\n${first.stderr || ''}`;
-  if (!/AssetCatalogAgent-AssetRuntime|autorelease pool page .* corrupted/.test(output)) {
-    throw new Error(`npx ${args.join(' ')} failed (${first.status}).`);
+  const retryableInfrastructureFailure = /AssetCatalogAgent-AssetRuntime|autorelease pool page .* corrupted|A timestamp was expected but was not found/;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const result = run('npx', args, { env, capture: true, allowFailure: true });
+    if (result.stdout) process.stdout.write(result.stdout);
+    if (result.stderr) process.stderr.write(result.stderr);
+    if (result.status === 0) return;
+    const output = `${result.stdout || ''}\n${result.stderr || ''}`;
+    if (!retryableInfrastructureFailure.test(output) || attempt === 3) {
+      throw new Error(`npx ${args.join(' ')} failed (${result.status}).`);
+    }
+    console.warn(`Retrying macOS packaging after retryable Apple/Xcode infrastructure failure (${attempt}/3).`);
+    fs.rmSync(outputDir, { recursive: true, force: true });
+    fs.mkdirSync(outputDir, { recursive: true });
+    sleep(attempt * 5_000);
   }
-  console.warn('Retrying once after a verified Xcode AssetCatalogAgent infrastructure crash.');
-  fs.rmSync(outputDir, { recursive: true, force: true });
-  fs.mkdirSync(outputDir, { recursive: true });
-  run('npx', args, { env });
 }
 
 function decodeBase64(value, label) {
