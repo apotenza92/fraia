@@ -254,6 +254,8 @@ test('release packages reuse one validated renderer and one native sidecar per t
   assert.match(validate, /name: fraia-validated-renderer/);
   assert.match(sidecars, /needs: prepare/);
   assert.match(sidecars, /name: Native sidecar \$\{\{ matrix\.platform \}\} \$\{\{ matrix\.arch \}\}/);
+  assert.match(sidecars, /Swatinem\/rust-cache@[a-f0-9]{40}/);
+  assert.match(sidecars, /shared-key: release-\$\{\{ matrix\.platform \}\}-\$\{\{ matrix\.arch \}\}/);
   assert.equal((sidecars.match(/platform: (?:darwin|win32|linux)/g) || []).length, 6);
   assert.match(sidecars, /cygpath -u "\$RUNNER_TEMP"/);
   assert.match(sidecars, /tar -czf "\$ARCHIVE_ROOT\/native-sidecar\.tar\.gz"/);

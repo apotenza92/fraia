@@ -273,6 +273,11 @@ jobs:
         with:
           node-version: 24
 
+      - name: Restore native Rust build cache
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          shared-key: release-${{ matrix.platform }}-${{ matrix.arch }}
+
       - name: Verify native runner
         shell: bash
         run: test "$(node -p 'process.platform')" = "${{ matrix.platform }}" && test "$(node -p 'process.arch')" = "${{ matrix.arch }}"
