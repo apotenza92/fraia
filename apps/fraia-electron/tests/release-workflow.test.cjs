@@ -272,6 +272,7 @@ test('release packages reuse one validated renderer and one native sidecar per t
     assert.match(source, /steps\.packaging-dependencies\.outputs\.cache-hit != 'true'/);
     assert.match(source, /Download reviewed native sidecar/);
     if (job !== 'package-macos') assert.match(source, /Set unpublished simulation version/);
+    if (job !== 'package-macos') assert.match(source, /FRAIA_RELEASE_NOTES_VERSION:/);
     if (job === 'package-windows') {
       assert.match(source, /cygpath -u "\$RUNNER_TEMP"/);
     } else {
