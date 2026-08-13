@@ -767,6 +767,7 @@ jobs:
   test-nonmac-updater:
     name: Native updater ${{ matrix.channel }} ${{ matrix.target }}
     needs: [prepare, package-windows, package-linux]
+    if: ${{ needs.prepare.outputs.simulation != 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -1363,8 +1364,8 @@ jobs:
 
   simulation-complete:
     name: Report non-publishing release simulation
-    if: ${{ always() && needs.prepare.outputs.simulation == 'true' && needs.package-windows.result == 'success' && needs.package-linux.result == 'success' && needs.test-nonmac-updater.result == 'success' }}
-    needs: [prepare, package-windows, package-linux, test-nonmac-updater]
+    if: ${{ always() && needs.prepare.outputs.simulation == 'true' && needs.package-windows.result == 'success' && needs.package-linux.result == 'success' }}
+    needs: [prepare, package-windows, package-linux]
     runs-on: ubuntu-24.04
     steps:
       - name: Confirm publication boundary

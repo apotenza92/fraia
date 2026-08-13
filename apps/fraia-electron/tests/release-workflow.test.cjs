@@ -195,8 +195,8 @@ test('manual release simulation reuses candidate qualification and cannot publis
   assert.match(workflow, /github\.event_name == 'push'/);
   assert.match(workflow, /Report non-publishing release simulation/);
   assert.match(jobSource('package-macos'), /if: \$\{\{ needs\.prepare\.outputs\.simulation != 'true' \}\}/);
-  assert.match(jobSource('simulation-complete'), /needs: \[prepare, package-windows, package-linux, test-nonmac-updater\]/);
-  assert.match(jobSource('simulation-complete'), /needs\.test-nonmac-updater\.result == 'success'/);
+  assert.match(jobSource('test-nonmac-updater'), /if: \$\{\{ needs\.prepare\.outputs\.simulation != 'true' \}\}/);
+  assert.match(jobSource('simulation-complete'), /needs: \[prepare, package-windows, package-linux\]/);
 });
 
 test('routine updater qualification reuses exact candidates and public predecessors', () => {
