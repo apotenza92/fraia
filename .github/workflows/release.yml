@@ -4,6 +4,13 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      simulation_previous_version:
+        description: Prior version used by updater replacement simulations
+        required: true
+        type: string
+        default: 0.0.13
   workflow_call:
     inputs:
       simulate:
@@ -46,7 +53,7 @@ jobs:
           persist-credentials: false
 
       - name: Checkout current updater feeds
-        if: ${{ inputs.simulate != true }}
+        if: ${{ github.event_name == 'push' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -66,7 +73,7 @@ jobs:
           fi
 
       - name: Prove tag commit belongs to the approved release source
-        if: ${{ inputs.simulate != true }}
+        if: ${{ github.event_name == 'push' }}
         env:
           APPROVED_RELEASE_BRANCH: main
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
@@ -110,7 +117,7 @@ jobs:
           const packageJson = require('./apps/fraia-electron/package.json');
           const cargo = fs.readFileSync('Cargo.toml', 'utf8');
           const cargoVersion = cargo.match(/\[workspace\.package\][\s\S]*?\nversion\s*=\s*"([^"]+)"/)?.[1];
-          const simulation = process.env.FRAIA_RELEASE_SIMULATION === 'true';
+          const simulation = process.env.GITHUB_EVENT_NAME !== 'push';
           const tag = simulation ? `v${packageJson.version}` : process.env.GITHUB_REF_NAME;
           const stable = /^v\d+\.\d+\.\d+$/.test(tag);
           const beta = /^v\d+\.\d+\.\d+-beta\.\d+$/.test(tag);
@@ -163,7 +170,6 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `${Object.entries(output).map(([key, value]) => `${key}=${value}`).join('\n')}\n`);
           NODE
         env:
-          FRAIA_RELEASE_SIMULATION: ${{ inputs.simulate }}
           SIMULATION_PREVIOUS_VERSION: ${{ inputs.simulation_previous_version }}
 
   validate:

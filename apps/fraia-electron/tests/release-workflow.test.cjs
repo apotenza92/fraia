@@ -143,7 +143,7 @@ test('updater resolution uses the exact highest-SemVer feed predecessor across r
 
 test('stable-inclusive and beta releases are owner-authorized tags and native on six solver-backed targets', () => {
   assert.match(workflow, /tags:\n\s+- 'v\*'/);
-  assert.doesNotMatch(workflow, /workflow_dispatch/);
+  assert.match(workflow, /workflow_dispatch:/);
   for (const runner of ['macos-15', 'macos-15-intel', 'windows-11-arm', 'windows-2025', 'ubuntu-24.04', 'ubuntu-24.04-arm']) {
     assert.match(workflow, new RegExp(runner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
@@ -193,6 +193,7 @@ test('manual release simulation reuses candidate qualification and cannot publis
   assert.match(releaseSimulation, /uses: \.\/\.github\/workflows\/release\.yml/);
   assert.match(releaseSimulation, /simulate: true/);
   assert.match(workflow, /needs\.prepare\.outputs\.simulation != 'true'/);
+  assert.match(workflow, /github\.event_name == 'push'/);
   assert.match(workflow, /Report non-publishing release simulation/);
 });
 
