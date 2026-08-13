@@ -223,22 +223,26 @@ if (/<header[^>]*className=["'][^"']*\bborder-b\b/.test(appShell)) {
 const toolbarStart = appShell.indexOf("export function ContextualWorkspaceToolbar")
 const toolbarEnd = appShell.indexOf("\nfunction memberStartId", toolbarStart)
 const toolbar = appShell.slice(toolbarStart, toolbarEnd)
-if (!toolbar.includes("<ToggleGroup")) findings.push("AppShell.tsx: toolbar editing modes must use ToggleGroup")
-if (!toolbar.includes("<ButtonGroup")) findings.push("AppShell.tsx: related toolbar actions must use ButtonGroup")
-if (!toolbar.includes('spacing={2}')) findings.push("AppShell.tsx: toolbar editing modes must remain separate icon controls")
-if (toolbar.includes('className="hidden xl:inline"')) findings.push("AppShell.tsx: model editing toolbar must remain icon-only")
-if (/setTimeout\s*\(|onDoubleClick/.test(toolbar)) findings.push("AppShell.tsx: toolbar must not delay opening or hide double-click behavior")
-if (/rounded-(?:none|full|[a-z0-9\[\]-]+)/.test(toolbar)) findings.push("AppShell.tsx: toolbar must not override local control radii")
-if (!appShell.includes('aria-label={`${label} settings`}\n                  aria-expanded={open}')) {
-  findings.push("AppShell.tsx: split settings triggers must expose expanded state")
-}
-for (const splitControl of ["Member controls", "Snap controls", "Label controls"]) {
-  if (!toolbar.includes(`aria-label="${splitControl}"`)) {
-    findings.push(`AppShell.tsx: ${splitControl} must remain an official ButtonGroup composition`)
+if (toolbarStart >= 0 && toolbarEnd >= 0) {
+  if (!toolbar.includes("<ToggleGroup")) findings.push("AppShell.tsx: toolbar editing modes must use ToggleGroup")
+  if (!toolbar.includes("<ButtonGroup")) findings.push("AppShell.tsx: related toolbar actions must use ButtonGroup")
+  if (!toolbar.includes('spacing={2}')) findings.push("AppShell.tsx: toolbar editing modes must remain separate icon controls")
+  if (toolbar.includes('className="hidden xl:inline"')) findings.push("AppShell.tsx: model editing toolbar must remain icon-only")
+  if (/setTimeout\s*\(|onDoubleClick/.test(toolbar)) findings.push("AppShell.tsx: toolbar must not delay opening or hide double-click behavior")
+  if (/rounded-(?:none|full|[a-z0-9\[\]-]+)/.test(toolbar)) findings.push("AppShell.tsx: toolbar must not override local control radii")
+  if (!appShell.includes('aria-label={`${label} settings`}\n                  aria-expanded={open}')) {
+    findings.push("AppShell.tsx: split settings triggers must expose expanded state")
   }
-}
-for (const menuId of ["member-settings", "snap-settings", "label-settings"]) {
-  if (!toolbar.includes(`'${menuId}'`)) findings.push(`AppShell.tsx: ${menuId} must remain independently addressable`)
+  for (const splitControl of ["Member controls", "Snap controls", "Label controls"]) {
+    if (!toolbar.includes(`aria-label="${splitControl}"`)) {
+      findings.push(`AppShell.tsx: ${splitControl} must remain an official ButtonGroup composition`)
+    }
+  }
+  for (const menuId of ["member-settings", "snap-settings", "label-settings"]) {
+    if (!toolbar.includes(`'${menuId}'`)) findings.push(`AppShell.tsx: ${menuId} must remain independently addressable`)
+  }
+} else if (!appShell.includes("ConversationWorkspaceSurface")) {
+  findings.push("AppShell.tsx: conversation-first shell must compose the typed conversation workspace")
 }
 
 for (const file of compositionFiles.filter((candidate) => /\.tsx$/.test(candidate))) {

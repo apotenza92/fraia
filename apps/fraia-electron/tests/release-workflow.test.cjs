@@ -16,7 +16,7 @@ const packagedElectronTest = fs.readFileSync(
   'utf8',
 );
 const desktopElectronTest = fs.readFileSync(
-  path.join(__dirname, 'electron', 'base-ui-migration.spec.ts'),
+  path.join(__dirname, 'electron', 'conversation-first.spec.ts'),
   'utf8',
 );
 const packagedE2e = fs.readFileSync(
@@ -384,7 +384,7 @@ test('native package checks pin the reviewed macOS icon toolchain and determinis
   assert.match(updaterMacos, /macos-15/);
   assert.match(updaterMacos, /macos-15-intel/);
   for (const source of [packagedElectronTest, desktopElectronTest]) {
-    assert.match(source, /"--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"/);
+    assert.match(source, /["']--use-gl=angle["'], ["']--use-angle=swiftshader["'], ["']--enable-unsafe-swiftshader["']/);
   }
   assert.match(packagedElectronTest, /"--no-sandbox"/);
   assert.match(packagedElectronTest, /"XAUTHORITY"/);
@@ -462,6 +462,10 @@ test('packaged updater code ships TUF verification for Windows and Linux', () =>
   assert.match(updateDialog, />\s*Later\s*</);
   assert.match(updateDialog, /ProgressLabel/);
   assert.match(updateDialog, /formatEta/);
+});
+
+test('packaged sidecar startup stays fail-fast while Cargo development startup has build headroom', () => {
+  assert.match(mainProcess, /waitForHealth\(timeoutMs = app\.isPackaged \? 3000 : 30_000\)/);
 });
 
 test('packaged main process includes every explicitly required local module', () => {

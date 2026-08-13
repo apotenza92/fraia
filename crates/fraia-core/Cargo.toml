@@ -8,6 +8,7 @@ license.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2 = "0.10"
 fraia-math = { path = "../fraia-math" }
 fraia-geometry = { path = "../fraia-geometry" }
 fraia-physics = { path = "../fraia-physics" }

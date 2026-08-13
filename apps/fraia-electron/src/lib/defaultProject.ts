@@ -70,7 +70,10 @@ export async function loadDefaultProject(): Promise<WorkbenchState | null> {
   if (defaultProjectLoadPromise) {
     return defaultProjectLoadPromise;
   }
-  defaultProjectLoadPromise = loadDefaultProjectOnce();
+  defaultProjectLoadPromise = loadDefaultProjectOnce().catch((error) => {
+    defaultProjectLoadPromise = null;
+    throw error;
+  });
   return defaultProjectLoadPromise;
 }
 
@@ -80,16 +83,9 @@ async function loadDefaultProjectOnce(): Promise<WorkbenchState | null> {
     window.sessionStorage?.clear();
   }
   const defaultProjectDir = await resolvedDefaultProjectDir();
-  let createdDefaultProject = false;
   let state = normalizeWorkbenchState(await window.fraia.refreshProjectIfExists(defaultProjectDir));
   if (!state) {
-    createdDefaultProject = true;
     state = normalizeWorkbenchState(await window.fraia.createProject({ projectDir: defaultProjectDir, name: 'Raw CAD Geometry Test' }));
-  }
-  const projectDir = projectDirOf(state);
-  const scene = state?.scene;
-  if (createdDefaultProject && !scene?.members?.length) {
-    state = normalizeWorkbenchState(await window.fraia.seedFrameReviewDemo({ projectDir }));
   }
   return state;
 }

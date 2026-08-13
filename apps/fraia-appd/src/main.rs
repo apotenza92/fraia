@@ -68,6 +68,8 @@ use std::{
     time::Duration,
 };
 
+mod conversation_transport;
+
 const AGENT_JUSTIFIED_SECTION_SELECTION_POLICY: &str = "agent_justified";
 
 const DEFAULT_AI_TURN_TIMEOUT_SECONDS: u64 = 125;
@@ -258,6 +260,13 @@ async fn main() -> Result<()> {
         ));
     }
     let appd_token: Arc<str> = Arc::from(appd_token);
+    let conversation_db = std::env::var("FRAIA_CONVERSATION_DB")
+        .unwrap_or_else(|_| "fraia-conversations.sqlite".into());
+    let conversation_service = Arc::new(std::sync::Mutex::new(
+        conversation_transport::ConversationService::open_durable(conversation_db).map_err(
+            |error| anyhow!("failed to open the conversation revision repository: {error}"),
+        )?,
+    ));
     let app = Router::new()
         .route("/health", get(health))
         .route("/projects/create", post(create_project_handler))
@@ -326,6 +335,7 @@ async fn main() -> Result<()> {
             "/projects/frame-run-calculix",
             post(frame_run_calculix_handler),
         )
+        .merge(conversation_transport::router(conversation_service))
         .layer(middleware::from_fn_with_state(
             appd_token,
             require_appd_auth,
@@ -7799,6 +7809,7 @@ fn build_workbench_state(
     Ok(WorkbenchProjectState {
         overview: WorkbenchProjectOverview {
             project_dir: project_dir.display().to_string(),
+            document_id: format!("fraia-document:{}", project.created_at),
             name: project.name.clone(),
             building_type: project.intent.building_type.clone(),
             design_stage: project.intent.design_stage.clone(),

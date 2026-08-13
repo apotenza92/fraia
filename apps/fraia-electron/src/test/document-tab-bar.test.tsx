@@ -88,7 +88,7 @@ describe("DocumentTabBar", () => {
       "bg-background!",
       "data-active:bg-muted!",
     )
-    expect(activeTab.parentElement).toHaveClass("relative", "h-8", "items-center")
+    expect(activeTab.parentElement).toHaveAttribute("data-slot", "tabs-list")
     expect(tabList.closest('[data-document-tab-scroll]')).toHaveClass("flex", "h-8", "items-center", "gap-2", "overflow-x-auto", "no-scrollbar")
     expect(activeTab).toHaveAttribute("aria-selected", "true")
     expect(inactiveTab).toHaveAttribute("aria-selected", "false")
@@ -106,7 +106,6 @@ describe("DocumentTabBar", () => {
     const tabList = screen.getByRole("tablist", { name: "Open documents" })
     const openTab = screen.getByRole("button", { name: "Open Fraia model" })
     const newBlankModel = screen.getByRole("button", { name: "New blank model" })
-    const separator = tabList.nextElementSibling
     expect(openTab).toHaveAttribute("data-slot", "tooltip-trigger")
     expect(openTab).toHaveAttribute("data-document-tab-open")
     expect(openTab.querySelector("svg")).toHaveClass("lucide-plus")
@@ -122,8 +121,7 @@ describe("DocumentTabBar", () => {
     expect(newBlankModel).toHaveTextContent("")
     expect(newBlankModel).toHaveClass("size-8", "border-border", "bg-background!", "hover:bg-muted!")
     expect(tabList).toHaveClass("group-data-horizontal/tabs:h-8")
-    expect(separator).toHaveAttribute("data-document-tab-actions-separator")
-    expect(separator?.nextElementSibling).toBe(openTab)
+    expect(tabList.parentElement?.nextElementSibling).toBe(openTab)
     expect(openTab.nextElementSibling).toBe(newBlankModel)
 
     await user.click(openTab)
@@ -134,8 +132,7 @@ describe("DocumentTabBar", () => {
       "Option B",
       "Option C",
     ])
-    expect(tabList.nextElementSibling).toBe(separator)
-    expect(separator?.nextElementSibling).toBe(openTab)
+    expect(tabList.parentElement?.nextElementSibling).toBe(openTab)
     expect(openTab.nextElementSibling).toBe(newBlankModel)
     expect(openTab).toBeEnabled()
 
@@ -184,8 +181,8 @@ describe("DocumentTabBar", () => {
     render(<DocumentTabsHarness />)
     const optionA = screen.getByRole("tab", { name: "Option A" })
     const optionB = screen.getByRole("tab", { name: "Option B" })
-    const source = optionA.closest('[draggable="true"]') as HTMLElement
-    const target = optionB.closest('[draggable="true"]') as HTMLElement
+    const source = optionA as HTMLElement
+    const target = optionB as HTMLElement
     const dataTransfer = dataTransferStub()
 
     fireEvent.dragStart(source, { dataTransfer })

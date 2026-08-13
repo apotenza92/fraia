@@ -1,9 +1,10 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ViewportHelpBar } from '@/components/layout/ViewportHelpBar';
 import { DEFAULT_VIEWPORT_CUSTOM_NAVIGATION_SETTINGS } from '@/lib/viewportNavigation';
+import { DEFAULT_VIEWPORT_CUSTOM_SELECTION_SETTINGS } from '@/lib/viewportSelection';
 
 const shortcuts = [
   { id: 'axis-lock', keys: ['1', '2', '3'], label: 'Toggle axis lock' },
@@ -25,7 +26,7 @@ describe('viewport help bar', () => {
         onMouseHandedness={vi.fn()}
       />,
     );
-    expect(screen.getByTestId('viewport-help-status')).toHaveTextContent('Member · Plane Auto');
+    expect(screen.getByTestId('viewport-help-status')).toHaveTextContent('Member · Plane Auto · Toggle picks · Two-click window');
     expect(screen.getByTestId('viewport-help-essentials')).not.toHaveTextContent('Select · Click');
     expect(screen.getByTestId('viewport-help-essentials')).toHaveTextContent('Rotate · Left drag');
     expect(screen.getByTestId('viewport-help-essentials').querySelector('[data-mouse-gesture]')).not.toBeInTheDocument();
@@ -78,16 +79,25 @@ describe('viewport help bar', () => {
       />,
     );
     await user.click(screen.getByRole('button', { name: 'Controls' }));
+    expect(screen.getByRole('button', { name: 'Controls' })).toHaveTextContent('');
     expect(screen.getByRole('heading', { name: 'Controls' })).toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: 'Navigation profile' })).toHaveTextContent('Fraia — SPACE GASS');
+    expect(screen.getByRole('combobox', { name: 'Control style' })).toHaveTextContent('Fraia — SPACE GASS');
     expect(screen.getByText('Toggle axis lock')).toBeInTheDocument();
     expect(screen.queryByText('Plane')).not.toBeInTheDocument();
     expect(screen.queryByText('Click to toggle')).not.toBeInTheDocument();
     expect(screen.queryByText('Click to clear')).not.toBeInTheDocument();
     expect(screen.queryByText('Click, move, click')).not.toBeInTheDocument();
+    expect(screen.getByText('Selection')).toBeInTheDocument();
+    expect(screen.getByText(/Click toggles items/)).toBeInTheDocument();
+    expect(screen.getByText(/Shift forces the first corner/)).toBeInTheDocument();
+    expect(screen.queryByText('Delete selection')).not.toBeInTheDocument();
+    expect(screen.queryByText('Cancel or clear')).not.toBeInTheDocument();
     expect(screen.getByRole('dialog').querySelector('[data-mouse-gesture]')).not.toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Mouse hand' })).getAllByRole('button').map((button) => button.getAttribute('aria-label')))
+      .toEqual(['Left-handed mouse', 'Right-handed mouse']);
     await user.click(screen.getByRole('button', { name: 'Left-handed mouse' }));
     expect(onMouseHandedness).toHaveBeenCalledWith('left');
+    await user.click(screen.getByRole('button', { name: 'Controls' }));
   });
 
   it('swaps physical button copy for a left-handed mouse without mouse icons', () => {
@@ -113,16 +123,19 @@ describe('viewport help bar', () => {
   it('shows editable mouse assignments only for the Custom profile', async () => {
     const user = userEvent.setup();
     const onCustomNavigationSettings = vi.fn();
+    const onCustomSelectionSettings = vi.fn();
     render(
       <ViewportHelpBar
         availableWidth={900}
         status="Select"
         navigationProfileId="custom"
         customNavigationSettings={DEFAULT_VIEWPORT_CUSTOM_NAVIGATION_SETTINGS}
+        customSelectionSettings={DEFAULT_VIEWPORT_CUSTOM_SELECTION_SETTINGS}
         mouseHandedness="right"
         contextualShortcuts={[]}
         onNavigationProfileId={vi.fn()}
         onCustomNavigationSettings={onCustomNavigationSettings}
+        onCustomSelectionSettings={onCustomSelectionSettings}
         onMouseHandedness={vi.fn()}
       />,
     );
@@ -132,9 +145,16 @@ describe('viewport help bar', () => {
     expect(screen.getByRole('combobox', { name: 'Middle button action' })).toHaveTextContent('Pan');
     expect(screen.getByRole('combobox', { name: 'Right button action' })).toHaveTextContent('No camera action');
     expect(screen.getByText('The wheel always zooms.')).toBeInTheDocument();
+    expect(screen.getByText('Custom selection')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Direct click' })).toHaveTextContent('Replace');
+    expect(screen.getByRole('combobox', { name: 'Modifiers' })).toHaveTextContent('Shift add · Ctrl/Cmd remove');
 
     await user.click(screen.getByRole('combobox', { name: 'Right button action' }));
-    await user.click(screen.getByRole('option', { name: 'Zoom' }));
+    await user.keyboard('zoom{Enter}');
     expect(onCustomNavigationSettings).toHaveBeenCalledWith({ left: 'rotate', middle: 'pan', right: 'zoom' });
+
+    await user.click(screen.getByRole('combobox', { name: 'Direct click' }));
+    await user.keyboard('add{Enter}');
+    expect(onCustomSelectionSettings).toHaveBeenCalledWith({ ...DEFAULT_VIEWPORT_CUSTOM_SELECTION_SETTINGS, pickBehavior: 'add' });
   });
 });

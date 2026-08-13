@@ -573,7 +573,7 @@ async function callApi(endpoint, options = {}) {
   return body;
 }
 
-async function waitForHealth(timeoutMs = 30000) {
+async function waitForHealth(timeoutMs = app.isPackaged ? 3000 : 30_000) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     try {
@@ -628,6 +628,8 @@ function startSidecar() {
     FRAIA_AI_URL: aiRuntime.serverUrl,
     FRAIA_AI_TOKEN: aiRuntime.serverToken,
     FRAIA_APPD_TOKEN: sidecarToken,
+    FRAIA_CONVERSATION_DB: process.env.FRAIA_CONVERSATION_DB
+      || path.join(app.getPath('userData'), 'conversations.sqlite'),
   });
   const launch = resolveSidecarLaunch({
     isPackaged: app.isPackaged,
@@ -1010,6 +1012,45 @@ ipcMain.handle('fraia:applyReview', (_event, payload) =>
 ipcMain.handle('fraia:editBaseModel', (_event, payload) =>
   callApi('/projects/base-model/edit', { method: 'POST', body: JSON.stringify(payload) })
 );
+ipcMain.handle('fraia:conversationCreate', (_event, payload) =>
+  callApi('/conversations/create', { method: 'POST', body: JSON.stringify(payload) })
+);
+ipcMain.handle('fraia:conversationConverse', (_event, payload) =>
+  callApi('/conversations/converse', { method: 'POST', body: JSON.stringify(payload) })
+);
+ipcMain.handle('fraia:conversationFacts', (_event, payload) =>
+  callApi('/conversations/facts', { method: 'POST', body: JSON.stringify(payload) })
+);
+ipcMain.handle('fraia:conversationAnalyse', (_event, payload) =>
+  callApi('/conversations/analyse', { method: 'POST', body: JSON.stringify(payload) })
+);
+ipcMain.handle('fraia:conversationCompare', (_event, payload) =>
+  callApi('/conversations/compare', { method: 'POST', body: JSON.stringify(payload) })
+);
+ipcMain.handle('fraia:conversationPropose', (_event, payload) =>
+  callApi('/conversations/propose', { method: 'POST', body: JSON.stringify(payload) })
+);
+ipcMain.handle('fraia:conversationAccept', (_event, payload) =>
+  callApi('/conversations/accept', { method: 'POST', body: JSON.stringify(payload) })
+);
+ipcMain.handle('fraia:conversationReject', (_event, payload) =>
+  callApi('/conversations/reject', { method: 'POST', body: JSON.stringify(payload) })
+);
+ipcMain.handle('fraia:conversationFork', (_event, payload) =>
+  callApi('/conversations/fork', { method: 'POST', body: JSON.stringify(payload) })
+);
+ipcMain.handle('fraia:conversationResume', (_event, payload) =>
+  callApi('/conversations/resume', { method: 'POST', body: JSON.stringify(payload) })
+);
+ipcMain.handle('fraia:conversationWorkingCopyOpen', (_event, payload) =>
+  callApi('/conversations/working-copy/open', { method: 'POST', body: JSON.stringify(payload) })
+);
+ipcMain.handle('fraia:conversationWorkingCopyApply', (_event, payload) =>
+  callApi('/conversations/working-copy/apply', { method: 'POST', body: JSON.stringify(payload) })
+);
+ipcMain.handle('fraia:conversationWorkingCopyCommit', (_event, payload) =>
+  callApi('/conversations/working-copy/commit', { method: 'POST', body: JSON.stringify(payload) })
+);
 ipcMain.handle('fraia:refreshProject', (_event, projectDir) =>
   callApi(`/projects/state?projectDir=${encodeURIComponent(projectDir)}`)
 );
@@ -1077,58 +1118,59 @@ ipcMain.handle('fraia:quitApp', () => {
   app.quit();
   return { ok: true };
 });
-app.whenReady().then(async () => {
-  try {
-    nativeTheme.themeSource = 'system';
-    nativeTheme.on('updated', syncAllWindowThemes);
-    await wipeDevLaunchState();
-    await ensureAiRuntime();
-    await ensureSidecar();
-    createWindow();
-    if (app.isPackaged) {
-      try {
-        const { autoUpdater } = require('electron-updater');
-        updateController = await configureAutoUpdates({
-          app,
-          autoUpdater,
-          packageMetadata,
-          onStatusChange: broadcastUpdateStatus,
-          prepareForInstall: prepareForUpdateInstall,
-        });
-        broadcastUpdateStatus(currentUpdateStatus());
-      } catch (error) {
-        safeError(`[updater] secure updater initialization failed: ${error}`);
-        updateController = {
-          enabled: false,
-          getStatus: () => ({
-            channel: applicationMetadata.channel,
-            currentVersion: app.getVersion(),
+app.whenReady().then(() => {
+  nativeTheme.themeSource = 'system';
+  nativeTheme.on('updated', syncAllWindowThemes);
+  createWindow();
+  installApplicationMenu();
+
+  void (async () => {
+    try {
+      await wipeDevLaunchState();
+      await ensureAiRuntime();
+      await ensureSidecar();
+      if (app.isPackaged) {
+        try {
+          const { autoUpdater } = require('electron-updater');
+          updateController = await configureAutoUpdates({
+            app,
+            autoUpdater,
+            packageMetadata,
+            onStatusChange: broadcastUpdateStatus,
+            prepareForInstall: prepareForUpdateInstall,
+          });
+          broadcastUpdateStatus(currentUpdateStatus());
+        } catch (error) {
+          safeError(`[updater] secure updater initialization failed: ${error}`);
+          updateController = {
             enabled: false,
-            errorMessage: 'Fraia could not securely start the updater. No update was installed.',
-            frequency: 'never',
-            phase: 'error',
-            reason: 'initialization-failed',
-          }),
-        };
-        broadcastUpdateStatus(currentUpdateStatus());
+            getStatus: () => ({
+              channel: applicationMetadata.channel,
+              currentVersion: app.getVersion(),
+              enabled: false,
+              errorMessage: 'Fraia could not securely start the updater. No update was installed.',
+              frequency: 'never',
+              phase: 'error',
+              reason: 'initialization-failed',
+            }),
+          };
+          broadcastUpdateStatus(currentUpdateStatus());
+        }
       }
+    } catch (error) {
+      safeError(`[startup] Fraia will keep the window open while startup retries: ${error}`);
     }
-    installApplicationMenu();
-  } catch (error) {
-    dialog.showErrorBox('Fraia startup failed', String(error));
-    stopSidecar();
-    app.quit();
-  }
+  })();
 });
 
 app.on('activate', async () => {
   if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow();
     try {
       await ensureAiRuntime();
       await ensureSidecar();
-      createWindow();
     } catch (error) {
-      dialog.showErrorBox('Fraia reopen failed', String(error));
+      safeError(`[startup] Fraia reopen will keep retrying in the window: ${error}`);
     }
   }
 });

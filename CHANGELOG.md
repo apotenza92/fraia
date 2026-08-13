@@ -5,6 +5,41 @@ All notable user-facing changes to Fraia are documented here. Fraia follows
 workflow uses the matching version section below as the authoritative GitHub
 release notes and macOS updater notes.
 
+## [0.0.13] - 2026-08-13
+
+### Changed
+
+- Fraia now opens into one conversation-first structural design workspace
+  instead of the previous staged Base Model, Design Options, and Analysis
+  interface.
+- Blank projects can move from a typed brief to proposed geometry, accepted
+  revisions, analysis evidence, alternatives, inspection, and manual edits in
+  one continuous workflow.
+- The simplified desktop shell removes obsolete staged panels and keeps the
+  Three.js structural preview, selection, symbols, and precision editor focused
+  on the current design conversation.
+
+### Added
+
+- A Rust revision engine now stores canonical model snapshots, immutable
+  revisions, typed patches and semantic diffs, conversation branches, working
+  copies, analysis evidence, and SQLite-backed project history.
+- The Electron and application-service bridge now supports durable project
+  conversations, proposal acceptance and rejection, fork and resume, exact
+  snapshot-bound analysis, comparisons, and restart recovery.
+
+### Fixed
+
+- Release tests now follow the conversation-first desktop acceptance path after
+  removal of the legacy Base UI migration scenario.
+- The production dependency tree now pins the patched `js-yaml` release and
+  reports no production audit vulnerabilities.
+
+### Updating
+
+- Stable and Beta installations update to separately packaged `0.0.13`
+  application identities on their existing channels.
+
 ## [0.0.12] - 2026-08-13
 
 ### Fixed
