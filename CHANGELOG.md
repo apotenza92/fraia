@@ -5,6 +5,18 @@ All notable user-facing changes to Fraia are documented here. Fraia follows
 workflow uses the matching version section below as the authoritative GitHub
 release notes and macOS updater notes.
 
+## [0.0.12] - 2026-08-13
+
+### Fixed
+
+- macOS now renders the stable and Beta adaptive icons at a balanced native
+  size instead of shrinking the Fraia glyph inside the system icon tile.
+
+### Updating
+
+- Stable and Beta installations update to separately packaged `0.0.12`
+  application identities on their existing channels.
+
 ## [0.0.11] - 2026-08-12
 
 ### Changed

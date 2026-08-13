@@ -82,6 +82,23 @@ test('macOS icon bundles select explicit light and dark artwork', () => {
   }
 });
 
+test('macOS adaptive artwork declares a full-size intrinsic canvas', () => {
+  for (const directory of [stableAdaptiveDirectory, betaAdaptiveDirectory]) {
+    for (const fileName of ['01-artwork.svg', '01-artwork-dark.svg']) {
+      const svg = readFileSync(path.join(directory, 'Assets', fileName), 'utf8');
+      const root = svg.match(/<svg\b[^>]*>/)?.[0];
+      assert.ok(root, `${fileName} must contain an SVG root element`);
+      assert.match(root, /\bwidth="1024"/);
+      assert.match(root, /\bheight="1024"/);
+      assert.match(root, /\bviewBox="0 40 1024 1024"/);
+      assert.match(
+        svg,
+        /<g id="fraia-glyph"[^>]+\btransform="translate\(512 552\) scale\(6\.1\) translate\(-64 -69\)"/,
+      );
+    }
+  }
+});
+
 test('electron-builder selects the maintained adaptive icon for each channel identity', () => {
   const builderConfig = readFileSync(
     path.join(applicationDirectory, 'electron-builder.config.cjs'),
