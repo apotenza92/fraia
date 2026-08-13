@@ -191,10 +191,13 @@ jobs:
         run: test -f LICENSE
 
       - name: Require authoritative release notes
-        run: >-
-          node apps/fraia-electron/scripts/changelog.cjs
-          --version "${{ needs.prepare.outputs.version }}"
-          --output /tmp/fraia-release-notes.md
+        shell: bash
+        run: |
+          NOTES_VERSION='${{ needs.prepare.outputs.version }}'
+          if [ '${{ needs.prepare.outputs.simulation }}' = true ]; then
+            NOTES_VERSION=$(node -p "require('./apps/fraia-electron/package.json').version")
+          fi
+          node apps/fraia-electron/scripts/changelog.cjs --version "$NOTES_VERSION" --output /tmp/fraia-release-notes.md
 
       - name: Require maintained release icons
         run: |
