@@ -1,26 +1,18 @@
-version: 0.0.11
+version: 0.0.12
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.11/Fraia-Beta-Windows-x64-Setup.exe
-    sha512: SRBWhUFdyxlAZw+0MICeJ7sVmAqJcmQtnBpWk2HHOGUjhAbPPPiG8mGkn/bYyfYkuO8/fjNItJ3V7FeT/1mE/Q==
-    size: 119294714
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.11/Fraia-Beta-Windows-x64-Setup.exe
-sha512: SRBWhUFdyxlAZw+0MICeJ7sVmAqJcmQtnBpWk2HHOGUjhAbPPPiG8mGkn/bYyfYkuO8/fjNItJ3V7FeT/1mE/Q==
-releaseName: Fraia Beta 0.0.11
-releaseNotes: "### Changed\r
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-Beta-Windows-x64-Setup.exe
+    sha512: CNJBQinoZX5QpYGOzh+gW9NTgg+BUT5rB2biAB85pKUGWqGD9mwzXbHcT0pISpsOmqH3uJeULaRyZfjherBO0Q==
+    size: 119295714
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-Beta-Windows-x64-Setup.exe
+sha512: CNJBQinoZX5QpYGOzh+gW9NTgg+BUT5rB2biAB85pKUGWqGD9mwzXbHcT0pISpsOmqH3uJeULaRyZfjherBO0Q==
+releaseName: Fraia Beta 0.0.12
+releaseNotes: "### Fixed\r
 
   \r
 
-  - Fraia now uses a compact anchored-vault symbol that remains clear across\r
+  - macOS now renders the stable and Beta adaptive icons at a balanced native\r
 
-  \  macOS, Windows, Linux, GitHub, and the public download page.\r
-
-  - Stable uses the Carbon and Chalk mark. Beta uses the Oxide and Oxide Light\r
-
-  \  mark from the same warm Fraia brand palette.\r
-
-  - The public product description and download page now use the new Fraia brand\r
-
-  \  system while leaving the application interface theme unchanged.\r
+  \  size instead of shrinking the Fraia glyph inside the system icon tile.\r
 
   \r
 
@@ -28,7 +20,7 @@ releaseNotes: "### Changed\r
 
   \r
 
-  - Stable and Beta installations update to separately packaged `0.0.11`\r
+  - Stable and Beta installations update to separately packaged `0.0.12`\r
 
   \  application identities on their existing channels."
-releaseDate: 2026-08-12T09:23:02.998Z
+releaseDate: 2026-08-13T04:11:06.189Z

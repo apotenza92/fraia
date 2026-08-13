@@ -1,6 +1,6 @@
 Fraia updater-feed publication bundle
 Channel: stable
-Tag: v0.0.11
-Commit: 67951a775e814943e00043adbda662610192f4de
+Tag: v0.0.12
+Commit: e79086b3bcd811989d567c11f9ae80f1d5d9e4d2
 Destination: updates branch / stable
 Publication: tag workflow, after explicit stable-release approval

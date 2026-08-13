@@ -1,30 +1,26 @@
-version: 0.0.11
+version: 0.0.12
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.11/Fraia-Linux-x64.AppImage
-    sha512: AFKz1+lHlLgxX0+J956dMrAVFIJhVd/WxkSebcHcjGjA372SvaBzodCXg0Fx7w67iL8XdxTuQLjkY1CTR58XYw==
-    size: 106948432
-    blockMapSize: 112484
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.11/Fraia-Linux-x64.deb
-    sha512: zZGS6AHVX0GZG4PEDSzCCb/KGdPuCJ7GfRmP9plM5RhWEHKxYLwmgTOr4R/W5g9Ql9omz0PQ2eTQzLjfmurpqg==
-    size: 106519796
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.11/Fraia-Linux-x64.rpm
-    sha512: mq4wPxIYrKMUfKByOMIr/mnVLlvGG4UuELQYXp4ZLb0DZrbP2IDTzusCYjOh0GT3R3xPD6YCBjG0Slx4v0Wu0g==
-    size: 93721457
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.11/Fraia-Linux-x64.AppImage
-sha512: AFKz1+lHlLgxX0+J956dMrAVFIJhVd/WxkSebcHcjGjA372SvaBzodCXg0Fx7w67iL8XdxTuQLjkY1CTR58XYw==
-releaseName: Fraia 0.0.11
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-Linux-x64.AppImage
+    sha512: rYJLibB6MJPSy+Iuy+bwBUY5XAifNQJVa5gl9kplaMcPca/P2B/4NVCmCEWRpb4l6qtf/ItVL9mVEn0Q8Kf5iA==
+    size: 106948407
+    blockMapSize: 112459
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-Linux-x64.deb
+    sha512: 5AMdLalJLeEbSrZCxZs/ehhtlQXmUuWKBGi224NraIYUCUq0l25fYzXP9QBY0gyNWD5ixcWw1DaIluPzhLOwGw==
+    size: 106519776
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-Linux-x64.rpm
+    sha512: T0/FEI95a+vCV8epgf7YuZDGIt6j/kup5PO9oS4gbqGZbPhVAqVnj5IrZbONCD4heoww53Eg0uWZih7hqR+RNg==
+    size: 93702701
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-Linux-x64.AppImage
+sha512: rYJLibB6MJPSy+Iuy+bwBUY5XAifNQJVa5gl9kplaMcPca/P2B/4NVCmCEWRpb4l6qtf/ItVL9mVEn0Q8Kf5iA==
+releaseName: Fraia 0.0.12
 releaseNotes: |-
-  ### Changed
+  ### Fixed
 
-  - Fraia now uses a compact anchored-vault symbol that remains clear across
-    macOS, Windows, Linux, GitHub, and the public download page.
-  - Stable uses the Carbon and Chalk mark. Beta uses the Oxide and Oxide Light
-    mark from the same warm Fraia brand palette.
-  - The public product description and download page now use the new Fraia brand
-    system while leaving the application interface theme unchanged.
+  - macOS now renders the stable and Beta adaptive icons at a balanced native
+    size instead of shrinking the Fraia glyph inside the system icon tile.
 
   ### Updating
 
-  - Stable and Beta installations update to separately packaged `0.0.11`
+  - Stable and Beta installations update to separately packaged `0.0.12`
     application identities on their existing channels.
-releaseDate: 2026-08-12T09:23:34.892Z
+releaseDate: 2026-08-13T04:11:54.985Z

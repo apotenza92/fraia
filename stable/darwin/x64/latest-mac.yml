@@ -1,26 +1,22 @@
-version: 0.0.11
+version: 0.0.12
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.11/Fraia-macOS-x64.zip
-    sha512: FHAgsBx338U5TCEvF30SrZ83oY1f9f2WLS3l0sEIroJH7hOmFf9FzELGF7i0O+DDENowEFyNtiKpo2XFhRz7Sw==
-    size: 138912753
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.11/Fraia-macOS-x64.dmg
-    sha512: ElY0hco16uOSZYcqgjKhbUNVBzUK/hckUGPO4/Zu/hFH1DHO0vwrt9S9+cP5AGIjp8kdva+kZ9Yjlb+srxJ2Fg==
-    size: 129162235
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.11/Fraia-macOS-x64.zip
-sha512: FHAgsBx338U5TCEvF30SrZ83oY1f9f2WLS3l0sEIroJH7hOmFf9FzELGF7i0O+DDENowEFyNtiKpo2XFhRz7Sw==
-releaseName: Fraia 0.0.11
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-macOS-x64.zip
+    sha512: DcQhXHx64BnnXfhEqwqi4ngY/lj15rcf9obRfgmFn1Z0dK1OvhJuvE2FmtGqiee+nNZqj3x6vXiRK0ied1TGIw==
+    size: 138916415
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-macOS-x64.dmg
+    sha512: v05e/aPjwAk9x7Ed+i0PHdwSwiN8emipRl4QjudHdZXz6P5YzLTIDLd29EU3bCOkeJ8ij+QjrLnYE64JtmmplQ==
+    size: 129131610
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-macOS-x64.zip
+sha512: DcQhXHx64BnnXfhEqwqi4ngY/lj15rcf9obRfgmFn1Z0dK1OvhJuvE2FmtGqiee+nNZqj3x6vXiRK0ied1TGIw==
+releaseName: Fraia 0.0.12
 releaseNotes: |-
-  ### Changed
+  ### Fixed
 
-  - Fraia now uses a compact anchored-vault symbol that remains clear across
-    macOS, Windows, Linux, GitHub, and the public download page.
-  - Stable uses the Carbon and Chalk mark. Beta uses the Oxide and Oxide Light
-    mark from the same warm Fraia brand palette.
-  - The public product description and download page now use the new Fraia brand
-    system while leaving the application interface theme unchanged.
+  - macOS now renders the stable and Beta adaptive icons at a balanced native
+    size instead of shrinking the Fraia glyph inside the system icon tile.
 
   ### Updating
 
-  - Stable and Beta installations update to separately packaged `0.0.11`
+  - Stable and Beta installations update to separately packaged `0.0.12`
     application identities on their existing channels.
-releaseDate: 2026-08-12T09:45:58.912Z
+releaseDate: 2026-08-13T04:42:07.352Z
