@@ -573,7 +573,7 @@ async function callApi(endpoint, options = {}) {
   return body;
 }
 
-async function waitForHealth(timeoutMs = app.isPackaged ? 3000 : 30_000) {
+async function waitForHealth(timeoutMs = app.isPackaged ? 3000 : 60_000) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     try {

@@ -5,6 +5,13 @@ All notable user-facing changes to Fraia are documented here. Fraia follows
 workflow uses the matching version section below as the authoritative GitHub
 release notes and macOS updater notes.
 
+## [0.0.14] - 2026-08-13
+
+### Fixed
+
+- Wait for the development sidecar health signal before the real Electron conversation test creates a model.
+- Allow slow source builds more startup time without weakening packaged-app startup checks.
+
 ## [0.0.13] - 2026-08-13
 
 ### Changed

@@ -50,6 +50,13 @@ test('desktop shell opens a sparse conversation workspace with read-only preview
     await expect(page.locator('[data-slot=menubar]')).toBeVisible();
     await expect(page.getByTestId('conversation-workspace-shell')).toBeVisible();
     await expect(page.getByTestId('empty-workspace')).toBeVisible();
+    await expect.poll(async () => {
+      try {
+        return await page.evaluate(() => window.fraia.health());
+      } catch {
+        return null;
+      }
+    }, { timeout: 70_000 }).toMatchObject({ status: 'ok' });
     await electronApp.evaluate(({ dialog }, selectedDirectory) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selectedDirectory] });
     }, projectDir);
