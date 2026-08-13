@@ -266,6 +266,9 @@ test('release packages reuse one validated renderer and one native sidecar per t
     const source = jobSource(job);
     assert.match(source, /needs: \[prepare, validate, build-sidecar\]/);
     assert.match(source, /name: fraia-validated-renderer/);
+    assert.match(source, /actions\/cache@[a-f0-9]{40}/);
+    assert.match(source, /fraia-packaging-\$\{\{ runner\.os \}\}-\$\{\{ runner\.arch \}\}-node24-/);
+    assert.match(source, /steps\.packaging-dependencies\.outputs\.cache-hit != 'true'/);
     assert.match(source, /Download reviewed native sidecar/);
     if (job === 'package-windows') {
       assert.match(source, /cygpath -u "\$RUNNER_TEMP"/);
