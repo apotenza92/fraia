@@ -304,6 +304,7 @@ jobs:
   package-macos:
     name: macOS ${{ matrix.channel }} ${{ matrix.arch }}
     needs: [prepare, validate, build-sidecar]
+    if: ${{ needs.prepare.outputs.simulation != 'true' }}
     runs-on: ${{ matrix.arch == 'arm64' && 'macos-26' || 'macos-26-intel' }}
     environment: release-signing
     env:
@@ -628,6 +629,7 @@ jobs:
   test-macos-updater:
     name: macOS updater ${{ matrix.channel }} ${{ matrix.scenario }} ${{ matrix.arch }}
     needs: [prepare, package-macos]
+    if: ${{ needs.prepare.outputs.simulation != 'true' }}
     runs-on: ${{ matrix.arch == 'arm64' && 'macos-15' || 'macos-15-intel' }}
     environment:
       name: ${{ matrix.channel }}-updater-verification
@@ -1315,11 +1317,11 @@ jobs:
 
   simulation-complete:
     name: Report non-publishing release simulation
-    if: ${{ needs.prepare.outputs.simulation == 'true' }}
-    needs: [prepare, assemble, attest]
+    if: ${{ always() && needs.prepare.outputs.simulation == 'true' && needs.package-windows.result == 'success' && needs.package-linux.result == 'success' && needs.test-nonmac-updater.result == 'success' }}
+    needs: [prepare, package-windows, package-linux, test-nonmac-updater]
     runs-on: ubuntu-24.04
     steps:
       - name: Confirm publication boundary
         run: |
           test "${{ needs.prepare.outputs.simulation }}" = true
-          echo "Qualified and attested Fraia ${{ needs.prepare.outputs.version }} candidates without publication."
+          echo "Built and qualified Fraia ${{ needs.prepare.outputs.version }} Windows and Linux candidates without publication."
