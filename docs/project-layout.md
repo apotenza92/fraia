@@ -27,10 +27,10 @@ A Fraia project layout should be:
 
 New blank models start immediately in Fraia-managed recovery storage. Creating
 a model does not open a file or folder picker. When the user first saves the
-model, the desktop app asks for a project name and parent location, then creates
-one dedicated project folder on macOS, Windows, and Linux. Fraia must refuse to
-use an existing arbitrary folder. This prevents Fraia from placing project
-files beside unrelated user files.
+model, Save asks for a project name and parent location, then creates one
+dedicated project folder on macOS, Windows, and Linux. Save As creates another
+complete project folder. Fraia refuses to use an existing arbitrary folder.
+This prevents Fraia from placing project files beside unrelated user files.
 
 Users can inspect, copy, version, and back up every project file with normal
 file tools. The app opens either the dedicated folder or its

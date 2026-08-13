@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
@@ -127,6 +127,45 @@ export default function App() {
       setDocumentActionPending(false);
     }
   }
+
+  async function saveActiveProject(saveAs: boolean) {
+    if (!activeDocument || documentActionPending) return;
+    setError(null);
+    setDocumentActionPending(true);
+    try {
+      const projectId = activeDocument.state.overview?.documentId
+        ?? activeDocument.state.overview?.document_id
+        ?? activeDocument.projectDir;
+      const nextState = normalizeWorkbenchState(await window.fraia.saveProject({
+        projectDir: activeDocument.projectDir,
+        projectId,
+        suggestedName: activeDocument.label === 'Untitled Model' ? 'Untitled Fraia Project' : activeDocument.label,
+        saveAs,
+      }));
+      if (!nextState) return;
+      const nextDocument = projectDocumentFromState(nextState);
+      setDocuments((current) => current.map((document) => document.id === activeDocument.id ? nextDocument : document));
+      setActiveDocumentId(nextDocument.id);
+    } catch (caught: any) {
+      setError(caught?.message || 'Could not save the Fraia project.');
+    } finally {
+      setDocumentActionPending(false);
+    }
+  }
+
+  useEffect(() => {
+    const saveFromAppMenu = (event: Event) => {
+      void saveActiveProject(Boolean((event as CustomEvent<{ saveAs?: boolean }>).detail?.saveAs));
+    };
+    window.addEventListener('fraia:save-project', saveFromAppMenu);
+    const unsubscribeNativeMenu = window.fraia.onSaveProjectRequested?.((saveAs) => {
+      void saveActiveProject(saveAs);
+    });
+    return () => {
+      window.removeEventListener('fraia:save-project', saveFromAppMenu);
+      unsubscribeNativeMenu?.();
+    };
+  }, [activeDocument, documentActionPending]);
 
   function closeDocument(documentId: string) {
     const closingIndex = documents.findIndex((document) => document.id === documentId);

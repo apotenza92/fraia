@@ -181,3 +181,15 @@ test('new projects start immediately in managed unsaved-project storage', () => 
   assert.match(main, /`untitled-\$\{Date\.now\(\)\}/);
   assert.match(preload, /createUntitledProject: \(\) => ipcRenderer\.invoke\(['"]fraia:createUntitledProject/);
 });
+
+test('Save moves an untitled project into one new user project folder', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf8');
+
+  assert.match(main, /ipcMain\.handle\(['"]fraia:saveProject/);
+  assert.match(main, /callApi\('\/conversations\/unload'/);
+  assert.match(main, /copyProjectToNewFolder\(sourceDir, destinationDir\)/);
+  assert.match(main, /accelerator: 'CommandOrControl\+S'/);
+  assert.match(main, /accelerator: 'CommandOrControl\+Shift\+S'/);
+  assert.match(preload, /saveProject: \(payload\) => ipcRenderer\.invoke\('fraia:saveProject'/);
+});

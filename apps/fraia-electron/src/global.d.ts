@@ -26,6 +26,8 @@ declare global {
       }>;
       pickProjectFile: () => Promise<string | null>;
       createUntitledProject: () => Promise<string>;
+      saveProject: (request: { projectDir: string; projectId: string; suggestedName: string; saveAs: boolean }) => Promise<WorkbenchState | null>;
+      onSaveProjectRequested?: (listener: (saveAs: boolean) => void) => () => void;
       conversationCreate?: (request: ConversationCreateRequest) => Promise<ConversationTransportState>;
       conversationConverse?: (request: ConversationMessageRequest) => Promise<ConversationTransportState>;
       conversationFacts?: (request: ConversationFactsUpdateRequest) => Promise<ConversationTransportState>;

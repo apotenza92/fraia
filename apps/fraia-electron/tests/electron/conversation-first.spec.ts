@@ -18,7 +18,6 @@ test('desktop shell opens a sparse conversation workspace with read-only preview
   const projectDir = path.join(temporaryRoot, 'project');
   const movedProjectDir = path.join(temporaryRoot, 'moved-project');
   const userDataDir = path.join(temporaryRoot, 'user-data');
-  fs.mkdirSync(projectDir, { recursive: true });
   fs.mkdirSync(userDataDir, { recursive: true });
 
   expect(fs.existsSync(path.join(appRoot, 'dist', 'index.html'))).toBe(true);
@@ -93,6 +92,12 @@ test('desktop shell opens a sparse conversation workspace with read-only preview
       .find((entry) => fs.existsSync(path.join(entry, 'fraia.project.json'))) ?? null;
     if (!createdProjectDir) throw new Error('Fraia did not create the managed untitled project.');
     await expect.poll(() => fs.existsSync(path.join(createdProjectDir, '.fraia', 'workspace.sqlite'))).toBe(true);
+    await electronApp.evaluate(({ dialog }, savedProjectDir) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: savedProjectDir });
+    }, projectDir);
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('fraia:save-project', { detail: { saveAs: false } })));
+    await expect.poll(() => fs.existsSync(path.join(projectDir, 'fraia.project.json'))).toBe(true);
+    await expect.poll(() => fs.existsSync(createdProjectDir)).toBe(false);
     expect(fs.existsSync(path.join(userDataDir, 'conversations.sqlite'))).toBe(false);
     const brief = page.getByTestId('project-brief');
     await brief.getByRole('button', { name: 'Add brief' }).click();
@@ -150,7 +155,7 @@ test('desktop shell opens a sparse conversation workspace with read-only preview
     expect(accessibility.violations, 'axe accessibility violations').toEqual([]);
 
     await electronApp.close();
-    fs.renameSync(createdProjectDir, movedProjectDir);
+    fs.renameSync(projectDir, movedProjectDir);
     electronApp = await electron.launch({
       args: [...deterministicLinuxRenderingArgs, '.', `--user-data-dir=${userDataDir}`],
       cwd: appRoot,

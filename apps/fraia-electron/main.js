@@ -103,6 +103,30 @@ function projectFilePath(projectDir) {
   return path.join(projectDir, 'fraia.project.json');
 }
 
+function isManagedUnsavedProject(projectDir) {
+  const root = path.join(app.getPath('userData'), 'unsaved-projects');
+  const relative = path.relative(root, path.resolve(projectDir));
+  return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
+function copyProjectToNewFolder(sourceDir, destinationDir) {
+  if (fs.existsSync(destinationDir)) {
+    throw new Error('Choose a new project name. Fraia will create the project folder.');
+  }
+  const parentDir = path.dirname(destinationDir);
+  fs.mkdirSync(parentDir, { recursive: true });
+  const stagingDir = path.join(parentDir, `.${path.basename(destinationDir)}.fraia-save-${process.pid}`);
+  if (fs.existsSync(stagingDir)) fs.rmSync(stagingDir, { recursive: true, force: true });
+  try {
+    fs.cpSync(sourceDir, stagingDir, { recursive: true, errorOnExist: true });
+    if (!fs.existsSync(projectFilePath(stagingDir))) throw new Error('The saved project copy is incomplete.');
+    fs.renameSync(stagingDir, destinationDir);
+  } catch (error) {
+    fs.rmSync(stagingDir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
 function backupProjectBeforeReset(projectDir) {
   if (!fs.existsSync(projectFilePath(projectDir))) {
     return;
@@ -800,6 +824,13 @@ function installApplicationMenu() {
       ],
     },
     {
+      label: 'File',
+      submenu: [
+        { label: 'Save', accelerator: 'CommandOrControl+S', click: () => mainWindow?.webContents.send('fraia:saveProjectRequested', false) },
+        { label: 'Save As…', accelerator: 'CommandOrControl+Shift+S', click: () => mainWindow?.webContents.send('fraia:saveProjectRequested', true) },
+      ],
+    },
+    {
       label: 'View',
       submenu: [
         { role: 'reload' },
@@ -927,6 +958,35 @@ ipcMain.handle('fraia:createUntitledProject', () => {
     `untitled-${Date.now()}-${randomBytes(6).toString('hex')}`,
   );
   return projectDir;
+});
+ipcMain.handle('fraia:saveProject', async (_event, payload) => {
+  const sourceDir = path.resolve(payload.projectDir);
+  const saveAs = payload.saveAs === true;
+  const unsaved = isManagedUnsavedProject(sourceDir);
+  if (!saveAs && !unsaved) return callApi(`/projects/state?projectDir=${encodeURIComponent(sourceDir)}`);
+  const result = await dialog.showSaveDialog({
+    title: saveAs ? 'Save Fraia Project As' : 'Save Fraia Project',
+    buttonLabel: 'Save Project',
+    defaultPath: path.join(app.getPath('documents'), payload.suggestedName || 'Untitled Fraia Project'),
+  });
+  if (result.canceled || !result.filePath) return null;
+  const destinationDir = path.resolve(result.filePath);
+  if (destinationDir === sourceDir) return callApi(`/projects/state?projectDir=${encodeURIComponent(sourceDir)}`);
+  const destinationRelativeToSource = path.relative(sourceDir, destinationDir);
+  if (destinationRelativeToSource !== '..' && !destinationRelativeToSource.startsWith(`..${path.sep}`) && !path.isAbsolute(destinationRelativeToSource)) {
+    throw new Error('Save the Fraia project outside its current project folder.');
+  }
+  await callApi('/conversations/unload', {
+    method: 'POST',
+    body: JSON.stringify({ projectId: payload.projectId }),
+  });
+  copyProjectToNewFolder(sourceDir, destinationDir);
+  const response = await callApi('/projects/open', {
+    method: 'POST',
+    body: JSON.stringify({ projectDir: destinationDir }),
+  });
+  if (unsaved) fs.rmSync(sourceDir, { recursive: true, force: true });
+  return response;
 });
 ipcMain.handle('fraia:pickProjectFile', async () => {
   const result = await dialog.showOpenDialog({

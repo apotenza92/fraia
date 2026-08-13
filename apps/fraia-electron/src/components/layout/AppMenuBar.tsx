@@ -7,6 +7,7 @@ import {
   MenubarRadioGroup,
   MenubarRadioItem,
   MenubarSeparator,
+  MenubarShortcut,
   MenubarSub,
   MenubarSubContent,
   MenubarSubTrigger,
@@ -166,6 +167,19 @@ export function AppMenuBar() {
               ) : null}
               <MenubarGroup>
                 <MenubarItem onClick={quitApp}>Quit {productName}</MenubarItem>
+              </MenubarGroup>
+            </MenubarContent>
+          </MenubarMenu>
+          <MenubarMenu>
+            <MenubarTrigger>File</MenubarTrigger>
+            <MenubarContent className="w-max min-w-max whitespace-nowrap">
+              <MenubarGroup>
+                <MenubarItem onClick={() => window.dispatchEvent(new CustomEvent('fraia:save-project', { detail: { saveAs: false } }))}>
+                  Save <MenubarShortcut>⌘S</MenubarShortcut>
+                </MenubarItem>
+                <MenubarItem onClick={() => window.dispatchEvent(new CustomEvent('fraia:save-project', { detail: { saveAs: true } }))}>
+                  Save As… <MenubarShortcut>⇧⌘S</MenubarShortcut>
+                </MenubarItem>
               </MenubarGroup>
             </MenubarContent>
           </MenubarMenu>

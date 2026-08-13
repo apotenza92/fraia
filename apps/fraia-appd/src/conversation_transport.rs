@@ -117,6 +117,10 @@ impl Default for ConversationService {
 }
 
 impl ConversationService {
+    pub fn unload(&mut self, project_id: &str) -> bool {
+        self.projects.remove(&ProjectId::new(project_id)).is_some()
+    }
+
     /// Opens the durable appd transport repository. Electron remains only a
     /// client; revisions and evidence live in the local Rust-owned SQLite DB.
     pub fn open_durable(_legacy_path: impl AsRef<Path>) -> Result<Self, String> {
@@ -1593,6 +1597,7 @@ pub fn router(service: ConversationServiceHandle) -> Router {
         .route("/conversations/reject", post(reject))
         .route("/conversations/fork", post(fork))
         .route("/conversations/resume", post(resume))
+        .route("/conversations/unload", post(unload))
         .route("/conversations/analyse", post(analyse))
         .route("/conversations/compare", post(compare))
         .route("/conversations/working-copy/open", post(open_working_copy))
@@ -1605,6 +1610,21 @@ pub fn router(service: ConversationServiceHandle) -> Router {
             post(commit_working_copy),
         )
         .layer(Extension(service))
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConversationUnloadRequest {
+    project_id: String,
+}
+
+async fn unload(
+    Extension(service): Extension<ConversationServiceHandle>,
+    Json(request): Json<ConversationUnloadRequest>,
+) -> impl IntoResponse {
+    Json(serde_json::json!({
+        "unloaded": service.lock().unwrap().unload(&request.project_id),
+    }))
 }
 async fn create(
     Extension(service): Extension<ConversationServiceHandle>,
