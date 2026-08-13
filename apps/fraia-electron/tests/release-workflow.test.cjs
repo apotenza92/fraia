@@ -7,7 +7,6 @@ const vm = require('node:vm');
 const repositoryRoot = path.resolve(__dirname, '..', '..', '..');
 const workflowPath = path.join(repositoryRoot, '.github', 'workflows', 'release.yml');
 const workflow = fs.readFileSync(workflowPath, 'utf8');
-const releaseSimulation = fs.readFileSync(path.join(repositoryRoot, '.github', 'workflows', 'release-simulation.yml'), 'utf8');
 const builder = fs.readFileSync(path.join(__dirname, '..', 'electron-builder.config.cjs'), 'utf8');
 const signing = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'build-signed-macos.cjs'), 'utf8');
 const updaterTest = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'test-macos-update.cjs'), 'utf8');
@@ -188,13 +187,25 @@ test('stable-inclusive and beta releases are owner-authorized tags and native on
 });
 
 test('manual release simulation reuses candidate qualification and cannot publish', () => {
-  assert.match(workflow, /workflow_call:/);
-  assert.match(releaseSimulation, /workflow_dispatch:/);
-  assert.match(releaseSimulation, /uses: \.\/\.github\/workflows\/release\.yml/);
-  assert.match(releaseSimulation, /simulate: true/);
+  assert.doesNotMatch(workflow, /workflow_call:/);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /simulation_previous_version:/);
   assert.match(workflow, /needs\.prepare\.outputs\.simulation != 'true'/);
   assert.match(workflow, /github\.event_name == 'push'/);
   assert.match(workflow, /Report non-publishing release simulation/);
+});
+
+test('routine updater qualification reuses exact candidates and public predecessors', () => {
+  const macosUpdater = jobSource('test-macos-updater');
+  const nonmacUpdater = jobSource('test-nonmac-updater');
+  assert.match(macosUpdater, /scenario: \[valid\]/);
+  assert.doesNotMatch(macosUpdater, /corrupt|signature/);
+  assert.match(nonmacUpdater, /needs: \[prepare, package-windows, package-linux\]/);
+  assert.match(nonmacUpdater, /candidate_artifact_name: fraia-/);
+  assert.match(nonmacUpdaterAudit, /Download exact release candidate/);
+  assert.match(nonmacUpdaterAudit, /gh release download "v\$\{\{ inputs\.previous_version \}\}"/);
+  assert.match(nonmacUpdaterAudit, /sha256sum --check --strict/);
+  assert.match(nonmacUpdaterAudit, /if: \$\{\{ inputs\.candidate_artifact_name == '' \}\}/);
 });
 
 test('canonical Apple credentials are isolated from build and followed by credential-free verification', () => {

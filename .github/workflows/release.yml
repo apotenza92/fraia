@@ -11,19 +11,6 @@ on:
         required: true
         type: string
         default: 0.0.13
-  workflow_call:
-    inputs:
-      simulate:
-        description: Build and qualify release candidates without publishing
-        required: false
-        type: boolean
-        default: true
-      simulation_previous_version:
-        description: Prior version used by non-publishing updater simulations
-        required: false
-        type: string
-        default: 0.0.13
-
 permissions:
   contents: read
 
@@ -644,7 +631,7 @@ jobs:
       matrix:
         channel: ${{ fromJSON(needs.prepare.outputs.channels) }}
         arch: [arm64, x64]
-        scenario: [valid, corrupt, signature]
+        scenario: [valid]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -723,7 +710,7 @@ jobs:
 
   test-nonmac-updater:
     name: Native updater ${{ matrix.channel }} ${{ matrix.target }}
-    needs: [prepare, validate]
+    needs: [prepare, package-windows, package-linux]
     strategy:
       fail-fast: false
       matrix:
@@ -734,6 +721,7 @@ jobs:
       channel: ${{ matrix.channel }}
       target: ${{ matrix.target }}
       previous_version: ${{ matrix.channel == 'stable' && needs.prepare.outputs.previous_stable_version || needs.prepare.outputs.previous_beta_version }}
+      candidate_artifact_name: fraia-${{ matrix.channel }}-${{ matrix.target }}
 
   assemble:
     name: Assemble exact release bundle

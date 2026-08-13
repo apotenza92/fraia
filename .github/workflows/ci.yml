@@ -44,10 +44,7 @@ on:
         default: 0.0.4-beta.0
 
 permissions:
-  artifact-metadata: write
-  attestations: write
   contents: read
-  id-token: write
 
 concurrency:
   group: fraia-ci-${{ github.workflow }}-${{ github.ref }}-${{ inputs.release_channel }}-${{ inputs.nonmac_updater_target }}-${{ inputs.run_native_package_preflight }}-${{ inputs.run_macos_signing_audit }}-${{ inputs.run_tuf_signing_audit }}
@@ -67,14 +64,12 @@ jobs:
     secrets: inherit
 
   nonmac-updater-audit:
-    if: ${{ inputs.nonmac_updater_target != 'none' && inputs.nonmac_updater_previous_version != 'release-simulation' }}
+    if: ${{ inputs.nonmac_updater_target != 'none' }}
     uses: ./.github/workflows/nonmac-updater-audit.yml
     with:
       channel: ${{ inputs.release_channel }}
       target: ${{ inputs.nonmac_updater_target }}
       previous_version: ${{ inputs.nonmac_updater_previous_version }}
-
-
   deterministic:
     name: Deterministic repository checks
     runs-on: ubuntu-24.04
