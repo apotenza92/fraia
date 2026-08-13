@@ -140,23 +140,25 @@ test('updater resolution uses the exact highest-SemVer feed predecessor across r
   );
 });
 
-test('stable-inclusive and beta releases are tag-only, native on six solver-backed targets, and use protected publication boundaries', () => {
+test('stable-inclusive and beta releases are owner-authorized tags and native on six solver-backed targets', () => {
   assert.match(workflow, /tags:\n\s+- 'v\*'/);
   assert.doesNotMatch(workflow, /workflow_dispatch/);
   for (const runner of ['macos-15', 'macos-15-intel', 'windows-11-arm', 'windows-2025', 'ubuntu-24.04', 'ubuntu-24.04-arm']) {
     assert.match(workflow, new RegExp(runner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
   assert.match(workflow, /artifactPrefix/);
+  assert.match(workflow, /Require an owner-authorized release actor/);
+  assert.match(workflow, /AUTHORIZED_RELEASE_ACTOR: apotenza92/);
+  assert.match(workflow, /RELEASE_ACTOR: \$\{\{ github\.actor \}\}/);
   for (const environment of [
     'release-signing',
   ]) assert.match(workflow, new RegExp(environment));
-  assert.match(workflow, /environment: `\$\{channel\}-release`/);
   assert.match(workflow, /\$\{\{ matrix\.channel \}\}-updater-verification/);
   assert.match(workflow, /channel: \$\{\{ fromJSON\(needs\.prepare\.outputs\.channels\) \}\}/);
   assert.match(workflow, /readPublishedChannelVersion/);
   assert.match(workflow, /releasePolicy/);
-  assert.match(workflow, /Approve stable release projection to Beta/);
-  assert.match(workflow, /environment:\n\s+name: beta-release/);
+  assert.doesNotMatch(workflow, /Approve stable release projection to Beta/);
+  assert.doesNotMatch(workflow, /name: \$\{\{ needs\.prepare\.outputs\.environment \}\}/);
   assert.match(workflow, /vX\.Y\.Z-beta\.N/);
   assert.match(workflow, /\^v\\d\+\\\.\\d\+\\\.\\d\+-beta\\\.\\d\+\$/);
   assert.match(workflow, /actions\/attest@[a-f0-9]{40}/);
@@ -228,7 +230,7 @@ test('each publication atomically advances only higher-SemVer identity-isolated 
   assert.match(workflow, /expectedTag = `v\$\{process\.env\.EXPECTED_PREVIOUS_VERSION\}`/);
   assert.match(workflow, /APPLE_PRIOR_SIGNING_CERTIFICATE_SHA256/);
   assert.match(updaterTest, /priorExpectations/);
-  assert.match(workflow, /needs: \[prepare, seal-tuf, attest, approve-beta-projection\]/);
+  assert.match(workflow, /needs: \[prepare, seal-tuf, attest\]/);
   assert.match(workflow, /environment: update-signing/);
   assert.match(workflow, /sign-tuf-update-repository\.cjs/);
   for (const role of ['TARGETS', 'SNAPSHOT', 'TIMESTAMP']) {
@@ -274,8 +276,7 @@ test('each publication atomically advances only higher-SemVer identity-isolated 
       && uploadFeed < publishFeeds,
     'the release must be public and byte-verified before its updater feed is published',
   );
-  assert.match(workflow, /APPROVAL='stable-release and beta-release'/);
-  assert.match(workflow, /printf 'Publication: tag workflow, after explicit %s approval\\n' "\$APPROVAL"/);
+  assert.match(workflow, /printf 'Publication: owner-authorized tag workflow by %s\\n' "\$\{\{ github\.actor \}\}"/);
   assert.match(workflow, /rm -rf feed-publication\n\s+mkdir -p feed-publication\n\s+touch feed-publication\/\.nojekyll/);
   assert.match(workflow, /mkdir -p "feed-publication\/feed\/\$CHANNEL"/);
   assert.match(workflow, /rm -rf "update-site\/\$CHANNEL"/);

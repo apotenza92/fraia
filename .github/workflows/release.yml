@@ -20,11 +20,9 @@ jobs:
       channel: ${{ steps.release.outputs.channel }}
       channels: ${{ steps.release.outputs.channels }}
       channels_csv: ${{ steps.release.outputs.channels_csv }}
-      environment: ${{ steps.release.outputs.environment }}
       previous_beta_version: ${{ steps.release.outputs.previous_beta_version }}
       previous_stable_version: ${{ steps.release.outputs.previous_stable_version }}
       prerelease: ${{ steps.release.outputs.prerelease }}
-      promotes_beta: ${{ steps.release.outputs.promotes_beta }}
       version: ${{ steps.release.outputs.version }}
     steps:
       - name: Checkout
@@ -39,6 +37,18 @@ jobs:
           persist-credentials: false
           path: published-feed
           ref: updates
+
+      - name: Require an owner-authorized release actor
+        env:
+          AUTHORIZED_RELEASE_ACTOR: apotenza92
+          RELEASE_ACTOR: ${{ github.actor }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RELEASE_ACTOR" != "$AUTHORIZED_RELEASE_ACTOR" ]; then
+            echo "::error::Release tags must be pushed by $AUTHORIZED_RELEASE_ACTOR; received $RELEASE_ACTOR"
+            exit 1
+          fi
 
       - name: Prove tag commit belongs to the approved release source
         env:
@@ -110,11 +120,9 @@ jobs:
             channel,
             channels: JSON.stringify(policy.channels),
             channels_csv: policy.channels.join(','),
-            environment: `${channel}-release`,
             previous_beta_version: policy.previousBetaVersion,
             previous_stable_version: policy.previousStableVersion,
             prerelease: String(beta),
-            promotes_beta: String(policy.promotesBeta),
             version,
           };
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `${Object.entries(output).map(([key, value]) => `${key}=${value}`).join('\n')}\n`);
@@ -759,19 +767,6 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  approve-beta-projection:
-    name: Approve stable release projection to Beta
-    if: ${{ needs.prepare.outputs.promotes_beta == 'true' }}
-    needs: [prepare, seal-tuf, attest]
-    runs-on: ubuntu-24.04
-    environment:
-      name: beta-release
-    steps:
-      - name: Confirm stable-inclusive beta scope
-        run: |
-          test "${{ needs.prepare.outputs.channel }}" = stable
-          test "${{ needs.prepare.outputs.channels_csv }}" = stable,beta
-
   publish:
     name: Publish ${{ needs.prepare.outputs.channel }} release and eligible feeds
     if: >-
@@ -780,12 +775,9 @@ jobs:
         && needs.prepare.result == 'success'
         && needs.seal-tuf.result == 'success'
         && needs.attest.result == 'success'
-        && (needs.approve-beta-projection.result == 'success' || needs.approve-beta-projection.result == 'skipped')
       }}
-    needs: [prepare, seal-tuf, attest, approve-beta-projection]
+    needs: [prepare, seal-tuf, attest]
     runs-on: ubuntu-24.04
-    environment:
-      name: ${{ needs.prepare.outputs.environment }}
     permissions:
       contents: write
     steps:
@@ -921,17 +913,13 @@ jobs:
           for CHANNEL in "${CHANNELS[@]}"; do
             mkdir -p "feed-publication/feed/$CHANNEL"
             cp -R "publish/feed/$CHANNEL/." "feed-publication/feed/$CHANNEL/"
-            APPROVAL="$PRIMARY_CHANNEL-release"
-            if [ "$PRIMARY_CHANNEL" = stable ] && [ "$CHANNEL" = beta ]; then
-              APPROVAL='stable-release and beta-release'
-            fi
             {
               printf 'Fraia updater-feed publication bundle\n'
               printf 'Channel: %s\n' "$CHANNEL"
               printf 'Tag: %s\n' "${{ github.ref_name }}"
               printf 'Commit: %s\n' "${{ github.sha }}"
               printf 'Destination: updates branch / %s\n' "$CHANNEL"
-              printf 'Publication: tag workflow, after explicit %s approval\n' "$APPROVAL"
+              printf 'Publication: owner-authorized tag workflow by %s\n' "${{ github.actor }}"
             } > "feed-publication/PUBLICATION-$CHANNEL.txt"
           done
           (
