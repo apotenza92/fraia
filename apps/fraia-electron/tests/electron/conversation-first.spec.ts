@@ -37,6 +37,7 @@ test('desktop shell opens a sparse conversation workspace with read-only preview
 
   try {
     let page = await electronApp.firstWindow();
+    await page.setViewportSize({ width: 1100, height: 650 });
     page.on('console', (message) => {
       if (message.type() === 'error' || message.type() === 'warning') {
         const text = message.text();
