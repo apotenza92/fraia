@@ -283,7 +283,10 @@ jobs:
 
       - name: Archive native sidecar with executable mode
         shell: bash
-        run: tar -czf "$RUNNER_TEMP/native-sidecar.tar.gz" -C apps/fraia-electron .package/sidecar/${{ matrix.platform }}-${{ matrix.arch }}
+        run: |
+          ARCHIVE_ROOT="$RUNNER_TEMP"
+          if [ "${{ matrix.platform }}" = win32 ]; then ARCHIVE_ROOT=$(cygpath -u "$RUNNER_TEMP"); fi
+          tar -czf "$ARCHIVE_ROOT/native-sidecar.tar.gz" -C apps/fraia-electron .package/sidecar/${{ matrix.platform }}-${{ matrix.arch }}
 
       - name: Upload reusable native sidecar
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -255,7 +255,8 @@ test('release packages reuse one validated renderer and one native sidecar per t
   assert.match(sidecars, /needs: prepare/);
   assert.match(sidecars, /name: Native sidecar \$\{\{ matrix\.platform \}\} \$\{\{ matrix\.arch \}\}/);
   assert.equal((sidecars.match(/platform: (?:darwin|win32|linux)/g) || []).length, 6);
-  assert.match(sidecars, /tar -czf "\$RUNNER_TEMP\/native-sidecar\.tar\.gz"/);
+  assert.match(sidecars, /cygpath -u "\$RUNNER_TEMP"/);
+  assert.match(sidecars, /tar -czf "\$ARCHIVE_ROOT\/native-sidecar\.tar\.gz"/);
   for (const job of ['package-macos', 'package-windows', 'package-linux']) {
     const source = jobSource(job);
     assert.match(source, /needs: \[prepare, validate, build-sidecar\]/);
