@@ -252,6 +252,7 @@ test('release packages reuse one validated renderer and one native sidecar per t
   const validate = jobSource('validate');
   const sidecars = jobSource('build-sidecar');
   assert.match(validate, /name: fraia-validated-renderer/);
+  assert.match(sidecars, /needs: prepare/);
   assert.match(sidecars, /name: Native sidecar \$\{\{ matrix\.platform \}\} \$\{\{ matrix\.arch \}\}/);
   assert.equal((sidecars.match(/platform: (?:darwin|win32|linux)/g) || []).length, 6);
   assert.match(sidecars, /tar -czf "\$RUNNER_TEMP\/native-sidecar\.tar\.gz"/);

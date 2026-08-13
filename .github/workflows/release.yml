@@ -238,7 +238,7 @@ jobs:
 
   build-sidecar:
     name: Native sidecar ${{ matrix.platform }} ${{ matrix.arch }}
-    needs: validate
+    needs: prepare
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
