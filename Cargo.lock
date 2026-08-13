@@ -238,7 +238,7 @@ dependencies = [
 
 [[package]]
 name = "fraia-app-api"
-version = "0.0.14"
+version = "0.0.15"
 dependencies = [
  "fraia-core",
  "fraia-revision",
@@ -248,7 +248,7 @@ dependencies = [
 
 [[package]]
 name = "fraia-appd"
-version = "0.0.14"
+version = "0.0.15"
 dependencies = [
  "anyhow",
  "axum",
@@ -264,7 +264,7 @@ dependencies = [
 
 [[package]]
 name = "fraia-cli"
-version = "0.0.14"
+version = "0.0.15"
 dependencies = [
  "anyhow",
  "fraia-core",
@@ -273,7 +273,7 @@ dependencies = [
 
 [[package]]
 name = "fraia-core"
-version = "0.0.14"
+version = "0.0.15"
 dependencies = [
  "anyhow",
  "fraia-geometry",
@@ -286,7 +286,7 @@ dependencies = [
 
 [[package]]
 name = "fraia-geometry"
-version = "0.0.14"
+version = "0.0.15"
 dependencies = [
  "fraia-math",
  "serde",
@@ -294,14 +294,14 @@ dependencies = [
 
 [[package]]
 name = "fraia-math"
-version = "0.0.14"
+version = "0.0.15"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "fraia-physics"
-version = "0.0.14"
+version = "0.0.15"
 dependencies = [
  "serde",
  "serde_json",
@@ -309,7 +309,7 @@ dependencies = [
 
 [[package]]
 name = "fraia-revision"
-version = "0.0.14"
+version = "0.0.15"
 dependencies = [
  "fraia-core",
  "rusqlite",
