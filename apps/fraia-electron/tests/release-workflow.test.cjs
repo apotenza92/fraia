@@ -465,7 +465,7 @@ test('packaged updater code ships TUF verification for Windows and Linux', () =>
 });
 
 test('packaged sidecar startup stays fail-fast while Cargo development startup has build headroom', () => {
-  assert.match(mainProcess, /waitForHealth\(timeoutMs = app\.isPackaged \? 3000 : 30_000\)/);
+  assert.match(mainProcess, /waitForHealth\(timeoutMs = app\.isPackaged \? 3000 : 60_000\)/);
 });
 
 test('packaged main process includes every explicitly required local module', () => {
