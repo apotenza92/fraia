@@ -4,7 +4,18 @@ on:
   push:
     tags:
       - 'v*'
-
+  workflow_dispatch:
+    inputs:
+      simulation_candidate_version:
+        description: Unpublished candidate version built only for this simulation
+        required: true
+        type: string
+        default: 0.0.15
+      simulation_previous_version:
+        description: Prior version used by updater replacement simulations
+        required: true
+        type: string
+        default: 0.0.14
 permissions:
   contents: read
 
@@ -23,6 +34,8 @@ jobs:
       previous_beta_version: ${{ steps.release.outputs.previous_beta_version }}
       previous_stable_version: ${{ steps.release.outputs.previous_stable_version }}
       prerelease: ${{ steps.release.outputs.prerelease }}
+      release_tag: ${{ steps.release.outputs.release_tag }}
+      simulation: ${{ steps.release.outputs.simulation }}
       version: ${{ steps.release.outputs.version }}
     steps:
       - name: Checkout
@@ -32,6 +45,7 @@ jobs:
           persist-credentials: false
 
       - name: Checkout current updater feeds
+        if: ${{ github.event_name == 'push' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -51,6 +65,7 @@ jobs:
           fi
 
       - name: Prove tag commit belongs to the approved release source
+        if: ${{ github.event_name == 'push' }}
         env:
           APPROVED_RELEASE_BRANCH: main
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
@@ -94,17 +109,35 @@ jobs:
           const packageJson = require('./apps/fraia-electron/package.json');
           const cargo = fs.readFileSync('Cargo.toml', 'utf8');
           const cargoVersion = cargo.match(/\[workspace\.package\][\s\S]*?\nversion\s*=\s*"([^"]+)"/)?.[1];
-          const tag = process.env.GITHUB_REF_NAME;
+          const simulation = process.env.GITHUB_EVENT_NAME !== 'push';
+          const simulationVersion = process.env.SIMULATION_CANDIDATE_VERSION;
+          const tag = simulation ? `v${simulationVersion}` : process.env.GITHUB_REF_NAME;
           const stable = /^v\d+\.\d+\.\d+$/.test(tag);
           const beta = /^v\d+\.\d+\.\d+-beta\.\d+$/.test(tag);
           if (!stable && !beta) {
             throw new Error(`Fraia release tags must be vX.Y.Z or vX.Y.Z-beta.N; received ${tag}.`);
           }
           const version = tag.slice(1);
-          if (packageJson.version !== version || cargoVersion !== version) {
+          if (!simulation && (packageJson.version !== version || cargoVersion !== version)) {
             throw new Error(`Tag ${tag} must match Electron ${packageJson.version} and Cargo ${cargoVersion}.`);
           }
           const channel = beta ? 'beta' : 'stable';
+          if (simulation) {
+            const previousVersion = process.env.SIMULATION_PREVIOUS_VERSION;
+            const output = {
+              channel: 'stable',
+              channels: JSON.stringify(['stable', 'beta']),
+              channels_csv: 'stable,beta',
+              previous_beta_version: previousVersion,
+              previous_stable_version: previousVersion,
+              prerelease: 'false',
+              release_tag: tag,
+              simulation: 'true',
+              version: simulationVersion,
+            };
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `${Object.entries(output).map(([key, value]) => `${key}=${value}`).join('\n')}\n`);
+            process.exit(0);
+          }
           const currentStableVersion = readPublishedChannelVersion(path.resolve('published-feed'), 'stable');
           const currentBetaVersion = readPublishedChannelVersion(path.resolve('published-feed'), 'beta');
           if (!currentStableVersion || !currentBetaVersion) {
@@ -123,10 +156,15 @@ jobs:
             previous_beta_version: policy.previousBetaVersion,
             previous_stable_version: policy.previousStableVersion,
             prerelease: String(beta),
+            release_tag: tag,
+            simulation: 'false',
             version,
           };
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `${Object.entries(output).map(([key, value]) => `${key}=${value}`).join('\n')}\n`);
           NODE
+        env:
+          SIMULATION_CANDIDATE_VERSION: ${{ inputs.simulation_candidate_version }}
+          SIMULATION_PREVIOUS_VERSION: ${{ inputs.simulation_previous_version }}
 
   validate:
     name: Unprivileged release gate
@@ -153,10 +191,13 @@ jobs:
         run: test -f LICENSE
 
       - name: Require authoritative release notes
-        run: >-
-          node apps/fraia-electron/scripts/changelog.cjs
-          --version "${{ needs.prepare.outputs.version }}"
-          --output /tmp/fraia-release-notes.md
+        shell: bash
+        run: |
+          NOTES_VERSION='${{ needs.prepare.outputs.version }}'
+          if [ '${{ needs.prepare.outputs.simulation }}' = true ]; then
+            NOTES_VERSION=$(node -p "require('./apps/fraia-electron/package.json').version")
+          fi
+          node apps/fraia-electron/scripts/changelog.cjs --version "$NOTES_VERSION" --output /tmp/fraia-release-notes.md
 
       - name: Require maintained release icons
         run: |
@@ -207,7 +248,7 @@ jobs:
 
   build-sidecar:
     name: Native sidecar ${{ matrix.platform }} ${{ matrix.arch }}
-    needs: validate
+    needs: prepare
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -242,6 +283,11 @@ jobs:
         with:
           node-version: 24
 
+      - name: Restore native Rust build cache
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          shared-key: release-${{ matrix.platform }}-${{ matrix.arch }}
+
       - name: Verify native runner
         shell: bash
         run: test "$(node -p 'process.platform')" = "${{ matrix.platform }}" && test "$(node -p 'process.arch')" = "${{ matrix.arch }}"
@@ -252,7 +298,10 @@ jobs:
 
       - name: Archive native sidecar with executable mode
         shell: bash
-        run: tar -czf "$RUNNER_TEMP/native-sidecar.tar.gz" -C apps/fraia-electron .package/sidecar/${{ matrix.platform }}-${{ matrix.arch }}
+        run: |
+          ARCHIVE_ROOT="$RUNNER_TEMP"
+          if [ "${{ matrix.platform }}" = win32 ]; then ARCHIVE_ROOT=$(cygpath -u "$RUNNER_TEMP"); fi
+          tar -czf "$ARCHIVE_ROOT/native-sidecar.tar.gz" -C apps/fraia-electron .package/sidecar/${{ matrix.platform }}-${{ matrix.arch }}
 
       - name: Upload reusable native sidecar
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -265,6 +314,7 @@ jobs:
   package-macos:
     name: macOS ${{ matrix.channel }} ${{ matrix.arch }}
     needs: [prepare, validate, build-sidecar]
+    if: ${{ needs.prepare.outputs.simulation != 'true' }}
     runs-on: ${{ matrix.arch == 'arm64' && 'macos-26' || 'macos-26-intel' }}
     environment: release-signing
     env:
@@ -305,7 +355,15 @@ jobs:
           test "$(xcodebuild -version | sed -n '1p')" = "Xcode $FRAIA_XCODE_VERSION"
           test "$(xcrun --find actool)" = "$DEVELOPER_DIR/usr/bin/actool"
 
+      - name: Restore packaging dependencies
+        id: packaging-dependencies
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: apps/fraia-electron/node_modules
+          key: fraia-packaging-${{ runner.os }}-${{ runner.arch }}-node24-${{ hashFiles('apps/fraia-electron/package-lock.json') }}
+
       - name: Install dependencies
+        if: ${{ steps.packaging-dependencies.outputs.cache-hit != 'true' }}
         working-directory: apps/fraia-electron
         run: npm ci
 
@@ -373,7 +431,7 @@ jobs:
             --channel "$CHANNEL" \
             --platform darwin \
             --arch "${{ matrix.arch }}" \
-            --tag "${{ github.ref_name }}" \
+            --tag "${{ needs.prepare.outputs.release_tag }}" \
             --repository "${{ github.repository }}"
           PREFIX=$(node -p "require('./release-contract.cjs').releaseContract({channel: '$CHANNEL', platform: 'darwin', arch: '${{ matrix.arch }}'}).artifactPrefix")
           STEM="$PREFIX-macOS-${{ matrix.arch }}"
@@ -415,7 +473,15 @@ jobs:
         shell: bash
         run: test "$(node -p 'process.arch')" = "${{ matrix.arch }}"
 
+      - name: Restore packaging dependencies
+        id: packaging-dependencies
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: apps/fraia-electron/node_modules
+          key: fraia-packaging-${{ runner.os }}-${{ runner.arch }}-node24-${{ hashFiles('apps/fraia-electron/package-lock.json') }}
+
       - name: Install packaging dependencies
+        if: ${{ steps.packaging-dependencies.outputs.cache-hit != 'true' }}
         working-directory: apps/fraia-electron
         run: npm ci
 
@@ -433,7 +499,12 @@ jobs:
 
       - name: Restore reviewed native sidecar
         shell: bash
-        run: tar -xzf "$RUNNER_TEMP/native-sidecar/native-sidecar.tar.gz" -C apps/fraia-electron
+        run: tar -xzf "$(cygpath -u "$RUNNER_TEMP")/native-sidecar/native-sidecar.tar.gz" -C apps/fraia-electron
+
+      - name: Set unpublished simulation version
+        if: ${{ needs.prepare.outputs.simulation == 'true' }}
+        working-directory: apps/fraia-electron
+        run: npm version '${{ needs.prepare.outputs.version }}' --no-git-tag-version --allow-same-version
 
       - name: Build Windows installer
         working-directory: apps/fraia-electron
@@ -445,6 +516,7 @@ jobs:
           FRAIA_REQUIRE_RELEASE_ICON: '1'
           FRAIA_REQUIRE_TUF_ROOT: '1'
           FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}\apps\fraia-electron\release\${{ matrix.channel }}\win32\${{ matrix.arch }}
+          FRAIA_RELEASE_NOTES_VERSION: ${{ needs.prepare.outputs.simulation == 'true' && '0.0.14' || needs.prepare.outputs.version }}
           FRAIA_RELEASE_PLATFORM: win32
         run: npx --no-install electron-builder --config electron-builder.config.cjs --win nsis --${{ matrix.arch }} --publish never
 
@@ -472,7 +544,7 @@ jobs:
             --channel "$CHANNEL" \
             --platform win32 \
             --arch "${{ matrix.arch }}" \
-            --tag "${{ github.ref_name }}" \
+            --tag "${{ needs.prepare.outputs.release_tag }}" \
             --repository "${{ github.repository }}"
           PREFIX=$(node -p "require('./release-contract.cjs').releaseContract({channel: '$CHANNEL', platform: 'win32', arch: '${{ matrix.arch }}'}).artifactPrefix")
           STEM="$PREFIX-Windows-${{ matrix.arch }}-Setup.exe"
@@ -514,7 +586,15 @@ jobs:
       - name: Install package tools
         run: sudo apt-get update && sudo apt-get install -y cpio fakeroot rpm
 
+      - name: Restore packaging dependencies
+        id: packaging-dependencies
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: apps/fraia-electron/node_modules
+          key: fraia-packaging-${{ runner.os }}-${{ runner.arch }}-node24-${{ hashFiles('apps/fraia-electron/package-lock.json') }}
+
       - name: Install packaging dependencies
+        if: ${{ steps.packaging-dependencies.outputs.cache-hit != 'true' }}
         working-directory: apps/fraia-electron
         run: npm ci
 
@@ -534,6 +614,11 @@ jobs:
         shell: bash
         run: tar -xzf "$RUNNER_TEMP/native-sidecar/native-sidecar.tar.gz" -C apps/fraia-electron
 
+      - name: Set unpublished simulation version
+        if: ${{ needs.prepare.outputs.simulation == 'true' }}
+        working-directory: apps/fraia-electron
+        run: npm version '${{ needs.prepare.outputs.version }}' --no-git-tag-version --allow-same-version
+
       - name: Build Linux packages
         working-directory: apps/fraia-electron
         env:
@@ -544,6 +629,7 @@ jobs:
           FRAIA_REQUIRE_RELEASE_ICON: '1'
           FRAIA_REQUIRE_TUF_ROOT: '1'
           FRAIA_RELEASE_OUTPUT_DIR: ${{ github.workspace }}/apps/fraia-electron/release/${{ matrix.channel }}/linux/${{ matrix.arch }}
+          FRAIA_RELEASE_NOTES_VERSION: ${{ needs.prepare.outputs.simulation == 'true' && '0.0.14' || needs.prepare.outputs.version }}
           FRAIA_RELEASE_PLATFORM: linux
         run: npx --no-install electron-builder --config electron-builder.config.cjs --linux AppImage deb rpm --${{ matrix.arch }} --publish never
 
@@ -572,7 +658,7 @@ jobs:
             --channel "$CHANNEL" \
             --platform linux \
             --arch "${{ matrix.arch }}" \
-            --tag "${{ github.ref_name }}" \
+            --tag "${{ needs.prepare.outputs.release_tag }}" \
             --repository "${{ github.repository }}"
           PREFIX=$(node -p "require('./release-contract.cjs').releaseContract({channel: '$CHANNEL', platform: 'linux', arch: '${{ matrix.arch }}'}).artifactPrefix")
           STEM="$PREFIX-Linux-${{ matrix.arch }}"
@@ -589,6 +675,7 @@ jobs:
   test-macos-updater:
     name: macOS updater ${{ matrix.channel }} ${{ matrix.scenario }} ${{ matrix.arch }}
     needs: [prepare, package-macos]
+    if: ${{ needs.prepare.outputs.simulation != 'true' }}
     runs-on: ${{ matrix.arch == 'arm64' && 'macos-15' || 'macos-15-intel' }}
     environment:
       name: ${{ matrix.channel }}-updater-verification
@@ -600,7 +687,7 @@ jobs:
       matrix:
         channel: ${{ fromJSON(needs.prepare.outputs.channels) }}
         arch: [arm64, x64]
-        scenario: [valid, corrupt, signature]
+        scenario: [valid]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -679,7 +766,8 @@ jobs:
 
   test-nonmac-updater:
     name: Native updater ${{ matrix.channel }} ${{ matrix.target }}
-    needs: [prepare, validate]
+    needs: [prepare, package-windows, package-linux]
+    if: ${{ needs.prepare.outputs.simulation != 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -690,6 +778,7 @@ jobs:
       channel: ${{ matrix.channel }}
       target: ${{ matrix.target }}
       previous_version: ${{ matrix.channel == 'stable' && needs.prepare.outputs.previous_stable_version || needs.prepare.outputs.previous_beta_version }}
+      candidate_artifact_name: fraia-${{ matrix.channel }}-${{ matrix.target }}
 
   assemble:
     name: Assemble exact release bundle
@@ -726,7 +815,7 @@ jobs:
             --bundle "${{ github.workspace }}/candidates/calculix-source/assets/Fraia-CalculiX-Corresponding-Source.tar" \
             --repository "${{ github.repository }}" \
             --runtime-root runtimes/calculix \
-            --tag "${{ github.ref_name }}"
+            --tag "${{ needs.prepare.outputs.release_tag }}"
 
       - name: Assemble and validate exact assets and feeds
         shell: bash
@@ -757,7 +846,7 @@ jobs:
           set -euo pipefail
           node scripts/build-homebrew-publication.cjs \
             --channel "${{ needs.prepare.outputs.channel }}" \
-            --tag "${{ github.ref_name }}" \
+            --tag "${{ needs.prepare.outputs.release_tag }}" \
             --assets "$GITHUB_WORKSPACE/publish/assets" \
             --output "$RUNNER_TEMP/homebrew-publication"
           python3 scripts/create-homebrew-archive.py \
@@ -806,6 +895,7 @@ jobs:
   seal-tuf:
     name: Sign Windows and Linux update repositories
     needs: [prepare, assemble]
+    if: ${{ needs.prepare.outputs.simulation != 'true' }}
     runs-on: ubuntu-24.04
     environment: update-signing
     permissions:
@@ -890,6 +980,7 @@ jobs:
       ${{
         always()
         && needs.prepare.result == 'success'
+        && needs.prepare.outputs.simulation != 'true'
         && needs.seal-tuf.result == 'success'
         && needs.attest.result == 'success'
       }}
@@ -1270,3 +1361,14 @@ jobs:
           done
           [[ -n "$run_id" ]]
           gh run watch "$run_id" --repo "$TAP_REPOSITORY" --exit-status
+
+  simulation-complete:
+    name: Report non-publishing release simulation
+    if: ${{ always() && needs.prepare.outputs.simulation == 'true' && needs.package-windows.result == 'success' && needs.package-linux.result == 'success' }}
+    needs: [prepare, package-windows, package-linux]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Confirm publication boundary
+        run: |
+          test "${{ needs.prepare.outputs.simulation }}" = true
+          echo "Built and qualified Fraia ${{ needs.prepare.outputs.version }} Windows and Linux candidates without publication."

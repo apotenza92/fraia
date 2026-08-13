@@ -166,8 +166,30 @@ test('the renderer opens independent Fraia projects through the canonical manife
   const preload = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf8');
 
   assert.match(main, /ipcMain\.handle\(['"]fraia:pickProjectFile/);
-  assert.match(main, /properties: \['openFile'\]/);
-  assert.match(main, /path\.basename\(projectFile\) !== 'fraia\.project\.json'/);
-  assert.match(main, /return path\.dirname\(projectFile\)/);
+  assert.match(main, /properties: \['openFile', 'openDirectory'\]/);
+  assert.match(main, /path\.basename\(selectedPath\) === 'fraia\.project\.json'/);
+  assert.match(main, /fs\.existsSync\(projectFilePath\(projectDir\)\)/);
   assert.match(preload, /pickProjectFile: \(\) => ipcRenderer\.invoke\(['"]fraia:pickProjectFile/);
+});
+
+test('new projects start immediately in managed unsaved-project storage', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf8');
+
+  assert.match(main, /ipcMain\.handle\(['"]fraia:createUntitledProject/);
+  assert.match(main, /'unsaved-projects'/);
+  assert.match(main, /`untitled-\$\{Date\.now\(\)\}/);
+  assert.match(preload, /createUntitledProject: \(\) => ipcRenderer\.invoke\(['"]fraia:createUntitledProject/);
+});
+
+test('Save moves an untitled project into one new user project folder', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf8');
+
+  assert.match(main, /ipcMain\.handle\(['"]fraia:saveProject/);
+  assert.match(main, /callApi\('\/conversations\/unload'/);
+  assert.match(main, /copyProjectToNewFolder\(sourceDir, destinationDir\)/);
+  assert.match(main, /accelerator: 'CommandOrControl\+S'/);
+  assert.match(main, /accelerator: 'CommandOrControl\+Shift\+S'/);
+  assert.match(preload, /saveProject: \(payload\) => ipcRenderer\.invoke\('fraia:saveProject'/);
 });

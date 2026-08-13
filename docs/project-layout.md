@@ -23,12 +23,25 @@ A Fraia project layout should be:
 
 ---
 
-## 2. Preferred early layout
+## 2. Fraia project folder
+
+New blank models start immediately in Fraia-managed recovery storage. Creating
+a model does not open a file or folder picker. When the user first saves the
+model, Save asks for a project name and parent location, then creates one
+dedicated project folder on macOS, Windows, and Linux. Save As creates another
+complete project folder. Fraia refuses to use an existing arbitrary folder.
+This prevents Fraia from placing project files beside unrelated user files.
+
+Users can inspect, copy, version, and back up every project file with normal
+file tools. The app opens either the dedicated folder or its
+`fraia.project.json` manifest.
+
+## 3. Package layout
 
 A good early Fraia project layout could look like:
 
 ```text
-project/
+project-name/
   fraia.project.json
   planning.md
   generated/
@@ -46,7 +59,7 @@ This is intentionally simple.
 
 ---
 
-## 3. File responsibilities
+## 4. File responsibilities
 
 ## `fraia.project.json`
 Structured project state.
@@ -97,7 +110,7 @@ Examples:
 
 ---
 
-## 4. Why planning markdown is near the root
+## 5. Why planning markdown is near the root
 
 Planning is not a side note.
 
@@ -111,7 +124,7 @@ This supports:
 
 ---
 
-## 5. Why runs are isolated
+## 6. Why runs are isolated
 
 Runs should be isolated from authored state because they are:
 
@@ -123,12 +136,12 @@ They should not overwrite the authored project directly.
 
 ---
 
-## 6. Future expansion direction
+## 7. Future expansion direction
 
 As Fraia grows, the layout may expand into a more modular package-aware structure such as:
 
 ```text
-project/
+project-name/
   fraia.project.json
   fraia.lock.json
   planning/
@@ -148,9 +161,10 @@ But the earliest usable version can remain simpler.
 
 ---
 
-## 7. Design choices currently favored
+## 8. Design choices currently favored
 
 - Keep early project layout small and understandable.
+- Create one dedicated cross-platform folder and never populate an existing arbitrary folder.
 - Put planning markdown near the root.
 - Keep immutable runs separate from authored state.
 - Allow future growth into a more modular package-aware structure.

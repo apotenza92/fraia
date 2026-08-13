@@ -4,7 +4,13 @@ contextBridge.exposeInMainWorld('fraia', {
   health: () => ipcRenderer.invoke('fraia:health'),
   applicationMetadata: () => ipcRenderer.invoke('fraia:applicationMetadata'),
   defaultProjectDir: () => ipcRenderer.invoke('fraia:defaultProjectDir'),
-  pickDirectory: () => ipcRenderer.invoke('fraia:pickDirectory'),
+  createUntitledProject: () => ipcRenderer.invoke('fraia:createUntitledProject'),
+  saveProject: (payload) => ipcRenderer.invoke('fraia:saveProject', payload),
+  onSaveProjectRequested: (listener) => {
+    const handler = (_event, saveAs) => listener(saveAs);
+    ipcRenderer.on('fraia:saveProjectRequested', handler);
+    return () => ipcRenderer.removeListener('fraia:saveProjectRequested', handler);
+  },
   pickProjectFile: () => ipcRenderer.invoke('fraia:pickProjectFile'),
   createProject: (payload) => ipcRenderer.invoke('fraia:createProject', payload),
   openProject: (payload) => ipcRenderer.invoke('fraia:openProject', payload),

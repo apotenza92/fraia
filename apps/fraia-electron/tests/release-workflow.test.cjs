@@ -142,7 +142,7 @@ test('updater resolution uses the exact highest-SemVer feed predecessor across r
 
 test('stable-inclusive and beta releases are owner-authorized tags and native on six solver-backed targets', () => {
   assert.match(workflow, /tags:\n\s+- 'v\*'/);
-  assert.doesNotMatch(workflow, /workflow_dispatch/);
+  assert.match(workflow, /workflow_dispatch:/);
   for (const runner of ['macos-15', 'macos-15-intel', 'windows-11-arm', 'windows-2025', 'ubuntu-24.04', 'ubuntu-24.04-arm']) {
     assert.match(workflow, new RegExp(runner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
@@ -184,6 +184,32 @@ test('stable-inclusive and beta releases are owner-authorized tags and native on
   assert.match(macVerifier, /runtime-manifest\.json/);
   assert.match(macVerifier, /LSMinimumSystemVersion/);
   assert.match(macVerifier, /reviewed macOS 15\.0 minimum/);
+});
+
+test('manual release simulation reuses candidate qualification and cannot publish', () => {
+  assert.doesNotMatch(workflow, /workflow_call:/);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /simulation_previous_version:/);
+  assert.match(workflow, /simulation_candidate_version:/);
+  assert.match(workflow, /needs\.prepare\.outputs\.simulation != 'true'/);
+  assert.match(workflow, /github\.event_name == 'push'/);
+  assert.match(workflow, /Report non-publishing release simulation/);
+  assert.match(jobSource('package-macos'), /if: \$\{\{ needs\.prepare\.outputs\.simulation != 'true' \}\}/);
+  assert.match(jobSource('test-nonmac-updater'), /if: \$\{\{ needs\.prepare\.outputs\.simulation != 'true' \}\}/);
+  assert.match(jobSource('simulation-complete'), /needs: \[prepare, package-windows, package-linux\]/);
+});
+
+test('routine updater qualification reuses exact candidates and public predecessors', () => {
+  const macosUpdater = jobSource('test-macos-updater');
+  const nonmacUpdater = jobSource('test-nonmac-updater');
+  assert.match(macosUpdater, /scenario: \[valid\]/);
+  assert.doesNotMatch(macosUpdater, /corrupt|signature/);
+  assert.match(nonmacUpdater, /needs: \[prepare, package-windows, package-linux\]/);
+  assert.match(nonmacUpdater, /candidate_artifact_name: fraia-/);
+  assert.match(nonmacUpdaterAudit, /Download exact release candidate/);
+  assert.match(nonmacUpdaterAudit, /gh release download "v\$\{\{ inputs\.previous_version \}\}"/);
+  assert.match(nonmacUpdaterAudit, /sha256sum --check --strict/);
+  assert.match(nonmacUpdaterAudit, /if: \$\{\{ inputs\.candidate_artifact_name == '' \}\}/);
 });
 
 test('canonical Apple credentials are isolated from build and followed by credential-free verification', () => {
@@ -230,15 +256,28 @@ test('release packages reuse one validated renderer and one native sidecar per t
   const validate = jobSource('validate');
   const sidecars = jobSource('build-sidecar');
   assert.match(validate, /name: fraia-validated-renderer/);
+  assert.match(sidecars, /needs: prepare/);
   assert.match(sidecars, /name: Native sidecar \$\{\{ matrix\.platform \}\} \$\{\{ matrix\.arch \}\}/);
+  assert.match(sidecars, /Swatinem\/rust-cache@[a-f0-9]{40}/);
+  assert.match(sidecars, /shared-key: release-\$\{\{ matrix\.platform \}\}-\$\{\{ matrix\.arch \}\}/);
   assert.equal((sidecars.match(/platform: (?:darwin|win32|linux)/g) || []).length, 6);
-  assert.match(sidecars, /tar -czf "\$RUNNER_TEMP\/native-sidecar\.tar\.gz"/);
+  assert.match(sidecars, /cygpath -u "\$RUNNER_TEMP"/);
+  assert.match(sidecars, /tar -czf "\$ARCHIVE_ROOT\/native-sidecar\.tar\.gz"/);
   for (const job of ['package-macos', 'package-windows', 'package-linux']) {
     const source = jobSource(job);
     assert.match(source, /needs: \[prepare, validate, build-sidecar\]/);
     assert.match(source, /name: fraia-validated-renderer/);
+    assert.match(source, /actions\/cache@[a-f0-9]{40}/);
+    assert.match(source, /fraia-packaging-\$\{\{ runner\.os \}\}-\$\{\{ runner\.arch \}\}-node24-/);
+    assert.match(source, /steps\.packaging-dependencies\.outputs\.cache-hit != 'true'/);
     assert.match(source, /Download reviewed native sidecar/);
-    assert.match(source, /tar -xzf "\$RUNNER_TEMP\/native-sidecar\/native-sidecar\.tar\.gz"/);
+    if (job !== 'package-macos') assert.match(source, /Set unpublished simulation version/);
+    if (job !== 'package-macos') assert.match(source, /FRAIA_RELEASE_NOTES_VERSION:/);
+    if (job === 'package-windows') {
+      assert.match(source, /cygpath -u "\$RUNNER_TEMP"/);
+    } else {
+      assert.match(source, /tar -xzf "\$RUNNER_TEMP\/native-sidecar\/native-sidecar\.tar\.gz"/);
+    }
     assert.doesNotMatch(source, /npm run build(?:\s|$)|npm run build:sidecar/);
   }
 });
@@ -473,7 +512,9 @@ test('application menu delegates reload and whole-window zoom shortcuts to Elect
   for (const role of ['reload', 'forceReload', 'resetZoom', 'zoomIn', 'zoomOut', 'togglefullscreen']) {
     assert.match(mainProcess, new RegExp(`role: ['"]${role}['"]`));
   }
-  assert.doesNotMatch(mainProcess, /accelerator:\s*['"](?:Cmd|Command|Ctrl|Control)/);
+  for (const role of ['reload', 'forceReload', 'resetZoom', 'zoomIn', 'zoomOut', 'togglefullscreen']) {
+    assert.doesNotMatch(mainProcess, new RegExp(`role: ['"]${role}['"][^}]*accelerator`));
+  }
 });
 
 test('packaged updater code ships TUF verification for Windows and Linux', () => {

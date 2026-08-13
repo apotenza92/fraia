@@ -343,6 +343,18 @@ function waitForPathRemoval(target, { timeoutMs = 60_000, intervalMs = 250 } = {
   }
 }
 
+function waitForPath(target, { timeoutMs = 60_000, intervalMs = 250 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  const waitBuffer = new Int32Array(new SharedArrayBuffer(4));
+  while (!fs.existsSync(target)) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      throw new Error(`Timed out waiting for the native installer to create ${target}.`);
+    }
+    Atomics.wait(waitBuffer, 0, 0, Math.min(intervalMs, remaining));
+  }
+}
+
 function restrictedEnvironment(overrides) {
   const allowed = process.platform === 'win32'
     ? [
@@ -486,7 +498,7 @@ async function main(argv = process.argv.slice(2)) {
       }
       run(previousArtifact, ['/S']);
       installedExecutable = path.join(installDirectory, `${contract.productName}.exe`);
-      if (!fs.existsSync(installedExecutable)) throw new Error('The previous Windows package did not install Fraia.');
+      waitForPath(installedExecutable);
     } else {
       installedAppImage = path.join(temporaryRoot, path.basename(previousArtifact));
       fs.copyFileSync(previousArtifact, installedAppImage);
@@ -663,6 +675,7 @@ module.exports = {
   installedPackageVersion,
   prepareSignedTarget,
   waitForPathRemoval,
+  waitForPath,
   waitForInstalledWindowsPackage,
   windowsUnpackedDirectoryName,
   windowsProcessIds,
