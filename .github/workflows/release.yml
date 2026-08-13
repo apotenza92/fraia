@@ -4,6 +4,18 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_call:
+    inputs:
+      simulate:
+        description: Build and qualify release candidates without publishing
+        required: false
+        type: boolean
+        default: true
+      simulation_previous_version:
+        description: Prior version used by non-publishing updater simulations
+        required: false
+        type: string
+        default: 0.0.13
 
 permissions:
   contents: read
@@ -23,6 +35,8 @@ jobs:
       previous_beta_version: ${{ steps.release.outputs.previous_beta_version }}
       previous_stable_version: ${{ steps.release.outputs.previous_stable_version }}
       prerelease: ${{ steps.release.outputs.prerelease }}
+      release_tag: ${{ steps.release.outputs.release_tag }}
+      simulation: ${{ steps.release.outputs.simulation }}
       version: ${{ steps.release.outputs.version }}
     steps:
       - name: Checkout
@@ -32,6 +46,7 @@ jobs:
           persist-credentials: false
 
       - name: Checkout current updater feeds
+        if: ${{ inputs.simulate != true }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -51,6 +66,7 @@ jobs:
           fi
 
       - name: Prove tag commit belongs to the approved release source
+        if: ${{ inputs.simulate != true }}
         env:
           APPROVED_RELEASE_BRANCH: main
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
@@ -94,7 +110,8 @@ jobs:
           const packageJson = require('./apps/fraia-electron/package.json');
           const cargo = fs.readFileSync('Cargo.toml', 'utf8');
           const cargoVersion = cargo.match(/\[workspace\.package\][\s\S]*?\nversion\s*=\s*"([^"]+)"/)?.[1];
-          const tag = process.env.GITHUB_REF_NAME;
+          const simulation = process.env.FRAIA_RELEASE_SIMULATION === 'true';
+          const tag = simulation ? `v${packageJson.version}` : process.env.GITHUB_REF_NAME;
           const stable = /^v\d+\.\d+\.\d+$/.test(tag);
           const beta = /^v\d+\.\d+\.\d+-beta\.\d+$/.test(tag);
           if (!stable && !beta) {
@@ -105,6 +122,22 @@ jobs:
             throw new Error(`Tag ${tag} must match Electron ${packageJson.version} and Cargo ${cargoVersion}.`);
           }
           const channel = beta ? 'beta' : 'stable';
+          if (simulation) {
+            const previousVersion = process.env.SIMULATION_PREVIOUS_VERSION;
+            const output = {
+              channel: 'stable',
+              channels: JSON.stringify(['stable', 'beta']),
+              channels_csv: 'stable,beta',
+              previous_beta_version: previousVersion,
+              previous_stable_version: previousVersion,
+              prerelease: 'false',
+              release_tag: tag,
+              simulation: 'true',
+              version: packageJson.version,
+            };
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `${Object.entries(output).map(([key, value]) => `${key}=${value}`).join('\n')}\n`);
+            process.exit(0);
+          }
           const currentStableVersion = readPublishedChannelVersion(path.resolve('published-feed'), 'stable');
           const currentBetaVersion = readPublishedChannelVersion(path.resolve('published-feed'), 'beta');
           if (!currentStableVersion || !currentBetaVersion) {
@@ -123,10 +156,15 @@ jobs:
             previous_beta_version: policy.previousBetaVersion,
             previous_stable_version: policy.previousStableVersion,
             prerelease: String(beta),
+            release_tag: tag,
+            simulation: 'false',
             version,
           };
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `${Object.entries(output).map(([key, value]) => `${key}=${value}`).join('\n')}\n`);
           NODE
+        env:
+          FRAIA_RELEASE_SIMULATION: ${{ inputs.simulate }}
+          SIMULATION_PREVIOUS_VERSION: ${{ inputs.simulation_previous_version }}
 
   validate:
     name: Unprivileged release gate
@@ -373,7 +411,7 @@ jobs:
             --channel "$CHANNEL" \
             --platform darwin \
             --arch "${{ matrix.arch }}" \
-            --tag "${{ github.ref_name }}" \
+            --tag "${{ needs.prepare.outputs.release_tag }}" \
             --repository "${{ github.repository }}"
           PREFIX=$(node -p "require('./release-contract.cjs').releaseContract({channel: '$CHANNEL', platform: 'darwin', arch: '${{ matrix.arch }}'}).artifactPrefix")
           STEM="$PREFIX-macOS-${{ matrix.arch }}"
@@ -472,7 +510,7 @@ jobs:
             --channel "$CHANNEL" \
             --platform win32 \
             --arch "${{ matrix.arch }}" \
-            --tag "${{ github.ref_name }}" \
+            --tag "${{ needs.prepare.outputs.release_tag }}" \
             --repository "${{ github.repository }}"
           PREFIX=$(node -p "require('./release-contract.cjs').releaseContract({channel: '$CHANNEL', platform: 'win32', arch: '${{ matrix.arch }}'}).artifactPrefix")
           STEM="$PREFIX-Windows-${{ matrix.arch }}-Setup.exe"
@@ -572,7 +610,7 @@ jobs:
             --channel "$CHANNEL" \
             --platform linux \
             --arch "${{ matrix.arch }}" \
-            --tag "${{ github.ref_name }}" \
+            --tag "${{ needs.prepare.outputs.release_tag }}" \
             --repository "${{ github.repository }}"
           PREFIX=$(node -p "require('./release-contract.cjs').releaseContract({channel: '$CHANNEL', platform: 'linux', arch: '${{ matrix.arch }}'}).artifactPrefix")
           STEM="$PREFIX-Linux-${{ matrix.arch }}"
@@ -726,7 +764,7 @@ jobs:
             --bundle "${{ github.workspace }}/candidates/calculix-source/assets/Fraia-CalculiX-Corresponding-Source.tar" \
             --repository "${{ github.repository }}" \
             --runtime-root runtimes/calculix \
-            --tag "${{ github.ref_name }}"
+            --tag "${{ needs.prepare.outputs.release_tag }}"
 
       - name: Assemble and validate exact assets and feeds
         shell: bash
@@ -757,7 +795,7 @@ jobs:
           set -euo pipefail
           node scripts/build-homebrew-publication.cjs \
             --channel "${{ needs.prepare.outputs.channel }}" \
-            --tag "${{ github.ref_name }}" \
+            --tag "${{ needs.prepare.outputs.release_tag }}" \
             --assets "$GITHUB_WORKSPACE/publish/assets" \
             --output "$RUNNER_TEMP/homebrew-publication"
           python3 scripts/create-homebrew-archive.py \
@@ -806,6 +844,7 @@ jobs:
   seal-tuf:
     name: Sign Windows and Linux update repositories
     needs: [prepare, assemble]
+    if: ${{ needs.prepare.outputs.simulation != 'true' }}
     runs-on: ubuntu-24.04
     environment: update-signing
     permissions:
@@ -890,6 +929,7 @@ jobs:
       ${{
         always()
         && needs.prepare.result == 'success'
+        && needs.prepare.outputs.simulation != 'true'
         && needs.seal-tuf.result == 'success'
         && needs.attest.result == 'success'
       }}
@@ -1270,3 +1310,14 @@ jobs:
           done
           [[ -n "$run_id" ]]
           gh run watch "$run_id" --repo "$TAP_REPOSITORY" --exit-status
+
+  simulation-complete:
+    name: Report non-publishing release simulation
+    if: ${{ needs.prepare.outputs.simulation == 'true' }}
+    needs: [prepare, assemble, attest]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Confirm publication boundary
+        run: |
+          test "${{ needs.prepare.outputs.simulation }}" = true
+          echo "Qualified and attested Fraia ${{ needs.prepare.outputs.version }} candidates without publication."

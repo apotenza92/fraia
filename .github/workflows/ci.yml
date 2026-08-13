@@ -64,12 +64,20 @@ jobs:
     secrets: inherit
 
   nonmac-updater-audit:
-    if: ${{ inputs.nonmac_updater_target != 'none' }}
+    if: ${{ inputs.nonmac_updater_target != 'none' && inputs.nonmac_updater_previous_version != 'release-simulation' }}
     uses: ./.github/workflows/nonmac-updater-audit.yml
     with:
       channel: ${{ inputs.release_channel }}
       target: ${{ inputs.nonmac_updater_target }}
       previous_version: ${{ inputs.nonmac_updater_previous_version }}
+
+  release-simulation:
+    if: ${{ inputs.nonmac_updater_previous_version == 'release-simulation' }}
+    uses: ./.github/workflows/release.yml
+    with:
+      simulate: true
+      simulation_previous_version: 0.0.13
+    secrets: inherit
 
   deterministic:
     name: Deterministic repository checks

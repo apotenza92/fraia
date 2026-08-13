@@ -7,6 +7,7 @@ const vm = require('node:vm');
 const repositoryRoot = path.resolve(__dirname, '..', '..', '..');
 const workflowPath = path.join(repositoryRoot, '.github', 'workflows', 'release.yml');
 const workflow = fs.readFileSync(workflowPath, 'utf8');
+const releaseSimulation = fs.readFileSync(path.join(repositoryRoot, '.github', 'workflows', 'release-simulation.yml'), 'utf8');
 const builder = fs.readFileSync(path.join(__dirname, '..', 'electron-builder.config.cjs'), 'utf8');
 const signing = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'build-signed-macos.cjs'), 'utf8');
 const updaterTest = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'test-macos-update.cjs'), 'utf8');
@@ -184,6 +185,15 @@ test('stable-inclusive and beta releases are owner-authorized tags and native on
   assert.match(macVerifier, /runtime-manifest\.json/);
   assert.match(macVerifier, /LSMinimumSystemVersion/);
   assert.match(macVerifier, /reviewed macOS 15\.0 minimum/);
+});
+
+test('manual release simulation reuses candidate qualification and cannot publish', () => {
+  assert.match(workflow, /workflow_call:/);
+  assert.match(releaseSimulation, /workflow_dispatch:/);
+  assert.match(releaseSimulation, /uses: \.\/\.github\/workflows\/release\.yml/);
+  assert.match(releaseSimulation, /simulate: true/);
+  assert.match(workflow, /needs\.prepare\.outputs\.simulation != 'true'/);
+  assert.match(workflow, /Report non-publishing release simulation/);
 });
 
 test('canonical Apple credentials are isolated from build and followed by credential-free verification', () => {
@@ -473,7 +483,9 @@ test('application menu delegates reload and whole-window zoom shortcuts to Elect
   for (const role of ['reload', 'forceReload', 'resetZoom', 'zoomIn', 'zoomOut', 'togglefullscreen']) {
     assert.match(mainProcess, new RegExp(`role: ['"]${role}['"]`));
   }
-  assert.doesNotMatch(mainProcess, /accelerator:\s*['"](?:Cmd|Command|Ctrl|Control)/);
+  for (const role of ['reload', 'forceReload', 'resetZoom', 'zoomIn', 'zoomOut', 'togglefullscreen']) {
+    assert.doesNotMatch(mainProcess, new RegExp(`role: ['"]${role}['"][^}]*accelerator`));
+  }
 });
 
 test('packaged updater code ships TUF verification for Windows and Linux', () => {

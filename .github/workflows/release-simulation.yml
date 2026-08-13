@@ -1,0 +1,25 @@
+name: Desktop release simulation
+
+on:
+  workflow_dispatch:
+    inputs:
+      previous_version:
+        description: Prior version used by updater replacement simulations
+        required: true
+        type: string
+        default: 0.0.13
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fraia-release-simulation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  simulate:
+    uses: ./.github/workflows/release.yml
+    with:
+      simulate: true
+      simulation_previous_version: ${{ inputs.previous_version }}
+    secrets: inherit
