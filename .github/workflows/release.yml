@@ -17,6 +17,7 @@ on:
         type: string
         default: 0.0.14
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -166,6 +167,42 @@ jobs:
           SIMULATION_CANDIDATE_VERSION: ${{ inputs.simulation_candidate_version }}
           SIMULATION_PREVIOUS_VERSION: ${{ inputs.simulation_previous_version }}
 
+  resolve-macos-candidate:
+    name: Resolve exact prebuilt macOS candidate
+    needs: prepare
+    runs-on: ubuntu-24.04
+    outputs:
+      reuse: ${{ steps.resolve.outputs.reuse }}
+      run_id: ${{ steps.resolve.outputs.run_id }}
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Find successful candidate for this exact commit
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ github.sha }}
+          SIMULATION: ${{ needs.prepare.outputs.simulation }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'reuse=false\nrun_id=\n' >> "$GITHUB_OUTPUT"
+          if [ "$SIMULATION" = true ]; then exit 0; fi
+          RUN_ID=$(gh api --paginate "repos/${{ github.repository }}/actions/workflows/macos-release-candidate.yml/runs?branch=main&status=success&per_page=100" \
+            --jq ".workflow_runs | map(select(.head_sha == \"$RELEASE_SHA\")) | sort_by(.run_number) | reverse | .[0].id // empty" | head -1)
+          if [ -z "$RUN_ID" ]; then exit 0; fi
+          mapfile -t ARTIFACTS < <(gh api "repos/${{ github.repository }}/actions/runs/$RUN_ID/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.expired == false) | .name' | LC_ALL=C sort)
+          REQUIRED=(fraia-beta-darwin-arm64 fraia-beta-darwin-x64 fraia-macos-candidate-manifest)
+          if [ '${{ needs.prepare.outputs.channel }}' = stable ]; then
+            REQUIRED+=(fraia-stable-darwin-arm64 fraia-stable-darwin-x64)
+          fi
+          for name in "${REQUIRED[@]}"; do
+            if ! printf '%s\n' "${ARTIFACTS[@]}" | grep -Fxq "$name"; then exit 0; fi
+          done
+          printf 'reuse=true\nrun_id=%s\n' "$RUN_ID" >> "$GITHUB_OUTPUT"
+
   validate:
     name: Unprivileged release gate
     needs: prepare
@@ -313,8 +350,8 @@ jobs:
 
   package-macos:
     name: macOS ${{ matrix.channel }} ${{ matrix.arch }}
-    needs: [prepare, validate, build-sidecar]
-    if: ${{ needs.prepare.outputs.simulation != 'true' }}
+    needs: [prepare, resolve-macos-candidate, validate, build-sidecar]
+    if: ${{ needs.prepare.outputs.simulation != 'true' && needs.resolve-macos-candidate.outputs.reuse != 'true' }}
     runs-on: ${{ matrix.arch == 'arm64' && 'macos-26' || 'macos-26-intel' }}
     environment: release-signing
     env:
@@ -446,6 +483,84 @@ jobs:
           path: apps/fraia-electron/ci-output
           if-no-files-found: error
           retention-days: 14
+
+  import-macos-candidate:
+    name: Import exact prebuilt macOS candidate
+    needs: [prepare, resolve-macos-candidate]
+    if: ${{ needs.resolve-macos-candidate.outputs.reuse == 'true' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download all sealed candidate files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: fraia-*-darwin-*
+          path: candidate
+          run-id: ${{ needs.resolve-macos-candidate.outputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: Download sealed manifest
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fraia-macos-candidate-manifest
+          path: manifest
+          run-id: ${{ needs.resolve-macos-candidate.outputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: Verify exact commit, version, channels, files, and digests
+        run: >-
+          node apps/fraia-electron/scripts/macos-candidate-manifest.cjs verify
+          --root candidate
+          --manifest manifest/macos-candidate-manifest.json
+          --repository "${{ github.repository }}"
+          --commit "${{ github.sha }}"
+          --version "${{ needs.prepare.outputs.version }}"
+      - name: Re-upload Stable ARM64 candidate
+        if: ${{ needs.prepare.outputs.channel == 'stable' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fraia-stable-darwin-arm64
+          path: candidate/fraia-stable-darwin-arm64
+          if-no-files-found: error
+          retention-days: 14
+      - name: Re-upload Stable Intel candidate
+        if: ${{ needs.prepare.outputs.channel == 'stable' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fraia-stable-darwin-x64
+          path: candidate/fraia-stable-darwin-x64
+          if-no-files-found: error
+          retention-days: 14
+      - name: Re-upload Beta ARM64 candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fraia-beta-darwin-arm64
+          path: candidate/fraia-beta-darwin-arm64
+          if-no-files-found: error
+          retention-days: 14
+      - name: Re-upload Beta Intel candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fraia-beta-darwin-x64
+          path: candidate/fraia-beta-darwin-x64
+          if-no-files-found: error
+          retention-days: 14
+
+  macos-candidates-ready:
+    name: Exact macOS candidates ready
+    needs: [prepare, resolve-macos-candidate, package-macos, import-macos-candidate]
+    if: ${{ always() && needs.prepare.outputs.simulation != 'true' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require one successful candidate source
+        env:
+          BUILT_RESULT: ${{ needs.package-macos.result }}
+          IMPORTED_RESULT: ${{ needs.import-macos-candidate.result }}
+        run: test "$BUILT_RESULT" = success -o "$IMPORTED_RESULT" = success
 
   package-windows:
     name: Windows ${{ matrix.channel }} ${{ matrix.arch }}
@@ -674,7 +789,7 @@ jobs:
 
   test-macos-updater:
     name: macOS updater ${{ matrix.channel }} ${{ matrix.scenario }} ${{ matrix.arch }}
-    needs: [prepare, package-macos]
+    needs: [prepare, macos-candidates-ready]
     if: ${{ needs.prepare.outputs.simulation != 'true' }}
     runs-on: ${{ matrix.arch == 'arm64' && 'macos-15' || 'macos-15-intel' }}
     environment:
@@ -782,7 +897,7 @@ jobs:
 
   assemble:
     name: Assemble exact release bundle
-    needs: [prepare, package-macos, package-windows, package-linux, test-macos-updater, test-nonmac-updater]
+    needs: [prepare, macos-candidates-ready, package-windows, package-linux, test-macos-updater, test-nonmac-updater]
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
