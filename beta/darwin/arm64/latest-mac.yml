@@ -1,22 +1,17 @@
-version: 0.0.12
+version: 0.0.14
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-Beta-macOS-arm64.zip
-    sha512: r6IIFyZCNax3h6OAZDh5D0F3+Wdhxox5tiP0TUvvOPnkooVAOVKtGG068xpmxBTD8SCLo25jaYc63XTuGC714Q==
-    size: 129589539
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-Beta-macOS-arm64.dmg
-    sha512: PVj12uy5dN/BAQiDMrv4cxPr2tIYtzuGHqfc6vsMDfj1BYfa9yNempU/OXeKV88C6i/XLG0B8FrEh3H+aYkKMA==
-    size: 121443406
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-Beta-macOS-arm64.zip
-sha512: r6IIFyZCNax3h6OAZDh5D0F3+Wdhxox5tiP0TUvvOPnkooVAOVKtGG068xpmxBTD8SCLo25jaYc63XTuGC714Q==
-releaseName: Fraia Beta 0.0.12
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Beta-macOS-arm64.zip
+    sha512: f6Ox4sJtvuvTgAm6tVJ/VxcNbqQnw1O01f3DN5P1aRf61QOuz2q+mgCOiaD6PlhbJAsrDqGEVMITb5AE9jAQkg==
+    size: 131065293
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Beta-macOS-arm64.dmg
+    sha512: cZ46AKo2qOQ5FQAbNVQFjeQtOgHzbwMPs37flSnsVXMpeU9+VVAZnmD79Vdgk/onTLnkAwubwoUnG014/+tA1g==
+    size: 122685187
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Beta-macOS-arm64.zip
+sha512: f6Ox4sJtvuvTgAm6tVJ/VxcNbqQnw1O01f3DN5P1aRf61QOuz2q+mgCOiaD6PlhbJAsrDqGEVMITb5AE9jAQkg==
+releaseName: Fraia Beta 0.0.14
 releaseNotes: |-
   ### Fixed
 
-  - macOS now renders the stable and Beta adaptive icons at a balanced native
-    size instead of shrinking the Fraia glyph inside the system icon tile.
-
-  ### Updating
-
-  - Stable and Beta installations update to separately packaged `0.0.12`
-    application identities on their existing channels.
-releaseDate: 2026-08-13T04:20:07.191Z
+  - Wait for the development sidecar health signal before the real Electron conversation test creates a model.
+  - Allow slow source builds more startup time without weakening packaged-app startup checks.
+releaseDate: 2026-08-13T07:38:13.262Z

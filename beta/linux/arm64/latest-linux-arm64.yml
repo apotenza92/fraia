@@ -1,26 +1,21 @@
-version: 0.0.12
+version: 0.0.14
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-Beta-Linux-arm64.AppImage
-    sha512: l1a8jf3NFHymJAYrz0J5hK4YRnI7CAxWyQnlLYKB/37hV2ykISQ3do3A4Uc72Kfqicqc1Q1/8eHxFK0RBivS8g==
-    size: 100593258
-    blockMapSize: 104886
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-Beta-Linux-arm64.deb
-    sha512: Gj2Y9bgK7hF13uida8ciiVoK6fAW0+9KpP5Xa5UDlx37gj048577avqJEBvaEa5Y1i9XQ9EoqmeSmSdEi5K/Dw==
-    size: 100732508
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-Beta-Linux-arm64.rpm
-    sha512: HhSwePf6RDVybJ4x5A2cYfp/4c65FB1APhxOS/sp9UIqxcUkpg1X5yXTcS8bAJJvzeoQxnMUOSQ0n640A/ziSg==
-    size: 88105397
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-Beta-Linux-arm64.AppImage
-sha512: l1a8jf3NFHymJAYrz0J5hK4YRnI7CAxWyQnlLYKB/37hV2ykISQ3do3A4Uc72Kfqicqc1Q1/8eHxFK0RBivS8g==
-releaseName: Fraia Beta 0.0.12
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Beta-Linux-arm64.AppImage
+    sha512: Dw95qT+oW+Vhs4FcQ8Td/JE1PSZO9GcpGGliEi8rPkayzhdW5YBUECQklRHqRLH8iRefuv6Z9E7QDsIROiuKFA==
+    size: 101847662
+    blockMapSize: 105914
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Beta-Linux-arm64.deb
+    sha512: MzVPOPMdJgDiDlXzkEEKBOdquUh0KjDSVNQhal6y/wGEQkUq6xoUKNU9KArumSlNWE3YEYzfEG0g1w62Ka/RBg==
+    size: 102025452
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Beta-Linux-arm64.rpm
+    sha512: uxYgk1J20R2bMJuyLYlDsp4Bcd/ttjY124gRrfdkquyTAlTbKh8qmHZlrSN2nQgFjnsSr1Q9fN4+RMszn7zaeg==
+    size: 89244189
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Beta-Linux-arm64.AppImage
+sha512: Dw95qT+oW+Vhs4FcQ8Td/JE1PSZO9GcpGGliEi8rPkayzhdW5YBUECQklRHqRLH8iRefuv6Z9E7QDsIROiuKFA==
+releaseName: Fraia Beta 0.0.14
 releaseNotes: |-
   ### Fixed
 
-  - macOS now renders the stable and Beta adaptive icons at a balanced native
-    size instead of shrinking the Fraia glyph inside the system icon tile.
-
-  ### Updating
-
-  - Stable and Beta installations update to separately packaged `0.0.12`
-    application identities on their existing channels.
-releaseDate: 2026-08-13T04:12:04.214Z
+  - Wait for the development sidecar health signal before the real Electron conversation test creates a model.
+  - Allow slow source builds more startup time without weakening packaged-app startup checks.
+releaseDate: 2026-08-13T07:29:48.715Z

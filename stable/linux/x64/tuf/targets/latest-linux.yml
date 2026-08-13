@@ -1,26 +1,21 @@
-version: 0.0.12
+version: 0.0.14
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-Linux-x64.AppImage
-    sha512: rYJLibB6MJPSy+Iuy+bwBUY5XAifNQJVa5gl9kplaMcPca/P2B/4NVCmCEWRpb4l6qtf/ItVL9mVEn0Q8Kf5iA==
-    size: 106948407
-    blockMapSize: 112459
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-Linux-x64.deb
-    sha512: 5AMdLalJLeEbSrZCxZs/ehhtlQXmUuWKBGi224NraIYUCUq0l25fYzXP9QBY0gyNWD5ixcWw1DaIluPzhLOwGw==
-    size: 106519776
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-Linux-x64.rpm
-    sha512: T0/FEI95a+vCV8epgf7YuZDGIt6j/kup5PO9oS4gbqGZbPhVAqVnj5IrZbONCD4heoww53Eg0uWZih7hqR+RNg==
-    size: 93702701
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-Linux-x64.AppImage
-sha512: rYJLibB6MJPSy+Iuy+bwBUY5XAifNQJVa5gl9kplaMcPca/P2B/4NVCmCEWRpb4l6qtf/ItVL9mVEn0Q8Kf5iA==
-releaseName: Fraia 0.0.12
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Linux-x64.AppImage
+    sha512: 4qj7E0n15nbsXcYQO3O/0iYoApKsNRzT7c64E8gTko78/230U2m2BKOxxSUI5HebCOpSCL25MI1hiJof33Kehw==
+    size: 108359026
+    blockMapSize: 114054
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Linux-x64.deb
+    sha512: 6tOlB8U+DLTR2xfK5ZjIkAf3dlbzEv8IcxEK0iiSU+KzyuxQPtteJ0UKueSVFD3WBo1cm4+ApKcFM3CpV5OGJA==
+    size: 107943904
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Linux-x64.rpm
+    sha512: BnV15L9i7fLLqmSll85etu50vAmXg/C25p7a+f9bWlyZi8WQAbPi6mevL3c1gCIskUpiuZY857QnJesS6P4GBw==
+    size: 94973181
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Linux-x64.AppImage
+sha512: 4qj7E0n15nbsXcYQO3O/0iYoApKsNRzT7c64E8gTko78/230U2m2BKOxxSUI5HebCOpSCL25MI1hiJof33Kehw==
+releaseName: Fraia 0.0.14
 releaseNotes: |-
   ### Fixed
 
-  - macOS now renders the stable and Beta adaptive icons at a balanced native
-    size instead of shrinking the Fraia glyph inside the system icon tile.
-
-  ### Updating
-
-  - Stable and Beta installations update to separately packaged `0.0.12`
-    application identities on their existing channels.
-releaseDate: 2026-08-13T04:11:54.985Z
+  - Wait for the development sidecar health signal before the real Electron conversation test creates a model.
+  - Allow slow source builds more startup time without weakening packaged-app startup checks.
+releaseDate: 2026-08-13T07:29:33.718Z

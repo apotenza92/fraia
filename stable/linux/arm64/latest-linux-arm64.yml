@@ -1,26 +1,21 @@
-version: 0.0.12
+version: 0.0.14
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-Linux-arm64.AppImage
-    sha512: sdOAs0A5RYAvFlogLnbsr/uVc9ekE7Xfkd9m6vyaHoxmpQHjA0jrFbckr45DpqhrDyBAhb6ITOZZRVDOFKVc4w==
-    size: 100576787
-    blockMapSize: 104799
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-Linux-arm64.deb
-    sha512: 55xSksJCITJGw/tO9Gp93HAM/lcFxKs4pO4VS5RSHQcXyn84PnI5xNvliz8hcqiKBu1xiMWp/5afDd6hARBPPw==
-    size: 100729952
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-Linux-arm64.rpm
-    sha512: MVh6A4Fr9m7Tph2gIlwy74Jry2Prysjk3cqRc9lhrOIFfQm7zfbpIg0gvMxLPbAFMnsy+wppx9MrlvL9g9RsPA==
-    size: 88103985
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-Linux-arm64.AppImage
-sha512: sdOAs0A5RYAvFlogLnbsr/uVc9ekE7Xfkd9m6vyaHoxmpQHjA0jrFbckr45DpqhrDyBAhb6ITOZZRVDOFKVc4w==
-releaseName: Fraia 0.0.12
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Linux-arm64.AppImage
+    sha512: 77peD/pBkPDGhh1N8iJrpeu3po4bhY+QiX52gUt6DCOlwmOq0T2CuTEpPsIHZH3MDhpsR67/bMRXzqthKMlyWA==
+    size: 101831227
+    blockMapSize: 105863
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Linux-arm64.deb
+    sha512: YN5TnS+rvLSWPE11ZaZrANGgZRMTYeoO8YaUUSY8sZXgefOCEK7qmG1oA3X9V9i9UBaX7BQEn4uU8mCourfyyA==
+    size: 102009676
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Linux-arm64.rpm
+    sha512: NAsTbR4k2bOJ2FA2WeTYPQdaMKCIF1kKNh8Z4sU8uTbymLCnTiNVvebY7B75SC7wg7DEjTmtCDKtWTv+LGI48Q==
+    size: 89229945
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Linux-arm64.AppImage
+sha512: 77peD/pBkPDGhh1N8iJrpeu3po4bhY+QiX52gUt6DCOlwmOq0T2CuTEpPsIHZH3MDhpsR67/bMRXzqthKMlyWA==
+releaseName: Fraia 0.0.14
 releaseNotes: |-
   ### Fixed
 
-  - macOS now renders the stable and Beta adaptive icons at a balanced native
-    size instead of shrinking the Fraia glyph inside the system icon tile.
-
-  ### Updating
-
-  - Stable and Beta installations update to separately packaged `0.0.12`
-    application identities on their existing channels.
-releaseDate: 2026-08-13T04:12:05.531Z
+  - Wait for the development sidecar health signal before the real Electron conversation test creates a model.
+  - Allow slow source builds more startup time without weakening packaged-app startup checks.
+releaseDate: 2026-08-13T07:29:06.580Z

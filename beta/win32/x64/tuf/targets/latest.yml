@@ -1,26 +1,16 @@
-version: 0.0.12
+version: 0.0.14
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-Beta-Windows-x64-Setup.exe
-    sha512: CNJBQinoZX5QpYGOzh+gW9NTgg+BUT5rB2biAB85pKUGWqGD9mwzXbHcT0pISpsOmqH3uJeULaRyZfjherBO0Q==
-    size: 119295714
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.12/Fraia-Beta-Windows-x64-Setup.exe
-sha512: CNJBQinoZX5QpYGOzh+gW9NTgg+BUT5rB2biAB85pKUGWqGD9mwzXbHcT0pISpsOmqH3uJeULaRyZfjherBO0Q==
-releaseName: Fraia Beta 0.0.12
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Beta-Windows-x64-Setup.exe
+    sha512: +osk6G1lw2KFJUOjPTlLAPYIoJqinohAuIE/y4AoDAYXQr6jItE368h8bw1CZdVtPgpPULMfe9fPgw1SrR4NDQ==
+    size: 120419339
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Beta-Windows-x64-Setup.exe
+sha512: +osk6G1lw2KFJUOjPTlLAPYIoJqinohAuIE/y4AoDAYXQr6jItE368h8bw1CZdVtPgpPULMfe9fPgw1SrR4NDQ==
+releaseName: Fraia Beta 0.0.14
 releaseNotes: "### Fixed\r
 
   \r
 
-  - macOS now renders the stable and Beta adaptive icons at a balanced native\r
+  - Wait for the development sidecar health signal before the real Electron conversation test creates a model.\r
 
-  \  size instead of shrinking the Fraia glyph inside the system icon tile.\r
-
-  \r
-
-  ### Updating\r
-
-  \r
-
-  - Stable and Beta installations update to separately packaged `0.0.12`\r
-
-  \  application identities on their existing channels."
-releaseDate: 2026-08-13T04:11:06.189Z
+  - Allow slow source builds more startup time without weakening packaged-app startup checks."
+releaseDate: 2026-08-13T07:29:00.895Z
