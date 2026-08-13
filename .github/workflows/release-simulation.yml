@@ -10,7 +10,10 @@ on:
         default: 0.0.13
 
 permissions:
+  artifact-metadata: write
+  attestations: write
   contents: read
+  id-token: write
 
 concurrency:
   group: fraia-release-simulation-${{ github.ref }}

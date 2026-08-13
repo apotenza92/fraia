@@ -44,7 +44,10 @@ on:
         default: 0.0.4-beta.0
 
 permissions:
+  artifact-metadata: write
+  attestations: write
   contents: read
+  id-token: write
 
 concurrency:
   group: fraia-ci-${{ github.workflow }}-${{ github.ref }}-${{ inputs.release_channel }}-${{ inputs.nonmac_updater_target }}-${{ inputs.run_native_package_preflight }}-${{ inputs.run_macos_signing_audit }}-${{ inputs.run_tuf_signing_audit }}
