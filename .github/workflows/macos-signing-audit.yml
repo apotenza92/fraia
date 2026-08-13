@@ -103,10 +103,37 @@ jobs:
           --arch "${{ matrix.arch }}"
           --output-dir "release/${{ inputs.channel }}/darwin/${{ matrix.arch }}"
 
-      - name: Upload independently reviewable signed evidence
+      - name: Assemble reusable signed candidate
+        working-directory: apps/fraia-electron
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHANNEL="${{ inputs.channel }}"
+          ARCH="${{ matrix.arch }}"
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v$VERSION"
+          OUTPUT="release/$CHANNEL/darwin/$ARCH"
+          mkdir -p ci-output/assets ci-output/feed
+          node scripts/assemble-update-metadata.mjs \
+            --input "$OUTPUT/latest-mac.yml" \
+            --artifact-dir "$OUTPUT" \
+            --output-root ci-output/feed \
+            --audit-output "ci-output/assets/update-$CHANNEL-darwin-$ARCH.yml" \
+            --channel "$CHANNEL" \
+            --platform darwin \
+            --arch "$ARCH" \
+            --tag "$TAG" \
+            --repository "${{ github.repository }}"
+          PREFIX=$(node -p "require('./release-contract.cjs').releaseContract({channel: '$CHANNEL', platform: 'darwin', arch: '$ARCH'}).artifactPrefix")
+          STEM="$PREFIX-macOS-$ARCH"
+          cp "$OUTPUT/$STEM.dmg" "$OUTPUT/$STEM.dmg.blockmap" "$OUTPUT/$STEM.dmg.sha256" ci-output/assets/
+          cp "$OUTPUT/$STEM.zip" "$OUTPUT/$STEM.zip.blockmap" "$OUTPUT/$STEM.zip.sha256" ci-output/assets/
+          cp "$OUTPUT/notarization-$CHANNEL-$ARCH.json" ci-output/assets/
+
+      - name: Upload independently reviewable signed candidate
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: fraia-${{ inputs.channel }}-macos-signing-audit-${{ matrix.arch }}
-          path: apps/fraia-electron/release/${{ inputs.channel }}/darwin/${{ matrix.arch }}
+          name: fraia-${{ inputs.channel }}-darwin-${{ matrix.arch }}
+          path: apps/fraia-electron/ci-output
           if-no-files-found: error
           retention-days: 14

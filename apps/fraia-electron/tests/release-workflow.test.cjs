@@ -43,6 +43,14 @@ const tufSigningAudit = fs.readFileSync(
   path.join(repositoryRoot, '.github', 'workflows', 'tuf-signing-audit.yml'),
   'utf8',
 );
+const macosReleaseCandidate = fs.readFileSync(
+  path.join(repositoryRoot, '.github', 'workflows', 'macos-release-candidate.yml'),
+  'utf8',
+);
+const macosSigningAudit = fs.readFileSync(
+  path.join(repositoryRoot, '.github', 'workflows', 'macos-signing-audit.yml'),
+  'utf8',
+);
 const mainProcess = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
 const changelog = fs.readFileSync(path.join(repositoryRoot, 'CHANGELOG.md'), 'utf8');
 
@@ -194,7 +202,7 @@ test('manual release simulation reuses candidate qualification and cannot publis
   assert.match(workflow, /needs\.prepare\.outputs\.simulation != 'true'/);
   assert.match(workflow, /github\.event_name == 'push'/);
   assert.match(workflow, /Report non-publishing release simulation/);
-  assert.match(jobSource('package-macos'), /if: \$\{\{ needs\.prepare\.outputs\.simulation != 'true' \}\}/);
+  assert.match(jobSource('package-macos'), /needs\.prepare\.outputs\.simulation != 'true'/);
   assert.match(jobSource('test-nonmac-updater'), /if: \$\{\{ needs\.prepare\.outputs\.simulation != 'true' \}\}/);
   assert.match(jobSource('simulation-complete'), /needs: \[prepare, package-windows, package-linux\]/);
 });
@@ -245,7 +253,7 @@ test('private-source and package prerequisites fail before any secret-bearing jo
   assert.match(validate, /test -f build\/icon\.icns/);
   assert.match(validate, /verify-calculix-runtimes\.cjs --all --skip-dependency-inspection/);
   assert.doesNotMatch(validate, /secrets\.|^    environment:/m);
-  assert.match(packageMacos, /needs: \[prepare, validate, build-sidecar\]/);
+  assert.match(packageMacos, /needs: \[prepare, resolve-macos-candidate, validate, build-sidecar\]/);
   assert.match(packageMacos, /environment: release-signing/);
   assert.match(packageMacos, /secrets\.APPLE_SIGNING_CERTIFICATE_P12_BASE64/);
   assert.match(validate, /npm run check:icons/);
@@ -265,7 +273,11 @@ test('release packages reuse one validated renderer and one native sidecar per t
   assert.match(sidecars, /tar -czf "\$ARCHIVE_ROOT\/native-sidecar\.tar\.gz"/);
   for (const job of ['package-macos', 'package-windows', 'package-linux']) {
     const source = jobSource(job);
-    assert.match(source, /needs: \[prepare, validate, build-sidecar\]/);
+    if (job === 'package-macos') {
+      assert.match(source, /needs: \[prepare, resolve-macos-candidate, validate, build-sidecar\]/);
+    } else {
+      assert.match(source, /needs: \[prepare, validate, build-sidecar\]/);
+    }
     assert.match(source, /name: fraia-validated-renderer/);
     assert.match(source, /actions\/cache@[a-f0-9]{40}/);
     assert.match(source, /fraia-packaging-\$\{\{ runner\.os \}\}-\$\{\{ runner\.arch \}\}-node24-/);
@@ -280,6 +292,30 @@ test('release packages reuse one validated renderer and one native sidecar per t
     }
     assert.doesNotMatch(source, /npm run build(?:\s|$)|npm run build:sidecar/);
   }
+});
+
+test('macOS release candidates are exact, sealed, private, and safely optional', () => {
+  const resolve = jobSource('resolve-macos-candidate');
+  const imported = jobSource('import-macos-candidate');
+  const ready = jobSource('macos-candidates-ready');
+  assert.match(macosReleaseCandidate, /workflow_dispatch:/);
+  assert.match(macosReleaseCandidate, /run: test "\$CANDIDATE_REF" = main/);
+  assert.match(macosReleaseCandidate, /uses: \.\/\.github\/workflows\/macos-signing-audit\.yml/g);
+  assert.match(macosReleaseCandidate, /channel: stable/);
+  assert.match(macosReleaseCandidate, /channel: beta/);
+  assert.match(macosReleaseCandidate, /macos-candidate-manifest\.cjs create/);
+  assert.doesNotMatch(macosReleaseCandidate, /gh release|contents: write/);
+  assert.match(macosSigningAudit, /Assemble reusable signed candidate/);
+  assert.match(macosSigningAudit, /Verify signatures, notarization, Gatekeeper, launch, and solver without credentials/);
+  assert.match(resolve, /head_sha == \\"\$RELEASE_SHA\\"/);
+  assert.match(resolve, /expired == false/);
+  assert.match(resolve, /reuse=false/);
+  assert.match(imported, /macos-candidate-manifest\.cjs verify/);
+  assert.match(imported, /--commit "\$\{\{ github\.sha \}\}"/);
+  assert.match(imported, /--version "\$\{\{ needs\.prepare\.outputs\.version \}\}"/);
+  assert.match(ready, /BUILT_RESULT/);
+  assert.match(ready, /IMPORTED_RESULT/);
+  assert.match(jobSource('package-macos'), /needs\.resolve-macos-candidate\.outputs\.reuse != 'true'/);
 });
 
 test('large release assets bypass updater-feed signing and public feed comparison', () => {
