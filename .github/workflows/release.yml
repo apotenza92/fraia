@@ -197,9 +197,74 @@ jobs:
         working-directory: apps/fraia-electron
         run: npm run typecheck && npm run build && xvfb-run -a npm test
 
+      - name: Upload validated renderer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fraia-validated-renderer
+          path: apps/fraia-electron/dist
+          if-no-files-found: error
+          retention-days: 14
+
+  build-sidecar:
+    name: Native sidecar ${{ matrix.platform }} ${{ matrix.arch }}
+    needs: validate
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: darwin
+            arch: arm64
+            runner: macos-26
+          - platform: darwin
+            arch: x64
+            runner: macos-26-intel
+          - platform: win32
+            arch: arm64
+            runner: windows-11-arm
+          - platform: win32
+            arch: x64
+            runner: windows-2025
+          - platform: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+          - platform: linux
+            arch: x64
+            runner: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Verify native runner
+        shell: bash
+        run: test "$(node -p 'process.platform')" = "${{ matrix.platform }}" && test "$(node -p 'process.arch')" = "${{ matrix.arch }}"
+
+      - name: Build reviewed native sidecar once
+        working-directory: apps/fraia-electron
+        run: npm run build:sidecar
+
+      - name: Archive native sidecar with executable mode
+        shell: bash
+        run: tar -czf "$RUNNER_TEMP/native-sidecar.tar.gz" -C apps/fraia-electron .package/sidecar/${{ matrix.platform }}-${{ matrix.arch }}
+
+      - name: Upload reusable native sidecar
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fraia-sidecar-${{ matrix.platform }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/native-sidecar.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
   package-macos:
     name: macOS ${{ matrix.channel }} ${{ matrix.arch }}
-    needs: [prepare, validate]
+    needs: [prepare, validate, build-sidecar]
     runs-on: ${{ matrix.arch == 'arm64' && 'macos-26' || 'macos-26-intel' }}
     environment: release-signing
     env:
@@ -244,9 +309,21 @@ jobs:
         working-directory: apps/fraia-electron
         run: npm ci
 
-      - name: Build renderer and native Rust sidecar without release credentials
-        working-directory: apps/fraia-electron
-        run: npm run build && npm run build:sidecar
+      - name: Download validated renderer
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fraia-validated-renderer
+          path: apps/fraia-electron/dist
+
+      - name: Download reviewed native sidecar
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fraia-sidecar-darwin-${{ matrix.arch }}
+          path: ${{ runner.temp }}/native-sidecar
+
+      - name: Restore reviewed native sidecar
+        shell: bash
+        run: tar -xzf "$RUNNER_TEMP/native-sidecar/native-sidecar.tar.gz" -C apps/fraia-electron
 
       - name: Build, sign, notarize, and staple
         working-directory: apps/fraia-electron
@@ -314,7 +391,7 @@ jobs:
 
   package-windows:
     name: Windows ${{ matrix.channel }} ${{ matrix.arch }}
-    needs: [prepare, validate]
+    needs: [prepare, validate, build-sidecar]
     runs-on: ${{ matrix.arch == 'arm64' && 'windows-11-arm' || 'windows-2025' }}
     strategy:
       fail-fast: false
@@ -338,9 +415,25 @@ jobs:
         shell: bash
         run: test "$(node -p 'process.arch')" = "${{ matrix.arch }}"
 
-      - name: Install and build
+      - name: Install packaging dependencies
         working-directory: apps/fraia-electron
-        run: npm ci && npm run build && npm run build:sidecar
+        run: npm ci
+
+      - name: Download validated renderer
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fraia-validated-renderer
+          path: apps/fraia-electron/dist
+
+      - name: Download reviewed native sidecar
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fraia-sidecar-win32-${{ matrix.arch }}
+          path: ${{ runner.temp }}/native-sidecar
+
+      - name: Restore reviewed native sidecar
+        shell: bash
+        run: tar -xzf "$RUNNER_TEMP/native-sidecar/native-sidecar.tar.gz" -C apps/fraia-electron
 
       - name: Build Windows installer
         working-directory: apps/fraia-electron
@@ -395,7 +488,7 @@ jobs:
 
   package-linux:
     name: Linux ${{ matrix.channel }} ${{ matrix.arch }}
-    needs: [prepare, validate]
+    needs: [prepare, validate, build-sidecar]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
@@ -421,9 +514,25 @@ jobs:
       - name: Install package tools
         run: sudo apt-get update && sudo apt-get install -y cpio fakeroot rpm
 
-      - name: Install and build
+      - name: Install packaging dependencies
         working-directory: apps/fraia-electron
-        run: npm ci && npm run build && npm run build:sidecar
+        run: npm ci
+
+      - name: Download validated renderer
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fraia-validated-renderer
+          path: apps/fraia-electron/dist
+
+      - name: Download reviewed native sidecar
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fraia-sidecar-linux-${{ matrix.arch }}
+          path: ${{ runner.temp }}/native-sidecar
+
+      - name: Restore reviewed native sidecar
+        shell: bash
+        run: tar -xzf "$RUNNER_TEMP/native-sidecar/native-sidecar.tar.gz" -C apps/fraia-electron
 
       - name: Build Linux packages
         working-directory: apps/fraia-electron
@@ -657,11 +766,19 @@ jobs:
           printf '%s\n' homebrew-publication.tar.gz >> "$GITHUB_WORKSPACE/expected-assets.txt"
           LC_ALL=C sort -u -o "$GITHUB_WORKSPACE/expected-assets.txt" "$GITHUB_WORKSPACE/expected-assets.txt"
 
-      - name: Upload verified release bundle
+      - name: Upload verified release assets
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: fraia-release-bundle
-          path: publish
+          name: fraia-release-assets
+          path: publish/assets
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload unsigned updater feeds
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fraia-update-feeds-unsigned
+          path: publish/feed
           if-no-files-found: error
           retention-days: 30
 
@@ -675,11 +792,11 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - name: Download release bundle
+      - name: Download release assets
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: fraia-release-bundle
-          path: publish
+          name: fraia-release-assets
+          path: publish/assets
 
       - name: Attest every checksummed asset
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
@@ -719,11 +836,11 @@ jobs:
         working-directory: source/apps/fraia-electron
         run: npm ci
 
-      - name: Download verified release bundle
+      - name: Download unsigned updater feeds
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: fraia-release-bundle
-          path: publish
+          name: fraia-update-feeds-unsigned
+          path: publish/feed
 
       - name: Sign exact Windows and AppImage metadata
         env:
@@ -759,11 +876,11 @@ jobs:
             done
           done
 
-      - name: Upload sealed release and updater bundle
+      - name: Upload sealed updater feeds
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: fraia-release-bundle-sealed
-          path: publish
+          name: fraia-update-feeds-sealed
+          path: publish/feed
           if-no-files-found: error
           retention-days: 30
 
@@ -788,11 +905,17 @@ jobs:
           persist-credentials: false
           path: source
 
-      - name: Download release bundle
+      - name: Download release assets
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: fraia-release-bundle-sealed
-          path: publish
+          name: fraia-release-assets
+          path: publish/assets
+
+      - name: Download sealed updater feeds
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fraia-update-feeds-sealed
+          path: publish/feed
 
       - name: Create or byte-verify exact draft assets
         env:
@@ -905,7 +1028,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PRIMARY_CHANNEL="${{ needs.prepare.outputs.channel }}"
           IFS=, read -r -a CHANNELS <<< "${{ needs.prepare.outputs.channels_csv }}"
           rm -rf feed-publication
           mkdir -p feed-publication
@@ -981,11 +1103,11 @@ jobs:
     needs: [prepare, publish]
     runs-on: ubuntu-24.04
     steps:
-      - name: Download expected bundle
+      - name: Download expected sealed updater feeds
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: fraia-release-bundle-sealed
-          path: expected
+          name: fraia-update-feeds-sealed
+          path: expected/feed
 
       - name: Download sealed updater-feed publication bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
