@@ -47,6 +47,11 @@ test('desktop shell opens a sparse conversation workspace with read-only preview
     page.on('pageerror', (error) => pageErrors.push(error.message));
 
     await page.waitForLoadState('domcontentloaded');
+    expect(page.url()).toBe(`file://${path.join(appRoot, 'dist', 'index.html')}`);
+    await expect.poll(() => page.evaluate(() => window.fraia.applicationMetadata?.())).toMatchObject({
+      productName: 'Fraia Dev',
+      userDataDirectoryName: 'Fraia Dev',
+    });
     await expect(page.locator('[data-slot=menubar]')).toBeVisible();
     await expect(page.getByTestId('conversation-workspace-shell')).toBeVisible();
     await expect(page.getByTestId('empty-workspace')).toBeVisible();
@@ -57,15 +62,37 @@ test('desktop shell opens a sparse conversation workspace with read-only preview
         return null;
       }
     }, { timeout: 70_000 }).toMatchObject({ status: 'ok' });
-    await electronApp.evaluate(({ dialog }, selectedDirectory) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selectedDirectory] });
-    }, projectDir);
     await page.getByRole('button', { name: 'New blank model' }).first().click();
     await expect(page.getByTestId('conversation-workspace')).toBeVisible();
     await expect(page.getByTestId('conversation-workspace').getByText('Overall framing', { exact: true })).toBeVisible();
+    const transcriptViewport = page.locator('[data-slot="message-scroller-viewport"]');
+    await expect(transcriptViewport).toBeVisible();
+    await expect.poll(() => transcriptViewport.evaluate((element) => ({
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+    }))).toMatchObject({
+      clientHeight: expect.any(Number),
+      scrollHeight: expect.any(Number),
+    });
+    const transcriptDimensions = await transcriptViewport.evaluate((element) => ({
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+    }));
+    expect(transcriptDimensions.clientHeight).toBeGreaterThan(0);
+    expect(transcriptDimensions.scrollHeight).toBeGreaterThan(transcriptDimensions.clientHeight);
+    await transcriptViewport.hover();
+    await page.mouse.wheel(0, -1200);
+    await expect.poll(() => transcriptViewport.evaluate((element) => element.scrollTop)).toBeLessThan(
+      transcriptDimensions.scrollHeight - transcriptDimensions.clientHeight,
+    );
     await expect(page.getByText('Structural preview', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Open in editor' })).toBeVisible();
-    await expect.poll(() => fs.existsSync(path.join(projectDir, '.fraia', 'workspace.sqlite'))).toBe(true);
+    const unsavedProjectsDir = path.join(userDataDir, 'unsaved-projects');
+    const createdProjectDir = fs.readdirSync(unsavedProjectsDir)
+      .map((entry) => path.join(unsavedProjectsDir, entry))
+      .find((entry) => fs.existsSync(path.join(entry, 'fraia.project.json'))) ?? null;
+    if (!createdProjectDir) throw new Error('Fraia did not create the managed untitled project.');
+    await expect.poll(() => fs.existsSync(path.join(createdProjectDir, '.fraia', 'workspace.sqlite'))).toBe(true);
     expect(fs.existsSync(path.join(userDataDir, 'conversations.sqlite'))).toBe(false);
     const brief = page.getByTestId('project-brief');
     await brief.getByRole('button', { name: 'Add brief' }).click();
@@ -123,7 +150,7 @@ test('desktop shell opens a sparse conversation workspace with read-only preview
     expect(accessibility.violations, 'axe accessibility violations').toEqual([]);
 
     await electronApp.close();
-    fs.renameSync(projectDir, movedProjectDir);
+    fs.renameSync(createdProjectDir, movedProjectDir);
     electronApp = await electron.launch({
       args: [...deterministicLinuxRenderingArgs, '.', `--user-data-dir=${userDataDir}`],
       cwd: appRoot,

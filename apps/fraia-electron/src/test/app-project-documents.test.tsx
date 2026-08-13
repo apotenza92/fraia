@@ -47,6 +47,8 @@ describe("App project documents", () => {
         openProject: vi.fn()
           .mockResolvedValueOnce(state("/projects/frame-a", "Frame A"))
           .mockResolvedValueOnce(state("/projects/frame-b", "Frame B")),
+        createUntitledProject: vi.fn().mockResolvedValue("/managed/unsaved/untitled-1"),
+        createProject: vi.fn().mockResolvedValue(state("/managed/unsaved/untitled-1", "Untitled Model")),
         setThemeSource: vi.fn().mockResolvedValue({ ok: true }),
       },
     })
@@ -81,5 +83,21 @@ describe("App project documents", () => {
     await user.click(screen.getByRole("button", { name: "Close Frame A" }))
 
     expect(screen.getByTestId("empty-workspace")).toBeVisible()
+  })
+
+  it("creates an untitled model without opening a location picker", async () => {
+    const user = userEvent.setup()
+    const { default: App } = await import("@/App")
+    render(<App />)
+
+    const newModelButtons = screen.getAllByRole("button", { name: "New blank model" })
+    await user.click(newModelButtons[newModelButtons.length - 1])
+
+    await waitFor(() => expect(window.fraia.createUntitledProject).toHaveBeenCalledOnce())
+    expect(window.fraia.createProject).toHaveBeenCalledWith({
+      projectDir: "/managed/unsaved/untitled-1",
+      name: "Untitled Model",
+    })
+    expect(screen.getByTestId("active-label")).toHaveTextContent("Untitled Model")
   })
 })

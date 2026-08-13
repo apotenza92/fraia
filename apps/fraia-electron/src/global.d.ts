@@ -25,6 +25,7 @@ declare global {
         userDataDirectoryName: string;
       }>;
       pickProjectFile: () => Promise<string | null>;
+      createUntitledProject: () => Promise<string>;
       conversationCreate?: (request: ConversationCreateRequest) => Promise<ConversationTransportState>;
       conversationConverse?: (request: ConversationMessageRequest) => Promise<ConversationTransportState>;
       conversationFacts?: (request: ConversationFactsUpdateRequest) => Promise<ConversationTransportState>;

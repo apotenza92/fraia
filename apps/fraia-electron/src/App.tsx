@@ -115,18 +115,8 @@ export default function App() {
     setError(null);
     setDocumentActionPending(true);
     try {
-      const projectDir = await window.fraia.pickDirectory();
-      if (!projectDir) return;
-      const existingDocument = documents.find((document) => document.projectDir === projectDir);
-      if (existingDocument) {
-        setActiveDocumentId(existingDocument.id);
-        return;
-      }
-      const existingState = normalizeWorkbenchState(await window.fraia.refreshProjectIfExists(projectDir));
-      if (existingState) {
-        throw new Error('That folder already contains a Fraia model. Open its fraia.project.json file instead.');
-      }
-      const nextState = normalizeWorkbenchState(await window.fraia.createProject({ projectDir }));
+      const projectDir = await window.fraia.createUntitledProject();
+      const nextState = normalizeWorkbenchState(await window.fraia.createProject({ projectDir, name: 'Untitled Model' }));
       if (!nextState) throw new Error('Fraia did not return the new blank model.');
       const nextDocument = projectDocumentFromState(nextState);
       setDocuments((current) => upsertProjectDocument(current, nextDocument));

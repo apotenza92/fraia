@@ -4,7 +4,7 @@ contextBridge.exposeInMainWorld('fraia', {
   health: () => ipcRenderer.invoke('fraia:health'),
   applicationMetadata: () => ipcRenderer.invoke('fraia:applicationMetadata'),
   defaultProjectDir: () => ipcRenderer.invoke('fraia:defaultProjectDir'),
-  pickDirectory: () => ipcRenderer.invoke('fraia:pickDirectory'),
+  createUntitledProject: () => ipcRenderer.invoke('fraia:createUntitledProject'),
   pickProjectFile: () => ipcRenderer.invoke('fraia:pickProjectFile'),
   createProject: (payload) => ipcRenderer.invoke('fraia:createProject', payload),
   openProject: (payload) => ipcRenderer.invoke('fraia:openProject', payload),

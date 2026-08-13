@@ -21,6 +21,13 @@ const applicationMetadata = resolveRuntimeApplicationMetadata(app.isPackaged
       productName: developmentChannel === 'beta' ? 'Fraia Beta' : 'Fraia',
     }, app.isPackaged);
 
+if (process.env.FRAIA_DEV_RUNTIME === '1') {
+  const requestedAppDir = path.resolve(process.env.FRAIA_DEV_APP_DIR || '');
+  if (app.isPackaged || requestedAppDir !== __dirname || !process.env.VITE_DEV_SERVER_URL) {
+    throw new Error('Fraia Dev must run from the current source directory with its local Vite renderer.');
+  }
+}
+
 app.setName(applicationMetadata.productName);
 
 const configuredUserDataDir = process.env.FRAIA_USER_DATA_DIR?.trim();
@@ -913,24 +920,29 @@ function scheduleElectronCapture(window) {
 ipcMain.handle('fraia:health', () => callApi('/health'));
 ipcMain.handle('fraia:applicationMetadata', () => applicationMetadata);
 ipcMain.handle('fraia:defaultProjectDir', () => ensureDefaultProjectDir());
-ipcMain.handle('fraia:pickDirectory', async () => {
-  const result = await dialog.showOpenDialog({
-    properties: ['openDirectory', 'createDirectory'],
-  });
-  return result.canceled ? null : result.filePaths[0];
+ipcMain.handle('fraia:createUntitledProject', () => {
+  const projectDir = path.join(
+    app.getPath('userData'),
+    'unsaved-projects',
+    `untitled-${Date.now()}-${randomBytes(6).toString('hex')}`,
+  );
+  return projectDir;
 });
 ipcMain.handle('fraia:pickProjectFile', async () => {
   const result = await dialog.showOpenDialog({
     title: 'Open Fraia Model',
-    properties: ['openFile'],
-    filters: [{ name: 'Fraia project', extensions: ['json'] }],
+    properties: ['openFile', 'openDirectory'],
+    filters: [{ name: 'Fraia project manifest', extensions: ['json'] }],
   });
   if (result.canceled) return null;
-  const projectFile = result.filePaths[0];
-  if (path.basename(projectFile) !== 'fraia.project.json') {
-    throw new Error('Select the fraia.project.json file inside a Fraia model folder.');
+  const selectedPath = result.filePaths[0];
+  const selectedIsDirectory = fs.statSync(selectedPath).isDirectory();
+  const projectDir = selectedIsDirectory ? selectedPath : path.dirname(selectedPath);
+  const isLegacyManifest = !selectedIsDirectory && path.basename(selectedPath) === 'fraia.project.json';
+  if ((!selectedIsDirectory && !isLegacyManifest) || !fs.existsSync(projectFilePath(projectDir))) {
+    throw new Error('Select a Fraia project folder or its fraia.project.json file.');
   }
-  return path.dirname(projectFile);
+  return projectDir;
 });
 ipcMain.handle('fraia:createProject', (_event, payload) =>
   callApi('/projects/create', { method: 'POST', body: JSON.stringify(payload) })
