@@ -195,7 +195,8 @@ test('canonical Apple credentials are isolated from build and followed by creden
   assert.match(workflow, /APPLE_NOTARYTOOL_KEY_ID: \$\{\{ vars\.APPLE_NOTARYTOOL_KEY_ID \}\}/);
   assert.match(workflow, /APPLE_NOTARYTOOL_ISSUER_ID: \$\{\{ vars\.APPLE_NOTARYTOOL_ISSUER_ID \}\}/);
   assert.doesNotMatch(workflow, /secrets\.APPLE_NOTARYTOOL_(?:KEY|ISSUER)_ID/);
-  assert.match(workflow, /Build renderer and native Rust sidecar without release credentials/);
+  assert.match(workflow, /Build reviewed native sidecar once/);
+  assert.match(workflow, /Upload validated renderer/);
   assert.match(workflow, /Verify signatures and launch without release credentials/);
   assert.match(signing, /pass --skip-build/);
   assert.match(signing, /finalize-macos-update-artifacts\.mjs/);
@@ -218,11 +219,45 @@ test('private-source and package prerequisites fail before any secret-bearing jo
   assert.match(validate, /test -f build\/icon\.icns/);
   assert.match(validate, /verify-calculix-runtimes\.cjs --all --skip-dependency-inspection/);
   assert.doesNotMatch(validate, /secrets\.|^    environment:/m);
-  assert.match(packageMacos, /needs: \[prepare, validate\]/);
+  assert.match(packageMacos, /needs: \[prepare, validate, build-sidecar\]/);
   assert.match(packageMacos, /environment: release-signing/);
   assert.match(packageMacos, /secrets\.APPLE_SIGNING_CERTIFICATE_P12_BASE64/);
   assert.match(validate, /npm run check:icons/);
   assert.match(validate, /build\/macos\/Fraia\.icon\/Assets\/01-artwork-dark\.svg/);
+});
+
+test('release packages reuse one validated renderer and one native sidecar per target', () => {
+  const validate = jobSource('validate');
+  const sidecars = jobSource('build-sidecar');
+  assert.match(validate, /name: fraia-validated-renderer/);
+  assert.match(sidecars, /name: Native sidecar \$\{\{ matrix\.platform \}\} \$\{\{ matrix\.arch \}\}/);
+  assert.equal((sidecars.match(/platform: (?:darwin|win32|linux)/g) || []).length, 6);
+  assert.match(sidecars, /tar -czf "\$RUNNER_TEMP\/native-sidecar\.tar\.gz"/);
+  for (const job of ['package-macos', 'package-windows', 'package-linux']) {
+    const source = jobSource(job);
+    assert.match(source, /needs: \[prepare, validate, build-sidecar\]/);
+    assert.match(source, /name: fraia-validated-renderer/);
+    assert.match(source, /Download reviewed native sidecar/);
+    assert.match(source, /tar -xzf "\$RUNNER_TEMP\/native-sidecar\/native-sidecar\.tar\.gz"/);
+    assert.doesNotMatch(source, /npm run build(?:\s|$)|npm run build:sidecar/);
+  }
+});
+
+test('large release assets bypass updater-feed signing and public feed comparison', () => {
+  const assemble = jobSource('assemble');
+  const attest = jobSource('attest');
+  const seal = jobSource('seal-tuf');
+  const publish = jobSource('publish');
+  const verify = jobSource('verify-publication');
+  assert.match(assemble, /name: fraia-release-assets[\s\S]*path: publish\/assets/);
+  assert.match(assemble, /name: fraia-update-feeds-unsigned[\s\S]*path: publish\/feed/);
+  assert.match(attest, /name: fraia-release-assets[\s\S]*path: publish\/assets/);
+  assert.doesNotMatch(seal, /fraia-release-assets|path: publish\/assets/);
+  assert.match(seal, /name: fraia-update-feeds-unsigned[\s\S]*path: publish\/feed/);
+  assert.match(seal, /name: fraia-update-feeds-sealed[\s\S]*path: publish\/feed/);
+  assert.match(publish, /name: fraia-release-assets[\s\S]*name: fraia-update-feeds-sealed/);
+  assert.match(verify, /name: fraia-update-feeds-sealed[\s\S]*path: expected\/feed/);
+  assert.doesNotMatch(verify, /name: fraia-release-assets/);
 });
 
 test('each publication atomically advances only higher-SemVer identity-isolated updater feeds', () => {
