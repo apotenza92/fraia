@@ -42,6 +42,15 @@ function mix(from: number, to: number, amount: number) {
 
 export const VIEWPORT_DETAIL_ZOOM_THRESHOLD = 0.5;
 export const VIEWPORT_LOAD_ARROW_ZOOM_THRESHOLD = 0.8;
+export const VIEWPORT_LOAD_ARROW_MAX_OFFSET_PX = 160;
+
+export function viewportLoadArrowIsNearLine(
+  linePoint: { x: number; y: number },
+  arrowPoint: { x: number; y: number },
+) {
+  const offset = Math.hypot(arrowPoint.x - linePoint.x, arrowPoint.y - linePoint.y);
+  return Number.isFinite(offset) && offset <= VIEWPORT_LOAD_ARROW_MAX_OFFSET_PX;
+}
 
 /**
  * Returns screen-space styling for an orthographic camera whose fitted view is zoom 1.

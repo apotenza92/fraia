@@ -3,7 +3,6 @@ import type { DragEvent, KeyboardEvent, MouseEvent } from "react"
 import { FilePlus2, Plus, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
@@ -83,7 +82,7 @@ export function DocumentTabBar({
     if (restoreFocus) focusTab(sourceId)
   }
 
-  function handleDragStart(event: DragEvent<HTMLDivElement>, tab: DocumentTab) {
+  function handleDragStart(event: DragEvent<HTMLElement>, tab: DocumentTab) {
     const startedFromClose = event.target instanceof Element && event.target.closest("[data-document-tab-close]")
     if (tab.reorderable === false || startedFromClose) {
       event.preventDefault()
@@ -94,7 +93,7 @@ export function DocumentTabBar({
     event.dataTransfer.setData("text/plain", tab.id)
   }
 
-  function handleDrop(event: DragEvent<HTMLDivElement>, targetId: string) {
+  function handleDrop(event: DragEvent<HTMLElement>, targetId: string) {
     event.preventDefault()
     const sourceId = event.dataTransfer.getData("text/plain") || draggedIdRef.current
     draggedIdRef.current = null
@@ -126,6 +125,7 @@ export function DocumentTabBar({
     if (!target) return
 
     event.preventDefault()
+    event.stopPropagation()
     onValueChange(target.id)
     focusTab(target.id)
   }
@@ -156,41 +156,40 @@ export function DocumentTabBar({
           data-document-tab-scroll
           className="no-scrollbar flex h-8 min-w-0 items-center gap-2 overflow-x-auto"
         >
-          <TabsList
-            aria-label="Open documents"
-            activateOnFocus
-            className="shrink-0 justify-start gap-2 rounded-none bg-background! p-0! group-data-horizontal/tabs:h-8!"
-          >
-            {tabs.map((tab) => (
-              <div
+          <div className="relative shrink-0">
+            <TabsList
+              aria-label="Open documents"
+              activateOnFocus
+              className="shrink-0 justify-start gap-2 rounded-none bg-background! p-0! group-data-horizontal/tabs:h-8!"
+            >
+              {tabs.map((tab) => (
+                <TabsTrigger
                   key={tab.id}
-                  role="presentation"
+                  id={documentTabTriggerId(tab.id)}
+                  aria-controls={panelId}
+                  aria-describedby={instructionsId}
+                  aria-keyshortcuts="Control+Shift+ArrowLeft Control+Shift+ArrowRight Meta+Shift+ArrowLeft Meta+Shift+ArrowRight"
+                  value={tab.id}
+                  title={tab.label}
                   draggable={tab.reorderable !== false}
-                  className="group/document-tab relative flex h-8 shrink-0 items-center"
+                  className={cn(
+                    "h-8! shrink-0 bg-background! data-active:bg-muted!",
+                    tab.closable && "pr-8",
+                  )}
                   onDragStart={(event) => handleDragStart(event, tab)}
-                  onDragEnd={() => {
-                    draggedIdRef.current = null
-                  }}
-                  onDragOver={(event) => {
-                    if (tab.reorderable !== false) event.preventDefault()
-                  }}
+                  onDragEnd={() => { draggedIdRef.current = null }}
+                  onDragOver={(event) => { if (tab.reorderable !== false) event.preventDefault() }}
                   onDrop={(event) => handleDrop(event, tab.id)}
+                  onKeyDown={(event) => handleTabKeyDown(event, tab)}
                 >
-                  <TabsTrigger
-                    id={documentTabTriggerId(tab.id)}
-                    aria-controls={panelId}
-                    aria-describedby={instructionsId}
-                    aria-keyshortcuts="Control+Shift+ArrowLeft Control+Shift+ArrowRight Meta+Shift+ArrowLeft Meta+Shift+ArrowRight"
-                    value={tab.id}
-                    title={tab.label}
-                    className={cn(
-                      "h-8! bg-background! data-active:bg-muted!",
-                      tab.closable && "pr-8",
-                    )}
-                    onKeyDown={(event) => handleTabKeyDown(event, tab)}
-                  >
-                    {tab.label}
-                  </TabsTrigger>
+                  {tab.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            <div className="pointer-events-none absolute inset-0 flex items-center gap-2">
+              {tabs.map((tab) => (
+                <div key={tab.id} className={cn("relative flex h-8 shrink-0 items-center px-1.5 text-sm font-medium whitespace-nowrap invisible", tab.closable && "pr-8")}>
+                  <span aria-hidden="true">{tab.label}</span>
                   {tab.closable ? (
                     <Button
                       data-document-tab-close
@@ -199,22 +198,16 @@ export function DocumentTabBar({
                       size="icon-xs"
                       aria-label={`Close ${tab.label}`}
                       title={`Close ${tab.label}`}
-                      className="absolute right-1 top-1/2 -translate-y-1/2"
-                      onPointerDown={(event) => event.stopPropagation()}
+                      className="pointer-events-auto visible absolute right-1 top-1/2 -translate-y-1/2"
                       onClick={(event) => handleClose(event, tab)}
                     >
                       <X />
                     </Button>
                   ) : null}
-              </div>
-            ))}
-          </TabsList>
-          {tabs.length > 0 ? (
-            <Separator
-              orientation="vertical"
-              data-document-tab-actions-separator
-            />
-          ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
           <Tooltip>
             <TooltipTrigger
               render={(

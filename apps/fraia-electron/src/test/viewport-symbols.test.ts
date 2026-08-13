@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { expandedLabelCenterAlongDirection, loadArrowSymbol, SUPPORT_LABEL_GAP_PX, SUPPORT_SYMBOL_SCALE, VIEWPORT_DETAIL_ZOOM_THRESHOLD, VIEWPORT_LOAD_ARROW_ZOOM_THRESHOLD, releaseSymbolSpec, supportLabelOffset, supportLabelOffsetCandidates, supportSymbolHitRegion, supportSymbolOffset, supportSymbolSpec, viewportLoadLeaderFractions, viewportVisualProfile } from '@/lib/viewportSymbols';
+import { expandedLabelCenterAlongDirection, loadArrowSymbol, SUPPORT_LABEL_GAP_PX, SUPPORT_SYMBOL_SCALE, VIEWPORT_DETAIL_ZOOM_THRESHOLD, VIEWPORT_LOAD_ARROW_MAX_OFFSET_PX, VIEWPORT_LOAD_ARROW_ZOOM_THRESHOLD, releaseSymbolSpec, supportLabelOffset, supportLabelOffsetCandidates, supportSymbolHitRegion, supportSymbolOffset, supportSymbolSpec, viewportLoadArrowIsNearLine, viewportLoadLeaderFractions, viewportVisualProfile } from '@/lib/viewportSymbols';
 
 describe('viewport domain icon geometry', () => {
   it('preserves the reviewed canvas dimensions outside shadcn descendant icon sizing', () => {
@@ -114,6 +114,13 @@ describe('viewport domain icon geometry', () => {
     expect(dense).toHaveLength(19);
     expect(Math.min(...dense)).toBeGreaterThan(0);
     expect(Math.max(...dense)).toBeLessThan(1);
+  });
+
+  it('hides UDL arrows that project too far from their load line', () => {
+    const linePoint = { x: 40, y: 80 };
+    expect(viewportLoadArrowIsNearLine(linePoint, { x: 40, y: 80 + VIEWPORT_LOAD_ARROW_MAX_OFFSET_PX })).toBe(true);
+    expect(viewportLoadArrowIsNearLine(linePoint, { x: 40, y: 81 + VIEWPORT_LOAD_ARROW_MAX_OFFSET_PX })).toBe(false);
+    expect(viewportLoadArrowIsNearLine(linePoint, { x: 40, y: 79 - VIEWPORT_LOAD_ARROW_MAX_OFFSET_PX })).toBe(false);
   });
 
   it('keeps the rear label edge fixed while expanding along cardinal and diagonal directions', () => {

@@ -13,7 +13,7 @@ import { installOrthographicViewCubeCamera } from '@/lib/viewportGizmoCamera';
 import type { AgentTarget, RenderLoad, RenderRelease, RenderScene, RenderSupport } from '../../lib/types';
 import { displayMembersFor, type DisplayMember } from '../../lib/renderMembers';
 import { formatQuantity, metricStructuralUnitProfile, unitProfileFrom } from '../../lib/units';
-import { expandedLabelCenterAlongDirection, loadArrowSymbol, SUPPORT_SYMBOL_SCALE, supportLabelOffset, supportLabelOffsetCandidates, supportSymbolHitRegion, supportSymbolOffset, supportSymbolSpec, viewportLoadLeaderFractions, viewportStroke, viewportVisualProfile, type ViewportSymbolSpec } from '../../lib/viewportSymbols';
+import { expandedLabelCenterAlongDirection, loadArrowSymbol, SUPPORT_SYMBOL_SCALE, supportLabelOffset, supportLabelOffsetCandidates, supportSymbolHitRegion, supportSymbolOffset, supportSymbolSpec, viewportLoadArrowIsNearLine, viewportLoadLeaderFractions, viewportStroke, viewportVisualProfile, type ViewportSymbolSpec } from '../../lib/viewportSymbols';
 import {
   DEFAULT_VIEWPORT_NAVIGATION_PROFILE_ID,
   DEFAULT_VIEWPORT_CUSTOM_NAVIGATION_SETTINGS,
@@ -24,10 +24,18 @@ import {
   type ViewportNavigationProfileId,
 } from '../../lib/viewportNavigation';
 import {
+  DEFAULT_VIEWPORT_CUSTOM_SELECTION_SETTINGS,
+  directSelectionOperation,
   emptyCanvasSelectionAction,
+  forcesWindowFromTarget,
   isViewportNodeSelectable,
   prioritizeViewportPointerTarget,
+  selectionWindowGesture,
   viewportSelectionKind,
+  windowSelectionOperation,
+  type ViewportCustomSelectionSettings,
+  type ViewportSelectionModifiers,
+  type ViewportSelectionOperation,
 } from '../../lib/viewportSelection';
 
 type ViewportFitInsets = {
@@ -98,7 +106,7 @@ export type ViewportPointerInfo = {
 };
 
 export type ViewportSelectionGesture = {
-  operation: 'toggle';
+  operation: ViewportSelectionOperation;
   selectionKind: 'window' | 'crossing';
   shape: 'box' | 'lasso';
   targets: AgentTarget[];
@@ -290,6 +298,7 @@ export function Viewport3D({
   cameraScopeKey = 'default',
   navigationProfileId = DEFAULT_VIEWPORT_NAVIGATION_PROFILE_ID,
   customNavigationSettings = DEFAULT_VIEWPORT_CUSTOM_NAVIGATION_SETTINGS,
+  customSelectionSettings = DEFAULT_VIEWPORT_CUSTOM_SELECTION_SETTINGS,
   onSelectTarget,
   onSelectionGesture,
   onViewportClick,
@@ -304,7 +313,8 @@ export function Viewport3D({
   cameraScopeKey?: string;
   navigationProfileId?: ViewportNavigationProfileId;
   customNavigationSettings?: ViewportCustomNavigationSettings;
-  onSelectTarget?: (target: AgentTarget | null) => void;
+  customSelectionSettings?: ViewportCustomSelectionSettings;
+  onSelectTarget?: (target: AgentTarget | null, operation?: ViewportSelectionOperation) => void;
   onSelectionGesture?: (gesture: ViewportSelectionGesture) => void;
   onViewportClick?: (event: ViewportPointerInfo) => void;
   onViewportPointerMove?: (event: ViewportPointerInfo) => void;
@@ -320,7 +330,11 @@ export function Viewport3D({
     updateFitInsets: (insets: Required<ViewportFitInsets>) => void;
     updateEditOverlay: (overlay: ViewportEditOverlay | null | undefined) => void;
     updateLabelVisibility: (visibility: ViewportLabelVisibility) => void;
-    updateNavigationProfile: (profileId: ViewportNavigationProfileId, customSettings: ViewportCustomNavigationSettings) => void;
+    updateNavigationProfile: (
+      profileId: ViewportNavigationProfileId,
+      customSettings: ViewportCustomNavigationSettings,
+      customSelection: ViewportCustomSelectionSettings,
+    ) => void;
   } | null>(null);
   const onSelectionGestureRef = useRef(onSelectionGesture);
   const fitInsetLeft = Math.max(0, fitInsets?.left ?? 0);
@@ -369,8 +383,8 @@ export function Viewport3D({
   }, [labelVisibility]);
 
   useEffect(() => {
-    sceneApiRef.current?.updateNavigationProfile(navigationProfileId, customNavigationSettings);
-  }, [customNavigationSettings, navigationProfileId]);
+    sceneApiRef.current?.updateNavigationProfile(navigationProfileId, customNavigationSettings, customSelectionSettings);
+  }, [customNavigationSettings, customSelectionSettings, navigationProfileId]);
 
   useEffect(() => {
     const el = ref.current;
@@ -397,6 +411,7 @@ export function Viewport3D({
     let currentFocusedTargets = focusedTargets;
     let currentNavigationProfileId = navigationProfileId;
     let currentCustomNavigationSettings = customNavigationSettings;
+    let currentCustomSelectionSettings = customSelectionSettings;
     let hoveredTarget: AgentTarget | null = null;
     let hoveredMemberAnchor: THREE.Vector3 | null = null;
     let hoveredTargetSource: 'label' | 'geometry' | null = null;
@@ -3081,6 +3096,23 @@ export function Viewport3D({
       const startViewSize = viewSize;
       const startZoom = camera.zoom;
       const initialEndViewSize = box.isEmpty() ? 24 : fittedViewSize(layout.aspect, layout.usableWidthFraction, layout.usableHeightFraction);
+      const prefersReducedMotion = typeof window !== 'undefined'
+        && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      if (prefersReducedMotion) {
+        camera.position.copy(endPosition);
+        camera.zoom = 1;
+        viewSize = Number.isFinite(initialEndViewSize) ? initialEndViewSize : viewSize;
+        controls.target.copy(endTarget);
+        controls.cursor.copy(endTarget);
+        camera.lookAt(endTarget);
+        applyViewportProjection(layout);
+        controls.update();
+        viewGizmo.update(false);
+        saveCameraState();
+        scheduleRender();
+        shouldFitScene = false;
+        return;
+      }
       const durationMs = followGizmoRotation ? 220 : 320;
       const startTime = performance.now();
       shouldFitScene = false;
@@ -3207,12 +3239,17 @@ export function Viewport3D({
       loadLineVisualGroups.forEach((group) => {
         const count = Math.min(group.arrows.length, profile.loadArrowCount);
         group.arrows.forEach((arrow, index) => {
-          const visible = index < count;
+          let visible = index < count;
           const layout = group.layout;
           if (visible && layout && 'direction' in layout) {
             const t = count === 1 ? 0.5 : index / (count - 1);
             const isEndpoint = index === 0 || index === count - 1;
-            updateLoadArrowGeometry(arrow, uniformLineArrowPoints(layout, t, isEndpoint));
+            const points = uniformLineArrowPoints(layout, t, isEndpoint);
+            updateLoadArrowGeometry(arrow, points);
+            visible = viewportLoadArrowIsNearLine(
+              projectToViewport(points.tail),
+              projectToViewport(points.head),
+            );
           } else if (visible && layout && 'arrowLength' in layout) {
             const t = count === 1 ? 0.5 : index / (count - 1);
             updateLoadArrowGeometry(arrow, parallelLineArrowPoints(layout, t));
@@ -3833,15 +3870,27 @@ export function Viewport3D({
 
     function pickMember(event: PointerEvent) {
       const info = pointerInfo(event);
-      onSelectTargetRef.current?.(info.target);
+      onSelectTargetRef.current?.(
+        info.target,
+        directSelectionOperation(currentNavigationProfileId, selectionModifiers(event), currentCustomSelectionSettings),
+      );
       onViewportClickRef.current?.(info);
     }
 
-    function emitSelectionGesture(drag: SelectionDragState) {
+    function selectionModifiers(event: PointerEvent): ViewportSelectionModifiers {
+      return {
+        altKey: event.altKey,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        shiftKey: event.shiftKey,
+      };
+    }
+
+    function emitSelectionGesture(drag: SelectionDragState, event: PointerEvent) {
       clearSelectionCanvas();
       const end = drag.points[drag.points.length - 1];
       onSelectionGestureRef.current?.({
-        operation: 'toggle',
+        operation: windowSelectionOperation(currentNavigationProfileId, selectionModifiers(event), currentCustomSelectionSettings),
         selectionKind: selectionKind(drag.start, end),
         shape: drag.mode,
         targets: selectionTargets(drag),
@@ -3885,16 +3934,29 @@ export function Viewport3D({
         selectionDrag = null;
         suppressBoxCompletionPointerUpId = event.pointerId;
         updateSelectionPreview(drag);
-        if (drag.active) emitSelectionGesture(drag);
+        if (drag.active) emitSelectionGesture(drag, event);
         else clearSelectionCanvas();
         return;
       }
 
-      const startsLasso = selectionEnabledRef.current && event.button === 0 && event.altKey && !info.target;
-      selectionDrag = startsLasso
+      const modifiers = selectionModifiers(event);
+      const windowGesture = selectionWindowGesture(currentNavigationProfileId, currentCustomSelectionSettings);
+      const forceWindow = forcesWindowFromTarget(currentNavigationProfileId, modifiers, currentCustomSelectionSettings);
+      if (selectionEnabledRef.current && event.button === 0 && windowGesture === 'two-click' && info.target && forceWindow) {
+        event.preventDefault();
+        event.stopPropagation();
+        startArmedBoxSelection(info.screen);
+        onViewportClickRef.current?.(info);
+        return;
+      }
+      const startsBox = selectionEnabledRef.current
+        && event.button === 0
+        && (windowGesture === 'drag' || (windowGesture === 'shift-drag' && event.shiftKey))
+        && (!info.target || forceWindow || windowGesture === 'shift-drag');
+      selectionDrag = startsBox
         ? {
             pointerId: event.pointerId,
-            mode: 'lasso',
+            mode: 'box',
             start: info.screen,
             points: [info.screen],
             active: false,
@@ -3930,20 +3992,43 @@ export function Viewport3D({
         } catch {
           // Pointer capture can already be released if the pointer leaves the canvas.
         }
-        if (drag.active && moved > selectionDragThresholdPx) emitSelectionGesture(drag);
-        else clearSelectionCanvas();
+        if (drag.active && moved > selectionDragThresholdPx) {
+          emitSelectionGesture(drag, event);
+        } else {
+          clearSelectionCanvas();
+          const info = pointerInfo(event);
+          if (info.target && !forcesWindowFromTarget(currentNavigationProfileId, selectionModifiers(event), currentCustomSelectionSettings)) {
+            pickMember(event);
+          } else {
+            const action = emptyCanvasSelectionAction(
+              currentNavigationProfileId,
+              currentFocusedTargets.length > 0,
+              selectionModifiers(event),
+              currentCustomSelectionSettings,
+            );
+            if (action === 'clear') onSelectTargetRef.current?.(null, 'replace');
+            onViewportClickRef.current?.(info);
+          }
+        }
         return;
       }
       if (moved <= 4) {
         const info = pointerInfo(event);
-        if (selectionEnabledRef.current && !event.altKey && !info.target) {
-          const action = emptyCanvasSelectionAction(currentFocusedTargets.length > 0, event.shiftKey);
+        if (selectionEnabledRef.current && !info.target) {
+          const action = emptyCanvasSelectionAction(
+            currentNavigationProfileId,
+            currentFocusedTargets.length > 0,
+            selectionModifiers(event),
+            currentCustomSelectionSettings,
+          );
           if (action === 'clear') {
-            onSelectTargetRef.current?.(null);
+            onSelectTargetRef.current?.(null, 'replace');
             onViewportClickRef.current?.(info);
             return;
           }
-          startArmedBoxSelection(info.screen);
+          if (action === 'arm-window' && selectionWindowGesture(currentNavigationProfileId, currentCustomSelectionSettings) === 'two-click') {
+            startArmedBoxSelection(info.screen);
+          }
           onViewportClickRef.current?.(info);
           return;
         }
@@ -4123,16 +4208,22 @@ export function Viewport3D({
     function updateNavigationProfile(
       nextProfileId: ViewportNavigationProfileId,
       nextCustomSettings: ViewportCustomNavigationSettings,
+      nextCustomSelection: ViewportCustomSelectionSettings,
     ) {
       const profileChanged = nextProfileId !== currentNavigationProfileId;
       const customSettingsChanged = Object.keys(nextCustomSettings).some((button) => (
         nextCustomSettings[button as keyof ViewportCustomNavigationSettings]
         !== currentCustomNavigationSettings[button as keyof ViewportCustomNavigationSettings]
       ));
-      if (!profileChanged && !customSettingsChanged) return;
+      const customSelectionChanged = Object.keys(nextCustomSelection).some((key) => (
+        nextCustomSelection[key as keyof ViewportCustomSelectionSettings]
+        !== currentCustomSelectionSettings[key as keyof ViewportCustomSelectionSettings]
+      ));
+      if (!profileChanged && !customSettingsChanged && !customSelectionChanged) return;
       cancelActiveCameraGesture();
       currentNavigationProfileId = nextProfileId;
       currentCustomNavigationSettings = nextCustomSettings;
+      currentCustomSelectionSettings = nextCustomSelection;
     }
 
     function updateFitInsets(next: Required<ViewportFitInsets>) {
@@ -4521,6 +4612,9 @@ export function Viewport3D({
 
       function applyLabelPose(label: LabelSprite, targetPosition: THREE.Vector3, targetScale: THREE.Vector3, state: LabelVisualState) {
         const now = performance.now();
+        const prefersReducedMotion = typeof window !== 'undefined'
+          && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+        if (prefersReducedMotion) label.transition = undefined;
         if (!label.wasVisible && label.hoverOnly) {
           const counterpart = compactCounterpartFor(label);
           if (counterpart?.sprite.visible) {

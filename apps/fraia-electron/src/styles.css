@@ -148,3 +148,11 @@
     @apply font-sans;
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-fade-b {
+    -webkit-mask-image: none;
+    mask-image: none;
+    animation: none;
+  }
+}

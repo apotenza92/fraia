@@ -35,6 +35,11 @@ import {
   type ViewportNavigationProfileId,
   type ViewportMouseHandedness,
 } from '@/lib/viewportNavigation';
+import {
+  DEFAULT_VIEWPORT_CUSTOM_SELECTION_SETTINGS,
+  viewportSelectionDescription,
+  type ViewportCustomSelectionSettings,
+} from '@/lib/viewportSelection';
 
 export type ViewportHelpShortcut = {
   id: string;
@@ -87,6 +92,52 @@ function CustomButtonField({
   );
 }
 
+const CUSTOM_SELECTION_FIELDS = [
+  { key: 'pickBehavior', label: 'Direct click', items: [['replace', 'Replace'], ['add', 'Add'], ['toggle', 'Toggle']] },
+  { key: 'modifierStyle', label: 'Modifiers', items: [['shift-add-primary-remove', 'Shift add · Ctrl/Cmd remove'], ['shift-remove-primary-toggle', 'Shift remove · Ctrl/Cmd toggle'], ['primary-toggle', 'Ctrl/Cmd toggle'], ['none', 'None']] },
+  { key: 'emptyBehavior', label: 'Blank click', items: [['clear', 'Clear selection'], ['start-window', 'Start window'], ['ignore', 'Do nothing']] },
+  { key: 'windowGesture', label: 'Window', items: [['drag', 'Drag'], ['two-click', 'Two clicks']] },
+  { key: 'windowBehavior', label: 'Window result', items: [['replace', 'Replace'], ['add', 'Add'], ['toggle', 'Toggle']] },
+  { key: 'forceWindowModifier', label: 'Force window', items: [['alt', 'Alt'], ['shift', 'Shift'], ['none', 'None']] },
+] as const;
+
+function CustomSelectionFields({
+  settings,
+  onSettings,
+}: {
+  settings: ViewportCustomSelectionSettings;
+  onSettings: (settings: ViewportCustomSelectionSettings) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="font-medium">Custom selection</p>
+      {CUSTOM_SELECTION_FIELDS.map((field) => (
+        <Field key={field.key} orientation="horizontal">
+          <FieldLabel htmlFor={`viewport-selection-${field.key}`} className="min-w-24">{field.label}</FieldLabel>
+          <Select
+            items={field.items.map(([value, label]) => ({ value, label }))}
+            value={settings[field.key]}
+            onValueChange={(value) => {
+              if (field.items.some(([candidate]) => candidate === value)) {
+                onSettings({ ...settings, [field.key]: value });
+              }
+            }}
+          >
+            <SelectTrigger id={`viewport-selection-${field.key}`} className="min-w-0 flex-1" aria-label={field.label}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent alignItemWithTrigger={false}>
+              <SelectGroup>
+                {field.items.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </Field>
+      ))}
+    </div>
+  );
+}
+
 function Mapping({ label, value }: { label: string; value: string }) {
   return (
     <Tooltip>
@@ -123,20 +174,24 @@ export function ViewportHelpBar({
   status,
   navigationProfileId,
   customNavigationSettings,
+  customSelectionSettings = DEFAULT_VIEWPORT_CUSTOM_SELECTION_SETTINGS,
   mouseHandedness,
   contextualShortcuts,
   onNavigationProfileId,
   onCustomNavigationSettings,
+  onCustomSelectionSettings = () => {},
   onMouseHandedness,
 }: {
   availableWidth: number;
   status: string;
   navigationProfileId: ViewportNavigationProfileId;
   customNavigationSettings: ViewportCustomNavigationSettings;
+  customSelectionSettings?: ViewportCustomSelectionSettings;
   mouseHandedness: ViewportMouseHandedness;
   contextualShortcuts: ViewportHelpShortcut[];
   onNavigationProfileId: (profileId: ViewportNavigationProfileId) => void;
   onCustomNavigationSettings: (settings: ViewportCustomNavigationSettings) => void;
+  onCustomSelectionSettings?: (settings: ViewportCustomSelectionSettings) => void;
   onMouseHandedness: (handedness: ViewportMouseHandedness) => void;
 }) {
   const profile = viewportNavigationProfile(navigationProfileId, customNavigationSettings);
@@ -144,18 +199,19 @@ export function ViewportHelpBar({
   const panLabel = handedViewportNavigationLabel(profile.essentials.pan, mouseHandedness);
   const zoomLabel = handedViewportNavigationLabel(profile.essentials.zoom, mouseHandedness);
   const profileItems = VIEWPORT_NAVIGATION_PROFILES.map((item) => ({ value: item.id, label: item.label }));
+  const selection = viewportSelectionDescription(navigationProfileId, customSelectionSettings);
   const showCameraMappings = availableWidth >= 520;
 
   return (
-    <div data-testid="viewport-help-bar" className="h-9 shrink-0 bg-background">
+    <div data-testid="viewport-help-bar" className="h-10 shrink-0 bg-background">
       <Separator />
-      <div className="flex h-[35px] min-w-0 items-center gap-3 px-2">
-        <div data-testid="viewport-help-status" className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-          {status}
+      <div className="flex h-[39px] min-w-0 items-center gap-4 px-3">
+        <div data-testid="viewport-help-status" className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+          {status} · {selection.short}
         </div>
 
         {showCameraMappings ? (
-          <div data-testid="viewport-help-essentials" className="flex min-w-0 items-center gap-3 text-xs text-muted-foreground">
+          <div data-testid="viewport-help-essentials" className="flex min-w-0 items-center gap-4 text-sm text-muted-foreground">
             <Mapping label="Rotate" value={rotateLabel} />
             <Mapping label="Pan" value={panLabel} />
             <Mapping label="Zoom" value={zoomLabel} />
@@ -163,18 +219,17 @@ export function ViewportHelpBar({
         ) : null}
 
         <Popover>
-          <PopoverTrigger render={<Button variant="ghost" size="xs" className="shrink-0" />}>
-            <CircleHelp data-icon="inline-start" />
-            Controls
+          <PopoverTrigger render={<Button aria-label="Controls" variant="ghost" size="icon" className="shrink-0" />}>
+            <CircleHelp aria-hidden="true" size={20} />
           </PopoverTrigger>
-          <PopoverContent side="top" align="end" className="w-88 max-w-[calc(100vw-1rem)]">
+          <PopoverContent side="top" align="end" className="max-h-[min(42rem,calc(100vh-1rem))] w-96 max-w-[calc(100vw-1rem)] overflow-y-auto">
             <PopoverHeader>
               <PopoverTitle>Controls</PopoverTitle>
-              <PopoverDescription>Choose how the camera responds to your mouse.</PopoverDescription>
+              <PopoverDescription>The control style governs both camera and selection behavior.</PopoverDescription>
             </PopoverHeader>
             <div className="flex flex-col gap-3">
               <Field>
-                <FieldLabel htmlFor="viewport-navigation-profile">Navigation profile</FieldLabel>
+                <FieldLabel htmlFor="viewport-navigation-profile">Control style</FieldLabel>
                 <Select
                   items={profileItems}
                   value={navigationProfileId}
@@ -182,12 +237,12 @@ export function ViewportHelpBar({
                     if (isViewportNavigationProfileId(value)) onNavigationProfileId(value);
                   }}
                 >
-                  <SelectTrigger id="viewport-navigation-profile" className="w-full" aria-label="Navigation profile">
+                  <SelectTrigger id="viewport-navigation-profile" className="w-full" aria-label="Control style">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent alignItemWithTrigger={false}>
                     <SelectGroup>
-                      <SelectLabel>Camera navigation</SelectLabel>
+                      <SelectLabel>Camera and selection</SelectLabel>
                       {VIEWPORT_NAVIGATION_PROFILES.map((item) => (
                         <SelectItem key={item.id} value={item.id}>{item.label}</SelectItem>
                       ))}
@@ -209,8 +264,36 @@ export function ViewportHelpBar({
                     />
                   ))}
                   <p className="text-xs text-muted-foreground">The wheel always zooms.</p>
+                  <Separator />
+                  <CustomSelectionFields settings={customSelectionSettings} onSettings={onCustomSelectionSettings} />
                 </div>
               ) : null}
+
+              <div className="flex flex-col gap-1.5">
+                <ControlRow label="Rotate" value={rotateLabel} />
+                <ControlRow label="Pan" value={panLabel} />
+                <ControlRow label="Zoom" value={zoomLabel} />
+              </div>
+
+              <Separator />
+              <div className="flex flex-col gap-1.5">
+                <p className="font-medium">Selection</p>
+                <ControlRow label="Pick" value={selection.pick} />
+                <ControlRow label="Blank" value={selection.blank} />
+                <ControlRow label="Window" value={selection.window} />
+                <ControlRow label="Modify" value={selection.modify} />
+              </div>
+
+              {contextualShortcuts.length ? (
+                <>
+                  <Separator />
+                  <div className="flex flex-col gap-1.5">
+                    {contextualShortcuts.map((shortcut) => <ShortcutRow key={shortcut.id} shortcut={shortcut} />)}
+                  </div>
+                </>
+              ) : null}
+
+              <Separator />
 
               <Field>
                 <FieldLabel>Mouse hand</FieldLabel>
@@ -222,40 +305,12 @@ export function ViewportHelpBar({
                     const nextHandedness = value[0];
                     if (isViewportMouseHandedness(nextHandedness)) onMouseHandedness(nextHandedness);
                   }}
-                  variant="outline"
                   size="sm"
-                  spacing={0}
                 >
-                  <ToggleGroupItem aria-label="Right-handed mouse" className="flex-1" value="right">Right-handed</ToggleGroupItem>
                   <ToggleGroupItem aria-label="Left-handed mouse" className="flex-1" value="left">Left-handed</ToggleGroupItem>
+                  <ToggleGroupItem aria-label="Right-handed mouse" className="flex-1" value="right">Right-handed</ToggleGroupItem>
                 </ToggleGroup>
               </Field>
-
-              <div className="flex flex-col gap-1.5">
-                <ControlRow label="Rotate" value={rotateLabel} />
-                <ControlRow label="Pan" value={panLabel} />
-                <ControlRow label="Zoom" value={zoomLabel} />
-              </div>
-
-              <Separator />
-
-              <div className="flex flex-col gap-2">
-                <p className="font-medium">Selection</p>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Kbd>Shift</Kbd><span>Keep selection when starting a window</span>
-                </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Kbd>Alt</Kbd><span>Drag a lasso</span>
-                </div>
-              </div>
-
-              <Separator />
-
-              <div className="flex flex-col gap-1.5">
-                {contextualShortcuts.map((shortcut) => <ShortcutRow key={shortcut.id} shortcut={shortcut} />)}
-                <ShortcutRow shortcut={{ id: 'delete', keys: ['Delete', '⌫'], label: 'Delete selection' }} />
-                <ShortcutRow shortcut={{ id: 'escape', keys: ['Esc'], label: 'Cancel or clear' }} />
-              </div>
             </div>
           </PopoverContent>
         </Popover>

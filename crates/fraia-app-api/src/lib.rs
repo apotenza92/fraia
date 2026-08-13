@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 pub type AgentModelSettings = fraia_core::AgentModelSettings;
 pub type UnitProfile = fraia_core::UnitProfile;
 use fraia_core::serde_f64;
+use fraia_revision::{ArtefactId, ConversationId, EvidenceId, ProjectId, RevisionId, SnapshotId};
 
 pub type AgentState = fraia_core::AgentState;
 pub type BaseModelBrief = fraia_core::BaseModelBrief;
@@ -30,6 +31,329 @@ pub struct AppHealthResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ErrorResponse {
     pub error: String,
+}
+
+// Conversation-first transport contracts. These deliberately sit alongside the
+// staged API during the cutover; they do not reuse option or readiness types.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationCreateRequest {
+    pub project_id: ProjectId,
+    pub project_dir: String,
+    pub conversation_id: ConversationId,
+    pub purpose: String,
+    #[serde(default)]
+    pub project_facts: ConversationProjectFacts,
+}
+/// Typed intent available before the project has any geometry. It is not a
+/// hidden model and can remain deliberately incomplete while a conversation
+/// starts from an empty structural snapshot.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationProjectFacts {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub building_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approximate_length_m: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approximate_width_m: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approximate_height_m: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub objective: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub constraints: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub loads_and_assumptions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unknowns: Vec<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationMessageRequest {
+    pub project_id: ProjectId,
+    pub conversation_id: ConversationId,
+    pub message: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationFactsUpdateRequest {
+    pub project_id: ProjectId,
+    pub conversation_id: ConversationId,
+    pub project_facts: ConversationProjectFacts,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationForkRequest {
+    pub project_id: ProjectId,
+    pub conversation_id: ConversationId,
+    pub purpose: String,
+    pub from_revision_id: RevisionId,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationProposalRequest {
+    pub project_id: ProjectId,
+    pub conversation_id: ConversationId,
+    pub proposal_id: String,
+    pub proposed_revision_id: RevisionId,
+    pub parent_revision_id: RevisionId,
+    pub provider: String,
+    pub model: String,
+    pub turn_id: String,
+    /// A typed patch is a batch so an empty project can receive its first
+    /// coherent set of nodes, members, and supports as one accepted revision.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub operations: Vec<ConversationProposalOperation>,
+    /// Compatibility for the earliest transport spike; new callers use
+    /// `operations` exclusively.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation: Option<ConversationProposalOperation>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ConversationProposalOperation {
+    SetMemberRole {
+        member_id: String,
+        role: String,
+    },
+    /// Move a node in canonical metres. The revision engine validates the
+    /// resulting model before admitting the operation.
+    MoveNode {
+        node_id: String,
+        x: f64,
+        y: f64,
+        z: f64,
+    },
+    AddNode {
+        id: String,
+        x: f64,
+        y: f64,
+        z: f64,
+    },
+    AddMember {
+        id: String,
+        start_node: String,
+        end_node: String,
+        role: String,
+        section_id: String,
+        material_id: String,
+    },
+    AddSupport {
+        id: String,
+        target_node: String,
+        ux: bool,
+        uy: bool,
+        uz: bool,
+        rx: bool,
+        ry: bool,
+        rz: bool,
+    },
+    SetSection {
+        member_id: String,
+        section_id: String,
+    },
+    AddPlate {
+        id: String,
+        boundary_nodes: Vec<String>,
+        role: String,
+        thickness_m: f64,
+        material_id: String,
+        generated_from: String,
+    },
+    AddLoad {
+        id: String,
+        target_kind: String,
+        target_id: String,
+        load_case_id: String,
+        direction_x: f64,
+        direction_y: f64,
+        direction_z: f64,
+        magnitude: f64,
+        unit: String,
+    },
+    AddRelease {
+        id: String,
+        member_id: String,
+        end: String,
+        ux: bool,
+        uy: bool,
+        uz: bool,
+        rx: bool,
+        ry: bool,
+        rz: bool,
+    },
+    SetRelease {
+        id: String,
+        member_id: String,
+        end: String,
+        ux: bool,
+        uy: bool,
+        uz: bool,
+        rx: bool,
+        ry: bool,
+        rz: bool,
+    },
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationProposalActionRequest {
+    pub project_id: ProjectId,
+    pub proposal_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_id: Option<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationAnalysisRequest {
+    pub project_id: ProjectId,
+    pub conversation_id: ConversationId,
+    pub revision_id: RevisionId,
+    pub evidence_id: EvidenceId,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationComparisonRequest {
+    pub project_id: ProjectId,
+    pub conversation_id: ConversationId,
+    pub baseline_evidence_id: EvidenceId,
+    pub candidate_evidence_id: EvidenceId,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationAnalysisComboMetrics {
+    pub combo_id: String,
+    pub max_utilization: f64,
+    pub max_ux_m: f64,
+    pub max_uy_m: f64,
+    pub max_reaction_n: f64,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationAnalysisMetrics {
+    pub combo_metrics: Vec<ConversationAnalysisComboMetrics>,
+    pub max_utilization: f64,
+    pub max_ux_m: f64,
+    pub max_uy_m: f64,
+    pub max_reaction_n: f64,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationComparisonEntry {
+    pub evidence_id: EvidenceId,
+    pub authored_snapshot_id: SnapshotId,
+    pub resolved_snapshot_id: SnapshotId,
+    pub input_identity: String,
+    pub result_identity: String,
+    pub metrics: ConversationAnalysisMetrics,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationComparisonResponse {
+    pub solver_identity: String,
+    pub runtime_identity: String,
+    pub settings_identity: String,
+    pub settings_payload: String,
+    pub request: Value,
+    pub baseline: ConversationComparisonEntry,
+    pub candidate: ConversationComparisonEntry,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationStateResponse {
+    pub project_id: ProjectId,
+    pub conversation_id: ConversationId,
+    pub purpose: String,
+    pub head_revision_id: RevisionId,
+    pub head_snapshot_id: SnapshotId,
+    pub project_facts: ConversationProjectFacts,
+    pub semantic_summary: fraia_core::ModelUnderstandingReport,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub messages: Vec<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationRevisionResponse {
+    pub revision_id: RevisionId,
+    pub snapshot_id: SnapshotId,
+    pub parent_revision_id: Option<RevisionId>,
+    pub author: String,
+    pub agent_provenance: Option<ConversationAgentProvenance>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationAgentProvenance {
+    pub provider: String,
+    pub model: String,
+    pub turn_id: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationEvidenceResponse {
+    pub evidence_id: EvidenceId,
+    pub authored_snapshot_id: SnapshotId,
+    pub stale: bool,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_snapshot_id: Option<SnapshotId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub solver_identity: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metrics: Option<ConversationAnalysisMetrics>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationArtefactResponse {
+    pub artefact_id: ArtefactId,
+    pub source_snapshot_id: SnapshotId,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationWorkingCopyOpenResponse {
+    pub working_copy_id: String,
+    pub source_revision_id: RevisionId,
+    pub source_snapshot_id: SnapshotId,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationWorkingCopyOpenRequest {
+    pub project_id: ProjectId,
+    pub conversation_id: ConversationId,
+    pub revision_id: RevisionId,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationWorkingCopyOperationRequest {
+    pub project_id: ProjectId,
+    pub working_copy_id: String,
+    pub operation: ConversationProposalOperation,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationWorkingCopyCommitRequest {
+    pub project_id: ProjectId,
+    pub conversation_id: ConversationId,
+    pub working_copy_id: String,
+    pub revision_id: RevisionId,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -209,6 +533,7 @@ pub struct DesignOptionDecisionUpdateRequest {
 #[serde(rename_all = "camelCase")]
 pub struct WorkbenchProjectOverview {
     pub project_dir: String,
+    pub document_id: String,
     pub name: String,
     pub building_type: String,
     pub design_stage: String,
@@ -881,6 +1206,7 @@ mod tests {
         let state = WorkbenchProjectState {
             overview: WorkbenchProjectOverview {
                 project_dir: "/tmp/fraia".into(),
+                document_id: "fixture-document".into(),
                 name: "Fraia".into(),
                 building_type: "test".into(),
                 design_stage: "concept".into(),

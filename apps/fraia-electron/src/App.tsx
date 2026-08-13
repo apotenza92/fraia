@@ -1,8 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Spinner } from '@/components/ui/spinner';
+import { Button } from '@/components/ui/button';
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
+import { FileBox, FilePlus2, FolderOpen } from 'lucide-react';
 import { AppShell } from './components/layout/AppShell';
-import { loadDefaultProject, normalizeWorkbenchState } from './lib/defaultProject';
+import { AppMenuBar } from './components/layout/AppMenuBar';
+import { DocumentTabBar } from './components/domain-ui/DocumentTabBar';
+import { APP_HEADER_HEIGHT, CHROME } from './components/layout/chromeMetrics';
+import { normalizeWorkbenchState } from './lib/defaultProject';
 import {
   projectDocumentFromState,
   reorderProjectDocuments,
@@ -12,6 +17,59 @@ import {
 import { useSystemTheme } from './lib/theme';
 import type { WorkbenchState } from './lib/types';
 
+function EmptyWorkspaceShell({
+  error,
+  pending,
+  onOpen,
+  onNew,
+}: {
+  error: string | null;
+  pending: boolean;
+  onOpen: () => void;
+  onNew: () => void;
+}) {
+  return (
+    <div data-testid="conversation-workspace-shell" className="grid h-screen w-screen grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background text-foreground">
+      <header style={{ height: APP_HEADER_HEIGHT }}>
+        <AppMenuBar />
+        <div className="shrink-0" style={{ height: CHROME.tabHeight }}>
+          <DocumentTabBar
+            tabs={[]}
+            value=""
+            panelId="fraia-empty-workspace"
+            onValueChange={() => {}}
+            onClose={() => {}}
+            onReorder={() => {}}
+            onOpen={onOpen}
+            openDisabled={pending}
+            onNewBlankModel={onNew}
+            newBlankModelDisabled={pending}
+          />
+        </div>
+      </header>
+      <main id="fraia-empty-workspace" className="flex min-h-0 min-w-0 flex-col p-6">
+        {error ? (
+          <Alert variant="destructive" role="alert" className="mx-auto w-full max-w-xl">
+            <AlertTitle>Fraia could not open the model</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : null}
+        <Empty data-testid="empty-workspace">
+          <EmptyHeader>
+            <EmptyMedia variant="icon"><FileBox /></EmptyMedia>
+            <EmptyTitle>No models are open</EmptyTitle>
+            <EmptyDescription>Open an existing Fraia model or create a blank model to start.</EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent className="flex-row justify-center">
+            <Button variant="outline" disabled={pending} onClick={onOpen}><FolderOpen data-icon="inline-start" />Open model</Button>
+            <Button disabled={pending} onClick={onNew}><FilePlus2 data-icon="inline-start" />New blank model</Button>
+          </EmptyContent>
+        </Empty>
+      </main>
+    </div>
+  );
+}
+
 export default function App() {
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
@@ -19,23 +77,6 @@ export default function App() {
   const [documentActionPending, setDocumentActionPending] = useState(false);
   useSystemTheme();
   const activeDocument = documents.find((document) => document.id === activeDocumentId) ?? documents[0] ?? null;
-
-  useEffect(() => {
-    let cancelled = false;
-    loadDefaultProject()
-      .then((loaded) => {
-        if (cancelled || !loaded) return;
-        const document = projectDocumentFromState(loaded);
-        setDocuments([document]);
-        setActiveDocumentId(document.id);
-      })
-      .catch((caught) => {
-        if (!cancelled) setError(caught.message);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   function updateActiveDocument(nextState: WorkbenchState) {
     const nextDocument = projectDocumentFromState(nextState);
@@ -98,35 +139,30 @@ export default function App() {
   }
 
   function closeDocument(documentId: string) {
-    setDocuments((current) => current.length > 1
-      ? current.filter((document) => document.id !== documentId)
-      : current);
-  }
-
-  if (error && !activeDocument) {
-    return (
-      <main className="flex h-screen items-center justify-center p-6">
-        <Alert variant="destructive" className="max-w-xl">
-          <AlertTitle>Fraia backend unavailable</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      </main>
-    );
+    const closingIndex = documents.findIndex((document) => document.id === documentId);
+    if (closingIndex < 0) return;
+    const remaining = documents.filter((document) => document.id !== documentId);
+    if (activeDocumentId === documentId) {
+      setActiveDocumentId(remaining[closingIndex]?.id ?? remaining[closingIndex - 1]?.id ?? null);
+    }
+    setDocuments(remaining);
   }
 
   if (!activeDocument) {
     return (
-      <main className="flex h-screen items-center justify-center gap-2">
-        <Spinner />
-        <span>Opening Fraia…</span>
-      </main>
+      <EmptyWorkspaceShell
+        error={error}
+        pending={documentActionPending}
+        onOpen={() => { void openProjectDocument(); }}
+        onNew={() => { void createBlankModel(); }}
+      />
     );
   }
 
   const documentTabs = documents.map((document) => ({
     id: document.id,
     label: document.label,
-    closable: documents.length > 1,
+    closable: true,
     reorderable: true,
   }));
 

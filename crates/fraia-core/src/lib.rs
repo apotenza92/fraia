@@ -16,6 +16,7 @@ pub mod outputs;
 pub mod project;
 pub mod realization;
 pub mod scene;
+pub mod snapshot_derivation;
 pub mod stick_import;
 pub mod structural_app;
 pub mod types;
@@ -52,6 +53,7 @@ pub use project::{
 };
 pub use realization::*;
 pub use scene::*;
+pub use snapshot_derivation::*;
 pub use stick_import::*;
 pub use structural_app::*;
 pub use types::*;

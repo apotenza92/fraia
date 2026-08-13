@@ -25,3 +25,4 @@ docs/knowledge/.cache/
 docs/knowledge/sources.local.md
 docs/knowledge/media/private/
 output/
+fraia-conversations.sqlite*
