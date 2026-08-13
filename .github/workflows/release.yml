@@ -6,11 +6,16 @@ on:
       - 'v*'
   workflow_dispatch:
     inputs:
+      simulation_candidate_version:
+        description: Unpublished candidate version built only for this simulation
+        required: true
+        type: string
+        default: 0.0.15
       simulation_previous_version:
         description: Prior version used by updater replacement simulations
         required: true
         type: string
-        default: 0.0.13
+        default: 0.0.14
 permissions:
   contents: read
 
@@ -105,14 +110,15 @@ jobs:
           const cargo = fs.readFileSync('Cargo.toml', 'utf8');
           const cargoVersion = cargo.match(/\[workspace\.package\][\s\S]*?\nversion\s*=\s*"([^"]+)"/)?.[1];
           const simulation = process.env.GITHUB_EVENT_NAME !== 'push';
-          const tag = simulation ? `v${packageJson.version}` : process.env.GITHUB_REF_NAME;
+          const simulationVersion = process.env.SIMULATION_CANDIDATE_VERSION;
+          const tag = simulation ? `v${simulationVersion}` : process.env.GITHUB_REF_NAME;
           const stable = /^v\d+\.\d+\.\d+$/.test(tag);
           const beta = /^v\d+\.\d+\.\d+-beta\.\d+$/.test(tag);
           if (!stable && !beta) {
             throw new Error(`Fraia release tags must be vX.Y.Z or vX.Y.Z-beta.N; received ${tag}.`);
           }
           const version = tag.slice(1);
-          if (packageJson.version !== version || cargoVersion !== version) {
+          if (!simulation && (packageJson.version !== version || cargoVersion !== version)) {
             throw new Error(`Tag ${tag} must match Electron ${packageJson.version} and Cargo ${cargoVersion}.`);
           }
           const channel = beta ? 'beta' : 'stable';
@@ -127,7 +133,7 @@ jobs:
               prerelease: 'false',
               release_tag: tag,
               simulation: 'true',
-              version: packageJson.version,
+              version: simulationVersion,
             };
             fs.appendFileSync(process.env.GITHUB_OUTPUT, `${Object.entries(output).map(([key, value]) => `${key}=${value}`).join('\n')}\n`);
             process.exit(0);
@@ -157,6 +163,7 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `${Object.entries(output).map(([key, value]) => `${key}=${value}`).join('\n')}\n`);
           NODE
         env:
+          SIMULATION_CANDIDATE_VERSION: ${{ inputs.simulation_candidate_version }}
           SIMULATION_PREVIOUS_VERSION: ${{ inputs.simulation_previous_version }}
 
   validate:
@@ -491,6 +498,11 @@ jobs:
         shell: bash
         run: tar -xzf "$(cygpath -u "$RUNNER_TEMP")/native-sidecar/native-sidecar.tar.gz" -C apps/fraia-electron
 
+      - name: Set unpublished simulation version
+        if: ${{ needs.prepare.outputs.simulation == 'true' }}
+        working-directory: apps/fraia-electron
+        run: npm version '${{ needs.prepare.outputs.version }}' --no-git-tag-version --allow-same-version
+
       - name: Build Windows installer
         working-directory: apps/fraia-electron
         env:
@@ -597,6 +609,11 @@ jobs:
       - name: Restore reviewed native sidecar
         shell: bash
         run: tar -xzf "$RUNNER_TEMP/native-sidecar/native-sidecar.tar.gz" -C apps/fraia-electron
+
+      - name: Set unpublished simulation version
+        if: ${{ needs.prepare.outputs.simulation == 'true' }}
+        working-directory: apps/fraia-electron
+        run: npm version '${{ needs.prepare.outputs.version }}' --no-git-tag-version --allow-same-version
 
       - name: Build Linux packages
         working-directory: apps/fraia-electron

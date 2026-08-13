@@ -190,6 +190,7 @@ test('manual release simulation reuses candidate qualification and cannot publis
   assert.doesNotMatch(workflow, /workflow_call:/);
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /simulation_previous_version:/);
+  assert.match(workflow, /simulation_candidate_version:/);
   assert.match(workflow, /needs\.prepare\.outputs\.simulation != 'true'/);
   assert.match(workflow, /github\.event_name == 'push'/);
   assert.match(workflow, /Report non-publishing release simulation/);
@@ -270,6 +271,7 @@ test('release packages reuse one validated renderer and one native sidecar per t
     assert.match(source, /fraia-packaging-\$\{\{ runner\.os \}\}-\$\{\{ runner\.arch \}\}-node24-/);
     assert.match(source, /steps\.packaging-dependencies\.outputs\.cache-hit != 'true'/);
     assert.match(source, /Download reviewed native sidecar/);
+    if (job !== 'package-macos') assert.match(source, /Set unpublished simulation version/);
     if (job === 'package-windows') {
       assert.match(source, /cygpath -u "\$RUNNER_TEMP"/);
     } else {
