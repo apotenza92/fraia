@@ -1,0 +1,79 @@
+name: macOS release candidate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fraia-macos-release-candidate
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate candidate source
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require main branch
+        env:
+          CANDIDATE_REF: ${{ github.ref_name }}
+        run: test "$CANDIDATE_REF" = main
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require aligned releasable version and notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          ELECTRON_VERSION=$(node -p "require('./apps/fraia-electron/package.json').version")
+          CARGO_VERSION=$(sed -n '/\[workspace.package\]/,/^\[/p' Cargo.toml | sed -n 's/^version = "\([^"]*\)"/\1/p' | head -1)
+          test "$ELECTRON_VERSION" = "$CARGO_VERSION"
+          node apps/fraia-electron/scripts/changelog.cjs --version "$ELECTRON_VERSION" --output /tmp/fraia-release-notes.md
+
+  stable:
+    needs: validate
+    uses: ./.github/workflows/macos-signing-audit.yml
+    with:
+      channel: stable
+    secrets: inherit
+
+  beta:
+    needs: validate
+    uses: ./.github/workflows/macos-signing-audit.yml
+    with:
+      channel: beta
+    secrets: inherit
+
+  seal:
+    name: Seal exact macOS candidate
+    needs: [validate, stable, beta]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download all signed candidates
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: fraia-*-darwin-*
+          path: candidate
+      - name: Create exact source and digest manifest
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./apps/fraia-electron/package.json').version")
+          node apps/fraia-electron/scripts/macos-candidate-manifest.cjs create \
+            --root candidate \
+            --repository "${{ github.repository }}" \
+            --commit "${{ github.sha }}" \
+            --version "$VERSION" \
+            --output macos-candidate-manifest.json
+      - name: Upload sealed candidate manifest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fraia-macos-candidate-manifest
+          path: macos-candidate-manifest.json
+          if-no-files-found: error
+          retention-days: 14

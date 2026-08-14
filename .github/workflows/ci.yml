@@ -70,7 +70,6 @@ jobs:
       channel: ${{ inputs.release_channel }}
       target: ${{ inputs.nonmac_updater_target }}
       previous_version: ${{ inputs.nonmac_updater_previous_version }}
-
   deterministic:
     name: Deterministic repository checks
     runs-on: ubuntu-24.04

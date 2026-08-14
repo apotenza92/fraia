@@ -43,6 +43,14 @@ const tufSigningAudit = fs.readFileSync(
   path.join(repositoryRoot, '.github', 'workflows', 'tuf-signing-audit.yml'),
   'utf8',
 );
+const macosReleaseCandidate = fs.readFileSync(
+  path.join(repositoryRoot, '.github', 'workflows', 'macos-release-candidate.yml'),
+  'utf8',
+);
+const macosSigningAudit = fs.readFileSync(
+  path.join(repositoryRoot, '.github', 'workflows', 'macos-signing-audit.yml'),
+  'utf8',
+);
 const mainProcess = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
 const changelog = fs.readFileSync(path.join(repositoryRoot, 'CHANGELOG.md'), 'utf8');
 
@@ -142,7 +150,7 @@ test('updater resolution uses the exact highest-SemVer feed predecessor across r
 
 test('stable-inclusive and beta releases are owner-authorized tags and native on six solver-backed targets', () => {
   assert.match(workflow, /tags:\n\s+- 'v\*'/);
-  assert.doesNotMatch(workflow, /workflow_dispatch/);
+  assert.match(workflow, /workflow_dispatch:/);
   for (const runner of ['macos-15', 'macos-15-intel', 'windows-11-arm', 'windows-2025', 'ubuntu-24.04', 'ubuntu-24.04-arm']) {
     assert.match(workflow, new RegExp(runner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
@@ -186,6 +194,32 @@ test('stable-inclusive and beta releases are owner-authorized tags and native on
   assert.match(macVerifier, /reviewed macOS 15\.0 minimum/);
 });
 
+test('manual release simulation reuses candidate qualification and cannot publish', () => {
+  assert.doesNotMatch(workflow, /workflow_call:/);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /simulation_previous_version:/);
+  assert.match(workflow, /simulation_candidate_version:/);
+  assert.match(workflow, /needs\.prepare\.outputs\.simulation != 'true'/);
+  assert.match(workflow, /github\.event_name == 'push'/);
+  assert.match(workflow, /Report non-publishing release simulation/);
+  assert.match(jobSource('package-macos'), /needs\.prepare\.outputs\.simulation != 'true'/);
+  assert.match(jobSource('test-nonmac-updater'), /if: \$\{\{ needs\.prepare\.outputs\.simulation != 'true' \}\}/);
+  assert.match(jobSource('simulation-complete'), /needs: \[prepare, package-windows, package-linux\]/);
+});
+
+test('routine updater qualification reuses exact candidates and public predecessors', () => {
+  const macosUpdater = jobSource('test-macos-updater');
+  const nonmacUpdater = jobSource('test-nonmac-updater');
+  assert.match(macosUpdater, /scenario: \[valid\]/);
+  assert.doesNotMatch(macosUpdater, /corrupt|signature/);
+  assert.match(nonmacUpdater, /needs: \[prepare, package-windows, package-linux\]/);
+  assert.match(nonmacUpdater, /candidate_artifact_name: fraia-/);
+  assert.match(nonmacUpdaterAudit, /Download exact release candidate/);
+  assert.match(nonmacUpdaterAudit, /gh release download "v\$\{\{ inputs\.previous_version \}\}"/);
+  assert.match(nonmacUpdaterAudit, /sha256sum --check --strict/);
+  assert.match(nonmacUpdaterAudit, /if: \$\{\{ inputs\.candidate_artifact_name == '' \}\}/);
+});
+
 test('canonical Apple credentials are isolated from build and followed by credential-free verification', () => {
   for (const name of [
     'APPLE_SIGNING_CERTIFICATE_P12_BASE64', 'APPLE_SIGNING_CERTIFICATE_PASSWORD',
@@ -219,7 +253,7 @@ test('private-source and package prerequisites fail before any secret-bearing jo
   assert.match(validate, /test -f build\/icon\.icns/);
   assert.match(validate, /verify-calculix-runtimes\.cjs --all --skip-dependency-inspection/);
   assert.doesNotMatch(validate, /secrets\.|^    environment:/m);
-  assert.match(packageMacos, /needs: \[prepare, validate, build-sidecar\]/);
+  assert.match(packageMacos, /needs: \[prepare, resolve-macos-candidate, validate, build-sidecar\]/);
   assert.match(packageMacos, /environment: release-signing/);
   assert.match(packageMacos, /secrets\.APPLE_SIGNING_CERTIFICATE_P12_BASE64/);
   assert.match(validate, /npm run check:icons/);
@@ -231,17 +265,58 @@ test('release packages reuse one validated renderer and one native sidecar per t
   const validate = jobSource('validate');
   const sidecars = jobSource('build-sidecar');
   assert.match(validate, /name: fraia-validated-renderer/);
+  assert.match(sidecars, /needs: prepare/);
   assert.match(sidecars, /name: Native sidecar \$\{\{ matrix\.platform \}\} \$\{\{ matrix\.arch \}\}/);
+  assert.match(sidecars, /Swatinem\/rust-cache@[a-f0-9]{40}/);
+  assert.match(sidecars, /shared-key: release-\$\{\{ matrix\.platform \}\}-\$\{\{ matrix\.arch \}\}/);
   assert.equal((sidecars.match(/platform: (?:darwin|win32|linux)/g) || []).length, 6);
-  assert.match(sidecars, /tar -czf "\$RUNNER_TEMP\/native-sidecar\.tar\.gz"/);
+  assert.match(sidecars, /cygpath -u "\$RUNNER_TEMP"/);
+  assert.match(sidecars, /tar -czf "\$ARCHIVE_ROOT\/native-sidecar\.tar\.gz"/);
   for (const job of ['package-macos', 'package-windows', 'package-linux']) {
     const source = jobSource(job);
-    assert.match(source, /needs: \[prepare, validate, build-sidecar\]/);
+    if (job === 'package-macos') {
+      assert.match(source, /needs: \[prepare, resolve-macos-candidate, validate, build-sidecar\]/);
+    } else {
+      assert.match(source, /needs: \[prepare, validate, build-sidecar\]/);
+    }
     assert.match(source, /name: fraia-validated-renderer/);
+    assert.match(source, /actions\/cache@[a-f0-9]{40}/);
+    assert.match(source, /fraia-packaging-\$\{\{ runner\.os \}\}-\$\{\{ runner\.arch \}\}-node24-/);
+    assert.match(source, /steps\.packaging-dependencies\.outputs\.cache-hit != 'true'/);
     assert.match(source, /Download reviewed native sidecar/);
-    assert.match(source, /tar -xzf "\$RUNNER_TEMP\/native-sidecar\/native-sidecar\.tar\.gz"/);
+    if (job !== 'package-macos') assert.match(source, /Set unpublished simulation version/);
+    if (job !== 'package-macos') assert.match(source, /FRAIA_RELEASE_NOTES_VERSION:/);
+    if (job === 'package-windows') {
+      assert.match(source, /cygpath -u "\$RUNNER_TEMP"/);
+    } else {
+      assert.match(source, /tar -xzf "\$RUNNER_TEMP\/native-sidecar\/native-sidecar\.tar\.gz"/);
+    }
     assert.doesNotMatch(source, /npm run build(?:\s|$)|npm run build:sidecar/);
   }
+});
+
+test('macOS release candidates are exact, sealed, private, and safely optional', () => {
+  const resolve = jobSource('resolve-macos-candidate');
+  const imported = jobSource('import-macos-candidate');
+  const ready = jobSource('macos-candidates-ready');
+  assert.match(macosReleaseCandidate, /workflow_dispatch:/);
+  assert.match(macosReleaseCandidate, /run: test "\$CANDIDATE_REF" = main/);
+  assert.match(macosReleaseCandidate, /uses: \.\/\.github\/workflows\/macos-signing-audit\.yml/g);
+  assert.match(macosReleaseCandidate, /channel: stable/);
+  assert.match(macosReleaseCandidate, /channel: beta/);
+  assert.match(macosReleaseCandidate, /macos-candidate-manifest\.cjs create/);
+  assert.doesNotMatch(macosReleaseCandidate, /gh release|contents: write/);
+  assert.match(macosSigningAudit, /Assemble reusable signed candidate/);
+  assert.match(macosSigningAudit, /Verify signatures, notarization, Gatekeeper, launch, and solver without credentials/);
+  assert.match(resolve, /head_sha == \\"\$RELEASE_SHA\\"/);
+  assert.match(resolve, /expired == false/);
+  assert.match(resolve, /reuse=false/);
+  assert.match(imported, /macos-candidate-manifest\.cjs verify/);
+  assert.match(imported, /--commit "\$\{\{ github\.sha \}\}"/);
+  assert.match(imported, /--version "\$\{\{ needs\.prepare\.outputs\.version \}\}"/);
+  assert.match(ready, /BUILT_RESULT/);
+  assert.match(ready, /IMPORTED_RESULT/);
+  assert.match(jobSource('package-macos'), /needs\.resolve-macos-candidate\.outputs\.reuse != 'true'/);
 });
 
 test('large release assets bypass updater-feed signing and public feed comparison', () => {
@@ -473,6 +548,7 @@ test('native updater menu exposes manual checking and every supported persisted 
 test('application menu delegates reload and whole-window zoom shortcuts to Electron roles', () => {
   for (const role of ['reload', 'forceReload', 'resetZoom', 'zoomIn', 'zoomOut', 'togglefullscreen']) {
     assert.match(mainProcess, new RegExp(`role: ['"]${role}['"]`));
+    assert.doesNotMatch(mainProcess, new RegExp(`role: ['"]${role}['"][^}]*accelerator`));
   }
   const explicitCommandAccelerators = [...mainProcess.matchAll(
     /accelerator:\s*['"]((?:Cmd|Command|Ctrl|Control)[^'"]*)['"]/g,

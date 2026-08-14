@@ -414,6 +414,9 @@ test('desktop shell keeps blank conversation truthful and preserves project file
     }
     const transcriptViewport = page.locator('[data-slot="message-scroller-viewport"]');
     await expect(transcriptViewport).toBeVisible();
+    await transcriptViewport.evaluate((element) => {
+      element.style.height = '300px';
+    });
     await expect.poll(() => transcriptViewport.evaluate((element) => ({
       clientHeight: element.clientHeight,
       scrollHeight: element.scrollHeight,

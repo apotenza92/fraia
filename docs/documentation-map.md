@@ -20,6 +20,7 @@ This map identifies the maintained source for each documentation concern. Update
 
 ## Focused supporting documents
 
+- [`desktop-release-system.md`](desktop-release-system.md) — desktop release preparation, macOS candidates, tag publication, and safe fallback behavior.
 - [`primitives-and-archetypes.md`](primitives-and-archetypes.md) — primitive and archetype concepts.
 - [`frames-and-connectivity.md`](frames-and-connectivity.md) — frames, placements, ports, connectivity, supports, and releases.
 - [`validation-and-diagnostics.md`](validation-and-diagnostics.md) — validation layers and diagnostic semantics.

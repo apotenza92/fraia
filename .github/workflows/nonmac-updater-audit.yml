@@ -16,6 +16,11 @@ on:
         description: Synthetic installed version for the N-1 migration test
         required: true
         type: string
+      candidate_artifact_name:
+        description: Exact candidate artifact from the calling release workflow
+        required: false
+        type: string
+        default: ''
   workflow_dispatch:
     inputs:
       channel:
@@ -84,15 +89,44 @@ jobs:
         if: ${{ startsWith(inputs.target, 'linux-') }}
         run: sudo apt-get update && sudo apt-get install -y libfuse2t64 xvfb
 
-      - name: Install, build, and require the reviewed runtime
+      - name: Install tools and require the reviewed runtime
         working-directory: apps/fraia-electron
         shell: bash
         run: |
           set -euo pipefail
           npm ci
-          npm run build
-          npm run build:sidecar
           node scripts/verify-calculix-runtimes.cjs --target '${{ inputs.target }}'
+
+      - name: Download exact release candidate
+        if: ${{ inputs.candidate_artifact_name != '' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.candidate_artifact_name }}
+          path: candidate
+
+      - name: Download exact public N-1 package
+        if: ${{ inputs.candidate_artifact_name != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          channel='${{ inputs.channel }}'
+          platform='${{ startsWith(inputs.target, 'win32-') && 'win32' || 'linux' }}'
+          arch='${{ endsWith(inputs.target, '-arm64') && 'arm64' || 'x64' }}'
+          prefix=$(node -p "require('./apps/fraia-electron/release-contract.cjs').releaseContract({channel: '$channel', platform: '$platform', arch: '$arch'}).artifactPrefix")
+          if [ "$platform" = win32 ]; then
+            asset="$prefix-Windows-${arch}-Setup.exe"
+          else
+            asset="$prefix-Linux-${arch}.AppImage"
+          fi
+          mkdir previous
+          gh release download "v${{ inputs.previous_version }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "$asset" \
+            --pattern SHA256SUMS \
+            --dir previous
+          (cd previous && grep "  $asset$" SHA256SUMS | sha256sum --check --strict -)
 
       - name: Create disposable loopback-only TUF trust
         working-directory: apps/fraia-electron
@@ -109,6 +143,7 @@ jobs:
             --private-key '${{ runner.temp }}/fraia-updater-trust/private-key.pem'
 
       - name: Build previous and candidate packages
+        if: ${{ inputs.candidate_artifact_name == '' }}
         working-directory: apps/fraia-electron
         shell: bash
         env:
@@ -172,24 +207,34 @@ jobs:
           platform='${{ startsWith(inputs.target, 'win32-') && 'win32' || 'linux' }}'
           arch='${{ endsWith(inputs.target, '-arm64') && 'arm64' || 'x64' }}'
           prefix=$(node -p "require('./release-contract.cjs').releaseContract({channel: '$channel', platform: '$platform', arch: '$arch'}).artifactPrefix")
+          if [ -n '${{ inputs.candidate_artifact_name }}' ]; then
+            previous_root="$GITHUB_WORKSPACE/previous"
+            candidate_assets_root="$GITHUB_WORKSPACE/candidate/assets"
+            candidate_metadata="$candidate_assets_root/update-$channel-$platform-$arch.yml"
+          else
+            previous_root="$PWD/ci-updater/previous"
+            candidate_assets_root="$PWD/ci-updater/candidate"
+          fi
           if [ "$FRAIA_AUDIT_PLATFORM" = win32 ]; then
+            if [ -z '${{ inputs.candidate_artifact_name }}' ]; then candidate_metadata="$candidate_assets_root/latest.yml"; fi
             node scripts/test-nonmac-update.cjs \
               --channel "$channel" \
               --arch "$arch" \
-              --previous-artifact "ci-updater/previous/$prefix-Windows-${arch}-Setup.exe" \
-              --candidate-directory ci-updater/candidate \
-              --candidate-metadata ci-updater/candidate/latest.yml \
+              --previous-artifact "$previous_root/$prefix-Windows-${arch}-Setup.exe" \
+              --candidate-directory "$candidate_assets_root" \
+              --candidate-metadata "$candidate_metadata" \
               --root build/update-trust/root.json \
               --private-key '${{ runner.temp }}/fraia-updater-trust/private-key.pem' \
               --evidence '${{ runner.temp }}/fraia-updater-evidence'
           else
             metadata='${{ inputs.target == 'linux-arm64' && 'latest-linux-arm64.yml' || 'latest-linux.yml' }}'
+            if [ -z '${{ inputs.candidate_artifact_name }}' ]; then candidate_metadata="$candidate_assets_root/$metadata"; fi
             xvfb-run -a node scripts/test-nonmac-update.cjs \
               --channel "$channel" \
               --arch "$arch" \
-              --previous-artifact "ci-updater/previous/$prefix-Linux-${arch}.AppImage" \
-              --candidate-directory ci-updater/candidate \
-              --candidate-metadata "ci-updater/candidate/${metadata}" \
+              --previous-artifact "$previous_root/$prefix-Linux-${arch}.AppImage" \
+              --candidate-directory "$candidate_assets_root" \
+              --candidate-metadata "$candidate_metadata" \
               --root build/update-trust/root.json \
               --private-key '${{ runner.temp }}/fraia-updater-trust/private-key.pem' \
               --evidence '${{ runner.temp }}/fraia-updater-evidence'

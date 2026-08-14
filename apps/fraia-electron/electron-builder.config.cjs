@@ -22,7 +22,7 @@ const contract = releaseContract({
 });
 const releaseNotes = readReleaseNotes({
   changelogPath: path.resolve(__dirname, '..', '..', 'CHANGELOG.md'),
-  version: packageMetadata.version,
+  version: process.env.FRAIA_RELEASE_NOTES_VERSION || packageMetadata.version,
 });
 const hasSigningKeychain = Boolean(process.env.CSC_KEYCHAIN);
 const assistedNsisMigrationFixture = process.env.FRAIA_E2E_UPDATER === '1'
