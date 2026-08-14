@@ -302,6 +302,84 @@ fn concurrent_atomic_appends_have_one_success_and_one_expected_head_conflict() {
 }
 
 #[test]
+fn online_backup_captures_active_wal_and_reopens_with_exact_lineage() {
+    let directory = tempdir().unwrap();
+    let source_path = directory.path().join("live.sqlite");
+    let target_path = directory.path().join("relocated.sqlite");
+    let fixture = root_fixture();
+    let root_snapshot = ModelSnapshot::capture(fixture.model.clone()).unwrap();
+    let mut child_model = fixture.model;
+    child_model.nodes[0].x = 0.75;
+    let child_snapshot = ModelSnapshot::capture(child_model).unwrap();
+    let root_snapshot = stored_model(&root_snapshot);
+    let child_snapshot = stored_model(&child_snapshot);
+
+    let mut source = SqliteRevisionRepository::open(&source_path).unwrap();
+    source
+        .create_project(project_root(
+            "project-a",
+            "overall",
+            "r0",
+            root_snapshot.clone(),
+        ))
+        .unwrap();
+    source
+        .append_revision_with_snapshot(
+            &child_revision("r1", &child_snapshot, "r0", "overall"),
+            &child_snapshot,
+            &RevisionId::from("r0"),
+        )
+        .unwrap();
+
+    let wal_path = std::path::PathBuf::from(format!("{}-wal", source_path.display()));
+    assert!(wal_path.exists(), "source must remain open in WAL mode");
+    assert!(std::fs::metadata(&wal_path).unwrap().len() > 0);
+
+    source.backup_to_path(&target_path).unwrap();
+    assert!(target_path.exists());
+
+    let relocated = SqliteRevisionRepository::open(&target_path).unwrap();
+    assert_eq!(
+        relocated
+            .conversation(&ConversationId::from("overall"))
+            .unwrap()
+            .head_revision_id,
+        RevisionId::from("r1")
+    );
+    assert_eq!(
+        relocated
+            .history(&ConversationId::from("overall"))
+            .unwrap()
+            .iter()
+            .map(|revision| revision.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["r1", "r0"]
+    );
+    assert_eq!(
+        relocated
+            .hydrate_snapshot(&child_snapshot.id)
+            .unwrap()
+            .model()
+            .nodes[0]
+            .x,
+        0.75
+    );
+    assert_eq!(
+        relocated
+            .project_root(&ProjectId::from("project-a"))
+            .unwrap()
+            .root_snapshot,
+        root_snapshot
+    );
+
+    let error = source.backup_to_path(&target_path).unwrap_err();
+    assert!(matches!(
+        error,
+        SqliteRepositoryError::BackupTargetExists(path) if path == target_path
+    ));
+}
+
+#[test]
 fn conversations_cannot_point_at_a_revision_from_another_project() {
     let mut repository = SqliteRevisionRepository::open_in_memory().unwrap();
     repository

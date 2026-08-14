@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const connectedQualification = require('./fixtures/connected-qualification-request.json');
 
 const {
   FakeFraiaAiRuntime,
@@ -80,18 +81,20 @@ test('non-persistent store exposes no credentials and refuses writes', async () 
   await assert.rejects(() => store.modify('provider', async () => ({ type: 'api_key', key: 'secret' })), /persistent authentication is disabled/);
 });
 
-test('runtime closes active HTTP connections before waiting for server shutdown', async () => {
+test('runtime stops accepting AI connections before closing active HTTP connections', async () => {
   const runtime = new FraiaAiRuntime({ safeStorage: fakeSafeStorage(), userDataDir: '/tmp/fraia-unused' });
+  let serverCloseStarted = false;
   let activeConnectionsClosed = false;
   let serverClosed = false;
   runtime.server = {
     closeAllConnections() {
+      assert.equal(serverCloseStarted, true);
       activeConnectionsClosed = true;
     },
     close(callback) {
-      assert.equal(activeConnectionsClosed, true);
+      serverCloseStarted = true;
       serverClosed = true;
-      callback();
+      queueMicrotask(() => callback());
     },
   };
 
@@ -153,6 +156,14 @@ test('renderer bridge exposes no API-key or model-setting mutation', () => {
 
   assert.doesNotMatch(preload, /aiSubmitApiKey|agentUpdateSettings/);
   assert.doesNotMatch(main, /ipcMain\.handle\(['"]fraia:(?:aiSubmitApiKey|agentUpdateSettings)/);
+});
+
+test('renderer bridge exposes no legacy direct base-model mutation', () => {
+  const preload = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+
+  assert.doesNotMatch(preload, /editBaseModel|fraia:editBaseModel/);
+  assert.doesNotMatch(main, /fraia:editBaseModel|projects\/base-model\/edit/);
 });
 
 test('structured schema conversion supports nullable enums', async () => {
@@ -246,7 +257,7 @@ test('catalogue describes the reviewed ChatGPT OAuth provider and Luna model', a
   assert.equal(result.providers[0].authState, 'connected');
   assert.equal(result.models[0].modelId, 'gpt-5.6-luna');
   assert.equal(result.models[0].available, true);
-  assert.equal(result.models[0].defaultReasoningLevel, 'low');
+  assert.equal(result.models[0].defaultReasoningLevel, 'high');
 });
 
 test('OAuth flow automatically chooses browser login, opens its URL, and keeps the manual fallback out of Fraia', async (t) => {
@@ -341,7 +352,7 @@ test('catalogue refresh retains stale state and diagnostics after an offline fai
   assert.equal(result.models[0].available, false);
 });
 
-async function structuredRuntime({ behavior = 'valid', turnTimeoutMs = 500 } = {}) {
+async function structuredRuntime({ behavior = 'valid', turnTimeoutMs = 500, turnHeartbeatMs = 5_000 } = {}) {
   const Type = (await import('typebox')).Type;
   let promptCalls = 0;
   let rejectPending;
@@ -377,7 +388,14 @@ async function structuredRuntime({ behavior = 'valid', turnTimeoutMs = 500 } = {
       reset() {}
     },
   };
-  const runtime = new FraiaAiRuntime({ safeStorage: fakeSafeStorage(), userDataDir: '/tmp/fraia-structured-runtime', turnTimeoutMs });
+  const events = [];
+  const runtime = new FraiaAiRuntime({
+    safeStorage: fakeSafeStorage(),
+    userDataDir: '/tmp/fraia-structured-runtime',
+    turnTimeoutMs,
+    turnHeartbeatMs,
+    emitStatus: (event) => events.push(event),
+  });
   runtime.pi = pi;
   runtime.Type = Type;
   runtime.catalogRefreshedAt = '2026-07-22T00:00:00Z';
@@ -388,7 +406,7 @@ async function structuredRuntime({ behavior = 'valid', turnTimeoutMs = 500 } = {
       throw new Error('The fake Agent must not call the production stream.');
     },
   };
-  return { runtime, promptCalls: () => promptCalls };
+  return { runtime, events, promptCalls: () => promptCalls };
 }
 
 test('structured turns use only the reviewed ChatGPT Luna contract', async () => {
@@ -397,7 +415,7 @@ test('structured turns use only the reviewed ChatGPT Luna contract', async () =>
     requestId: 'turn-luna',
     providerId: 'openai-codex',
     modelId: 'gpt-5.6-luna',
-    reasoningEffort: 'low',
+    reasoningEffort: 'high',
     prompt: 'Return structured data',
     responseSchema: {
       type: 'object',
@@ -408,14 +426,18 @@ test('structured turns use only the reviewed ChatGPT Luna contract', async () =>
   });
   assert.deepEqual(result.output, { message: 'Structured result' });
   assert.equal(result.providerId, 'openai-codex');
+  assert.deepEqual(
+    runtime.activeTurns.size,
+    0,
+  );
   await assert.rejects(() => runtime.runTurn({
     requestId: 'turn-unreviewed',
     providerId: 'anthropic',
     modelId: 'claude-opus',
-    reasoningEffort: 'low',
+    reasoningEffort: 'high',
     prompt: 'Return structured data',
     responseSchema: { type: 'object', properties: {}, required: [] },
-  }), /supports only openai-codex\/gpt-5.6-luna with low reasoning/);
+  }), /supports only openai-codex\/gpt-5.6-luna with high reasoning/);
 });
 
 test('structured turns make one corrective attempt and reject missing tool results', async () => {
@@ -424,7 +446,7 @@ test('structured turns make one corrective attempt and reject missing tool resul
     requestId: 'turn-corrective',
     providerId: 'openai-codex',
     modelId: 'gpt-5.6-luna',
-    reasoningEffort: 'low',
+    reasoningEffort: 'high',
     prompt: 'Return structured data',
     responseSchema: { type: 'object', properties: { message: { type: 'string' } }, required: ['message'] },
   });
@@ -436,33 +458,83 @@ test('structured turns make one corrective attempt and reject missing tool resul
     requestId: 'turn-invalid',
     providerId: 'openai-codex',
     modelId: 'gpt-5.6-luna',
-    reasoningEffort: 'low',
+    reasoningEffort: 'high',
     prompt: 'Return structured data',
     responseSchema: { type: 'object', properties: {}, required: [] },
   }), /did not submit a valid structured Fraia response/);
   assert.equal(invalid.promptCalls(), 2);
 });
 
-test('structured turns surface provider failures and enforce the configured timeout', async () => {
+test('structured turns emit one truthful terminal state for failure and timeout', async () => {
   const providerFailure = await structuredRuntime({ behavior: 'provider-error' });
   await assert.rejects(() => providerFailure.runtime.runTurn({
     requestId: 'turn-provider-error',
     providerId: 'openai-codex',
     modelId: 'gpt-5.6-luna',
-    reasoningEffort: 'low',
+    reasoningEffort: 'high',
     prompt: 'Return structured data',
     responseSchema: { type: 'object', properties: {}, required: [] },
   }), /provider unavailable/);
+  assert.deepEqual(
+    providerFailure.events.filter((event) => ['completed', 'failed', 'cancelled', 'timed_out'].includes(event.state)).map((event) => event.state),
+    ['failed'],
+  );
 
-  const timeout = await structuredRuntime({ behavior: 'timeout', turnTimeoutMs: 5 });
+  const timeout = await structuredRuntime({ behavior: 'timeout', turnTimeoutMs: 10, turnHeartbeatMs: 2 });
   await assert.rejects(() => timeout.runtime.runTurn({
     requestId: 'turn-timeout',
     providerId: 'openai-codex',
     modelId: 'gpt-5.6-luna',
-    reasoningEffort: 'low',
+    reasoningEffort: 'high',
     prompt: 'Return structured data',
     responseSchema: { type: 'object', properties: {}, required: [] },
-  }), /cancelled/);
+  }), /timed out/);
+  assert.equal(timeout.events.some((event) => event.state === 'working' && event.liveness === true), true);
+  assert.deepEqual(
+    timeout.events.filter((event) => ['completed', 'failed', 'cancelled', 'timed_out'].includes(event.state)).map((event) => event.state),
+    ['timed_out'],
+  );
+});
+
+test('structured turns enforce the caller shared absolute deadline', async () => {
+  const timeout = await structuredRuntime({ behavior: 'timeout', turnTimeoutMs: 500 });
+  const startedAt = Date.now();
+  await assert.rejects(() => timeout.runtime.runTurn({
+    requestId: 'turn-shared-deadline-correction',
+    providerId: 'openai-codex',
+    modelId: 'gpt-5.6-luna',
+    reasoningEffort: 'high',
+    deadlineAtUnixMs: startedAt + 12,
+    prompt: 'Return corrected structured data within the original turn deadline',
+    responseSchema: { type: 'object', properties: {}, required: [] },
+  }), /timed out/);
+  assert.ok(Date.now() - startedAt < 250, 'the request must not receive a fresh 500 ms budget');
+  assert.deepEqual(
+    timeout.events.filter((event) => ['completed', 'failed', 'cancelled', 'timed_out'].includes(event.state)).map((event) => event.state),
+    ['timed_out'],
+  );
+});
+
+test('production turn cancellation rejects late completion and active request-id reuse', async () => {
+  const cancelled = await structuredRuntime({ behavior: 'timeout', turnTimeoutMs: 500 });
+  const request = {
+    requestId: 'turn-cancelled',
+    scopeId: 'design-cancelled',
+    providerId: 'openai-codex',
+    modelId: 'gpt-5.6-luna',
+    reasoningEffort: 'high',
+    prompt: 'Return structured data',
+    responseSchema: { type: 'object', properties: {}, required: [] },
+  };
+  const pending = cancelled.runtime.runTurn(request);
+  await new Promise((resolve) => setImmediate(resolve));
+  await assert.rejects(() => cancelled.runtime.runTurn(request), /already active/);
+  assert.equal(await cancelled.runtime.cancelTurnsForScope('design-cancelled'), 1);
+  await assert.rejects(() => pending, /cancelled/);
+  assert.deepEqual(
+    cancelled.events.filter((event) => ['completed', 'failed', 'cancelled', 'timed_out'].includes(event.state)).map((event) => event.state),
+    ['cancelled'],
+  );
 });
 
 test('fake Pi runtime covers encrypted reconnect without OS encryption, structured turns, cancellation, and restart', async (t) => {
@@ -483,7 +555,7 @@ test('fake Pi runtime covers encrypted reconnect without OS encryption, structur
     requestId: 'turn-complete',
     providerId: 'openai-codex',
     modelId: 'gpt-5.6-luna',
-    reasoningEffort: 'low',
+    reasoningEffort: 'high',
     prompt: 'Return a result',
     responseSchema: {
       type: 'object',
@@ -494,18 +566,135 @@ test('fake Pi runtime covers encrypted reconnect without OS encryption, structur
   });
   assert.deepEqual(result.output, { message: 'Fake Pi response' });
 
+  const typed = await runtime.runTurn({
+    requestId: 'turn-typed-proposal',
+    providerId: 'openai-codex',
+    modelId: 'gpt-5.6-luna',
+    reasoningEffort: 'high',
+    prompt: 'FRAIA_FAKE_TYPED_PROPOSAL_REQUEST {"acceptedHeadRevisionId":"exact-head","acceptedSnapshotId":"exact-snapshot","selectedDesignReferenceIds":["reference-1"],"drawingInterpretationRevisionIds":["interpretation-1"],"inferredDrawingAssumptionIds":["interpretation-1:inference:grid-a"],"inferredDrawingAssumptions":["Inferred drawing candidate interpretation-1:inference:grid-a has confidence 0.900, requires confirmation, and is not a confirmed fact."]}',
+    responseSchema: { type: 'object', properties: {}, required: [] },
+  });
+  assert.equal(typed.output.proposal.parentRevisionId, 'exact-head');
+  assert.equal(typed.output.proposal.expectedSnapshotId, 'exact-snapshot');
+  assert.deepEqual(typed.output.proposal.shelfItemIds, ['reference-1']);
+  assert.deepEqual(typed.output.proposal.drawingInterpretationRevisionIds, ['interpretation-1']);
+  assert.deepEqual(typed.output.proposal.drawingInterpretationInferenceIds, [
+    'interpretation-1:inference:grid-a',
+  ]);
+  assert.equal(
+    typed.output.proposal.assumptions.includes(
+      'Inferred drawing candidate interpretation-1:inference:grid-a has confidence 0.900, requires confirmation, and is not a confirmed fact.',
+    ),
+    true,
+  );
+  assert.match(typed.output.proposal.evidenceLimits[0], /requires confirmation/);
+  assert.equal(typed.output.proposal.operations.some((operation) => operation.kind === 'add_member'), true);
+  assert.deepEqual(
+    typed.output.proposal.operations.filter((operation) => operation.kind === 'add_support').map((operation) => operation.targetNode),
+    ['test-left', 'test-right'],
+  );
+  assert.deepEqual(
+    events.filter((event) => event.requestId === 'turn-typed-proposal').map((event) => event.state),
+    ['sending', 'working', 'checking', 'completed'],
+  );
+
+  process.env.FRAIA_FAKE_AI_MALFORMED_FIRST_RESPONSE = '1';
+  try {
+    // This keeps the same sorted key shape emitted by serde_json in appd. The
+    // contract key follows nested objects, so the parser must find the outer
+    // context object rather than the nearest opening brace.
+    const exactContext = JSON.stringify({
+      acceptedHeadRevisionId: 'exact-head',
+      acceptedSemanticModel: { nodes: [], members: [] },
+      acceptedSnapshotId: 'exact-snapshot',
+      confirmedDrawingInterpretations: [{ revisionId: 'interpretation-1', confirmedConstraints: [] }],
+      confirmedFacts: { buildingType: 'house' },
+      contract: 'fraia.conversation-agent.v1',
+      drawingInterpretationRevisionIds: ['interpretation-1'],
+      inferredDrawingAssumptionIds: ['interpretation-1:inference:grid-a'],
+      inferredDrawingAssumptions: ['Candidate grid-a requires confirmation.'],
+      requestMarker: 'FRAIA_FAKE_TYPED_PROPOSAL_REQUEST',
+      selectedDesignReferenceIds: ['dxf-selection-1', 'ifc-selection-1', 'mesh-view-1'],
+      selectedConfirmedDesignReferences: [{ id: 'dxf-selection-1' }],
+    }, null, 2);
+    const malformed = await runtime.runTurn({
+      requestId: 'turn-malformed-first',
+      providerId: 'openai-codex',
+      modelId: 'gpt-5.6-luna',
+      reasoningEffort: 'high',
+      prompt: `Use this exact context.\n${exactContext}`,
+      responseSchema: { type: 'object', properties: {}, required: [] },
+    });
+    assert.equal(malformed.output.proposal.operations[3].nodeId, 'test-left');
+    assert.equal(malformed.output.proposal.operations[3].targetNode, undefined);
+    const corrected = await runtime.runTurn({
+      requestId: 'turn-malformed-first:schema-correction',
+      providerId: 'openai-codex',
+      modelId: 'gpt-5.6-luna',
+      reasoningEffort: 'high',
+      prompt: `Your previous response failed validation.\nExact schema:\n{"type":"object"}\nRejected response:\n{"proposal":{}}\nOriginal request:\nUse this exact context.\n${exactContext}`,
+      responseSchema: { type: 'object', properties: {}, required: [] },
+    });
+    assert.equal(corrected.output.proposal.operations[3].targetNode, 'test-left');
+    assert.equal(corrected.output.proposal.operations[3].nodeId, undefined);
+    assert.equal(corrected.output.proposal.parentRevisionId, 'exact-head');
+    assert.equal(corrected.output.proposal.expectedSnapshotId, 'exact-snapshot');
+    assert.deepEqual(corrected.output.proposal.shelfItemIds, ['dxf-selection-1', 'ifc-selection-1', 'mesh-view-1']);
+    assert.deepEqual(corrected.output.proposal.drawingInterpretationRevisionIds, ['interpretation-1']);
+    assert.deepEqual(corrected.output.proposal.drawingInterpretationInferenceIds, ['interpretation-1:inference:grid-a']);
+  } finally {
+    delete process.env.FRAIA_FAKE_AI_MALFORMED_FIRST_RESPONSE;
+  }
+
+  const conversational = await runtime.runTurn({
+    requestId: 'turn-conversational-no-proposal',
+    providerId: 'openai-codex',
+    modelId: 'gpt-5.6-luna',
+    reasoningEffort: 'high',
+    prompt: 'Discuss the current design without the explicit typed proposal test marker.',
+    responseSchema: {
+      type: 'object',
+      properties: {
+        responseId: { type: 'string' },
+        text: { type: 'string' },
+        questions: { type: 'array', items: { type: 'string' } },
+        proposal: { type: ['object', 'null'] },
+      },
+      required: ['responseId', 'text', 'questions'],
+    },
+  });
+  assert.match(conversational.output.text, /confirmed dimensions/);
+  assert.equal(conversational.output.proposal, undefined);
+
   process.env.FRAIA_FAKE_AI_TURN_DELAY_MS = '5000';
   const pending = runtime.runTurn({
     requestId: 'turn-cancel',
     providerId: 'openai-codex',
     modelId: 'gpt-5.6-luna',
-    reasoningEffort: 'low',
+    reasoningEffort: 'high',
     prompt: 'Wait',
     responseSchema: { type: 'object', properties: {}, required: [] },
   });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(await runtime.cancelTurn('turn-cancel'), true);
   await assert.rejects(() => pending, /cancelled/);
+  assert.deepEqual(
+    events.filter((event) => event.requestId === 'turn-cancel' && ['completed', 'failed', 'cancelled', 'timed_out'].includes(event.state)).map((event) => event.state),
+    ['cancelled'],
+  );
+
+  const scopedFirst = runtime.runTurn({
+    requestId: 'turn-scope-first', scopeId: 'design-a', providerId: 'openai-codex', modelId: 'gpt-5.6-luna', reasoningEffort: 'high', prompt: 'Wait', responseSchema: { type: 'object', properties: {}, required: [] },
+  });
+  const scopedSecond = runtime.runTurn({
+    requestId: 'turn-scope-second', scopeId: 'design-b', providerId: 'openai-codex', modelId: 'gpt-5.6-luna', reasoningEffort: 'high', prompt: 'Wait', responseSchema: { type: 'object', properties: {}, required: [] },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(await runtime.cancelTurnsForScope('design-a'), 1);
+  await assert.rejects(() => scopedFirst, /cancelled/);
+  assert.equal(runtime.activeTurns.has('turn-scope-second'), true);
+  assert.equal(await runtime.cancelTurn('turn-scope-second'), true);
+  await assert.rejects(() => scopedSecond, /cancelled/);
   delete process.env.FRAIA_FAKE_AI_TURN_DELAY_MS;
 
   const restarted = await new FakeFraiaAiRuntime(options).initialize();
@@ -513,4 +702,66 @@ test('fake Pi runtime covers encrypted reconnect without OS encryption, structur
   const encryptedCredential = fs.readFileSync(path.join(directory, 'ai', 'credentials.bin'));
   assert.equal(encryptedCredential.includes(Buffer.from('fake-chatgpt-access-token')), false);
   assert.equal(encryptedCredential.includes(Buffer.from('fake-chatgpt-refresh-token')), false);
+});
+
+test('connected qualification request has deterministic typed fake parity without a visible test marker', async (t) => {
+  assert.doesNotMatch(connectedQualification.request, /FRAIA_FAKE/);
+  for (const explicitFact of ['6 metre', 'beam', '250UB', 'steel', 'pinned support', 'roller support', 'Do not add loads']) {
+    assert.match(connectedQualification.request, new RegExp(explicitFact, 'i'));
+  }
+  const { directory } = temporaryFile();
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const runtime = await new FakeFraiaAiRuntime({ safeStorage: fakeSafeStorage(false), userDataDir: directory }).initialize();
+  await runtime.startOAuth('openai-codex');
+  const context = {
+    contract: 'fraia.conversation-agent.v1',
+    requestMarker: 'FRAIA_FAKE_TYPED_PROPOSAL_REQUEST',
+    acceptedHeadRevisionId: 'qualification-head',
+    acceptedSnapshotId: 'qualification-snapshot',
+    acceptedSemanticModel: { nodes: [], members: [] },
+    selectedDesignReferenceIds: [],
+    drawingInterpretationRevisionIds: [],
+    inferredDrawingAssumptionIds: [],
+    inferredDrawingAssumptions: [],
+    userText: connectedQualification.request,
+  };
+  const response = await runtime.runTurn({
+    requestId: 'connected-qualification-parity',
+    scopeId: 'qualification-design',
+    providerId: 'openai-codex',
+    modelId: 'gpt-5.6-luna',
+    reasoningEffort: 'high',
+    prompt: `Use this reviewed context.\n${JSON.stringify(context, null, 2)}`,
+    responseSchema: { type: 'object', properties: { responseId: {}, text: {}, proposal: {} }, required: [] },
+  });
+  assert.doesNotMatch(response.output.text, /FRAIA_FAKE/);
+  assert.deepEqual(response.output.proposal.operations, [
+    { kind: 'add_node', id: 'test-left', x: 0, y: 0, z: 0 },
+    { kind: 'add_node', id: 'test-right', x: 6, y: 0, z: 0 },
+    { kind: 'add_member', id: 'test-beam', startNode: 'test-left', endNode: 'test-right', role: 'beam', sectionId: '250UB', materialId: 'steel' },
+    { kind: 'add_support', id: 'test-left-support', targetNode: 'test-left', ux: true, uy: true, uz: true, rx: false, ry: false, rz: false },
+    { kind: 'add_support', id: 'test-right-support', targetNode: 'test-right', ux: false, uy: true, uz: true, rx: false, ry: false, rz: false },
+  ]);
+});
+
+test('opt-in connected conversation-agent qualification returns text and a typed proposal', {
+  skip: process.env.FRAIA_LIVE_AGENT_QUALIFICATION !== '1'
+    ? 'Set FRAIA_LIVE_AGENT_QUALIFICATION=1 with FRAIA_APPD_URL, FRAIA_APPD_TOKEN, and FRAIA_LIVE_AGENT_REQUEST_JSON.'
+    : false,
+}, async () => {
+  const appdUrl = process.env.FRAIA_APPD_URL;
+  const token = process.env.FRAIA_APPD_TOKEN;
+  const payload = JSON.parse(process.env.FRAIA_LIVE_AGENT_REQUEST_JSON || 'null');
+  assert.ok(appdUrl && token && payload, 'live qualification requires an active authenticated appd and exact request JSON');
+  const started = Date.now();
+  const response = await fetch(`${appdUrl.replace(/\/$/, '')}/conversations/agent/respond`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const body = await response.json();
+  assert.equal(response.ok, true, body.error || response.statusText);
+  assert.ok(Date.now() - started >= 50, 'connected turn must exhibit observable work time');
+  assert.ok(body.text?.trim().length >= 20, 'connected turn must return substantive conversational text');
+  assert.ok(body.proposal?.operations?.length > 0, 'connected turn must return a typed proposal');
 });

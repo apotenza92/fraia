@@ -1,0 +1,302 @@
+%PDF-1.3
+%‚„œ”
+1 0 obj
+<<
+/Producer (pypdf)
+>>
+endobj
+2 0 obj
+<<
+/Type /Pages
+/Count 3
+/Kids [ 4 0 R 9 0 R 11 0 R ]
+>>
+endobj
+3 0 obj
+<<
+/Type /Catalog
+/Pages 2 0 R
+>>
+endobj
+4 0 obj
+<<
+/Contents 5 0 R
+/MediaBox [ 0 0 1190.551 841.8898 ]
+/Resources <<
+/Font 6 0 R
+/ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>>
+/Rotate 0
+/Trans <<
+>>
+/Type /Page
+/Parent 2 0 R
+>>
+endobj
+5 0 obj
+<<
+/Length 2486
+>>
+stream
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+1 w
+n 24 24 1142.551 793.8898 re S
+n 24 72 m 1166.551 72 l S
+BT /F2 18 Tf 21.6 TL ET
+BT 1 0 0 1 42 42 Tm (GROUND FLOOR STRUCTURAL PLAN) Tj T* ET
+BT /F1 11 Tf 13.2 TL ET
+BT 1 0 0 1 880.5692 42 Tm (Drawing A101 | Scale 1:100 | Fraia deterministic fixture) Tj T* ET
+2 w
+n 150 180 760 470 re S
+n 150 180 m 150 650 l S
+n
+156 180 m
+156 183.3137 153.3137 186 150 186 c
+146.6863 186 144 183.3137 144 180 c
+144 176.6863 146.6863 174 150 174 c
+153.3137 174 156 176.6863 156 180 c
+S
+n
+156 650 m
+156 653.3137 153.3137 656 150 656 c
+146.6863 656 144 653.3137 144 650 c
+144 646.6863 146.6863 644 150 644 c
+153.3137 644 156 646.6863 156 650 c
+S
+n 340 180 m 340 650 l S
+n
+346 180 m
+346 183.3137 343.3137 186 340 186 c
+336.6863 186 334 183.3137 334 180 c
+334 176.6863 336.6863 174 340 174 c
+343.3137 174 346 176.6863 346 180 c
+S
+n
+346 650 m
+346 653.3137 343.3137 656 340 656 c
+336.6863 656 334 653.3137 334 650 c
+334 646.6863 336.6863 644 340 644 c
+343.3137 644 346 646.6863 346 650 c
+S
+n 530 180 m 530 650 l S
+n
+536 180 m
+536 183.3137 533.3137 186 530 186 c
+526.6863 186 524 183.3137 524 180 c
+524 176.6863 526.6863 174 530 174 c
+533.3137 174 536 176.6863 536 180 c
+S
+n
+536 650 m
+536 653.3137 533.3137 656 530 656 c
+526.6863 656 524 653.3137 524 650 c
+524 646.6863 526.6863 644 530 644 c
+533.3137 644 536 646.6863 536 650 c
+S
+n 720 180 m 720 650 l S
+n
+726 180 m
+726 183.3137 723.3137 186 720 186 c
+716.6863 186 714 183.3137 714 180 c
+714 176.6863 716.6863 174 720 174 c
+723.3137 174 726 176.6863 726 180 c
+S
+n
+726 650 m
+726 653.3137 723.3137 656 720 656 c
+716.6863 656 714 653.3137 714 650 c
+714 646.6863 716.6863 644 720 644 c
+723.3137 644 726 646.6863 726 650 c
+S
+n 910 180 m 910 650 l S
+n
+916 180 m
+916 183.3137 913.3137 186 910 186 c
+906.6863 186 904 183.3137 904 180 c
+904 176.6863 906.6863 174 910 174 c
+913.3137 174 916 176.6863 916 180 c
+S
+n
+916 650 m
+916 653.3137 913.3137 656 910 656 c
+906.6863 656 904 653.3137 904 650 c
+904 646.6863 906.6863 644 910 644 c
+913.3137 644 916 646.6863 916 650 c
+S
+BT /F2 14 Tf 16.8 TL ET
+BT 1 0 0 1 165 620 Tm (WORKSHOP STEEL FRAME PLAN) Tj T* ET
+BT /F1 11 Tf 13.2 TL ET
+BT 1 0 0 1 165 595 Tm (Columns on grids 1-5. Main beams span north-south.) Tj T* ET
+n 150 150 m 910 150 l S
+n 150 144 m 150 156 l S
+n 910 144 m 910 156 l S
+BT /F1 10 Tf 12 TL ET
+BT 1 0 0 1 478.72 158 Tm (4 x 5 000 = 20 000 mm) Tj T* ET
+BT 1 0 0 1 930 415 Tm (NORTH) Tj T* ET
+n 960 380 m 960 470 l S
+n 960 470 m 950 450 l S
+n 960 470 m 970 450 l S
+ 
+
+endstream
+endobj
+6 0 obj
+<<
+/F1 7 0 R
+/F2 8 0 R
+>>
+endobj
+7 0 obj
+<<
+/BaseFont /Helvetica
+/Encoding /WinAnsiEncoding
+/Name /F1
+/Subtype /Type1
+/Type /Font
+>>
+endobj
+8 0 obj
+<<
+/BaseFont /Helvetica-Bold
+/Encoding /WinAnsiEncoding
+/Name /F2
+/Subtype /Type1
+/Type /Font
+>>
+endobj
+9 0 obj
+<<
+/Contents 10 0 R
+/MediaBox [ 0 0 1190.551 841.8898 ]
+/Resources <<
+/Font 6 0 R
+/ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>>
+/Rotate 0
+/Trans <<
+>>
+/Type /Page
+/Parent 2 0 R
+>>
+endobj
+10 0 obj
+<<
+/Length 1147
+>>
+stream
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+1 w
+n 24 24 1142.551 793.8898 re S
+n 24 72 m 1166.551 72 l S
+BT /F2 18 Tf 21.6 TL ET
+BT 1 0 0 1 42 42 Tm (NORTH FRAME ELEVATION) Tj T* ET
+BT /F1 11 Tf 13.2 TL ET
+BT 1 0 0 1 880.5692 42 Tm (Drawing A201 | Scale 1:100 | Fraia deterministic fixture) Tj T* ET
+n 160 180 m 160 570 l S
+n 350 180 m 350 570 l S
+n 540 180 m 540 570 l S
+n 730 180 m 730 570 l S
+n 920 180 m 920 570 l S
+n 160 570 m 920 570 l S
+n 160 180 m 350 570 l S
+n 350 180 m 160 570 l S
+n 350 180 m 540 570 l S
+n 540 180 m 350 570 l S
+n 540 180 m 730 570 l S
+n 730 180 m 540 570 l S
+n 730 180 m 920 570 l S
+n 920 180 m 730 570 l S
+BT /F2 14 Tf 16.8 TL ET
+BT 1 0 0 1 175 610 Tm (BRACED NORTH ELEVATION) Tj T* ET
+BT /F1 11 Tf 13.2 TL ET
+BT 1 0 0 1 175 590 Tm (Indicative bracing bays. Confirm openings before modelling.) Tj T* ET
+n 160 145 m 920 145 l S
+n 160 139 m 160 151 l S
+n 920 139 m 920 151 l S
+BT /F1 10 Tf 12 TL ET
+BT 1 0 0 1 488.72 153 Tm (4 x 5 000 = 20 000 mm) Tj T* ET
+n 120 180 m 120 180 l S
+n 120 174 m 120 186 l S
+n 120 174 m 120 186 l S
+BT /F1 10 Tf 12 TL ET
+BT 1 0 0 1 120 188 Tm  T* ET
+BT 1 0 0 1 80 380 Tm (6 000 mm) Tj T* ET
+ 
+
+endstream
+endobj
+11 0 obj
+<<
+/Contents 12 0 R
+/MediaBox [ 20 30 1190.551 841.8898 ]
+/Resources <<
+/Font 6 0 R
+/ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>>
+/Rotate 90
+/Trans <<
+>>
+/Type /Page
+/Parent 2 0 R
+/CropBox [ 40 50 1160 810 ]
+>>
+endobj
+12 0 obj
+<<
+/Length 859
+>>
+stream
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+1 w
+n 24 24 1142.551 793.8898 re S
+n 24 72 m 1166.551 72 l S
+BT /F2 18 Tf 21.6 TL ET
+BT 1 0 0 1 42 42 Tm (TYPICAL PORTAL SECTION) Tj T* ET
+BT /F1 11 Tf 13.2 TL ET
+BT 1 0 0 1 880.5692 42 Tm (Drawing A301 | Scale 1:100 | Fraia deterministic fixture) Tj T* ET
+3 w
+n 220 180 m 220 500 l S
+n 860 180 m 860 500 l S
+n 220 500 m 540 650 l S
+n 540 650 m 860 500 l S
+1 w
+n 160 180 m 920 180 l S
+BT /F2 14 Tf 16.8 TL ET
+BT 1 0 0 1 235 690 Tm (TYPICAL TRANSVERSE PORTAL) Tj T* ET
+BT /F1 11 Tf 13.2 TL ET
+BT 1 0 0 1 235 670 Tm (Roof pitch 25 degrees. Eaves and ridge levels require confirmation.) Tj T* ET
+n 220 145 m 860 145 l S
+n 220 139 m 220 151 l S
+n 860 139 m 860 151 l S
+BT /F1 10 Tf 12 TL ET
+BT 1 0 0 1 514.99 153 Tm (12 000 mm) Tj T* ET
+BT 1 0 0 1 875 500 Tm (EAVES 6 000) Tj T* ET
+BT 1 0 0 1 550 650 Tm (RIDGE) Tj T* ET
+ 
+
+endstream
+endobj
+xref
+0 13
+0000000000 65535 f 
+0000000015 00000 n 
+0000000054 00000 n 
+0000000126 00000 n 
+0000000175 00000 n 
+0000000374 00000 n 
+0000002912 00000 n 
+0000002953 00000 n 
+0000003060 00000 n 
+0000003172 00000 n 
+0000003372 00000 n 
+0000004572 00000 n 
+0000004804 00000 n 
+trailer
+<<
+/Size 13
+/Root 3 0 R
+/Info 1 0 R
+>>
+startxref
+5715
+%%EOF

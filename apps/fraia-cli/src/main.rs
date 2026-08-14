@@ -1,13 +1,14 @@
 use anyhow::{Context, Result};
 use fraia_core::{
-    ImportedStickFrameInput, OptimizationRun, ProjectFile,
-    analyze_current_simply_supported_beam_project,
+    DesignId, DesignRunList, ImportedStickFrameInput, InspectedDesignRun, OptimizationRun,
+    ProjectFile, analyze_current_simply_supported_beam_project,
     compile_current_simply_supported_beam_project_to_calculix, create_project,
     current_simply_supported_beam_builder_params, default_planning_markdown,
     derive_conservative_check_report, derive_design_action_report,
     execute_current_frame_project_in_calculix,
     execute_current_simply_supported_beam_project_in_calculix,
-    import_stick_frame_to_structural_model, load_project, materialize_project_structural_model,
+    import_stick_frame_to_structural_model, inspect_design_run, list_design_runs, load_project,
+    load_project_package, materialize_project_structural_model,
     materialize_structural_model_from_builder_graph, portal_frame_builder_graph,
     realize_structural_model_to_frame2d, require_calculix_runtime, run_optimization, save_project,
     seed_simply_supported_beam_in_project, size_current_simply_supported_beam_in_project,
@@ -15,11 +16,34 @@ use fraia_core::{
 };
 use std::env;
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::PathBuf;
 
+use fraia_revision::operations::{
+    DesignRunOperationContext, OPERATION_CONTRACT_VERSION, Operation, OperationOutcome,
+    OperationRequest, execute_sqlite_operation, execute_sqlite_operation_with_design_runs,
+};
+use fraia_revision::sqlite::SqliteRevisionRepository;
+use serde::Serialize;
+
+const EXIT_SUCCESS: i32 = 0;
+const EXIT_OPERATION_ERROR: i32 = 2;
+const EXIT_HEAD_CONFLICT: i32 = 3;
+const EXIT_RUNTIME_UNAVAILABLE: i32 = 4;
+const EXIT_USAGE: i32 = 64;
+const EXIT_INPUT: i32 = 65;
+const EXIT_REPOSITORY: i32 = 70;
+
 fn main() -> Result<()> {
-    let mut args = env::args().skip(1);
+    let raw_args = env::args().skip(1).collect::<Vec<_>>();
+    if matches!(
+        raw_args.first().map(String::as_str),
+        Some("operation" | "operation-capabilities" | "operation-schema")
+    ) {
+        let exit = run_machine_command(&raw_args, &mut io::stdin(), &mut io::stdout());
+        std::process::exit(exit);
+    }
+    let mut args = raw_args.into_iter();
     match args.next().as_deref() {
         Some("init") => cmd_init(args.next()),
         Some("plan") => cmd_plan(args.next()),
@@ -43,10 +67,397 @@ fn main() -> Result<()> {
         Some("beam-analyze") => cmd_beam_analyze(args.next()),
         Some("beam-compile-calculix") => cmd_beam_compile_calculix(args.next()),
         Some("beam-run-calculix") => cmd_beam_run_calculix(args.next()),
+        Some("design-runs-list") => cmd_design_runs_list(args.next(), args.next()),
+        Some("design-run-inspect") => cmd_design_run_inspect(args.next(), args.next(), args.next()),
+        Some("design-runs-status") => {
+            cmd_design_runs_status(args.next(), args.next(), args.next(), args.next())
+        }
         _ => {
             print_help();
             Ok(())
         }
+    }
+}
+
+fn cmd_design_runs_list(project_dir: Option<String>, design_id: Option<String>) -> Result<()> {
+    let project_dir =
+        project_dir.context("usage: fraia design-runs-list <project-directory> <design-id>")?;
+    let design_id =
+        design_id.context("usage: fraia design-runs-list <project-directory> <design-id>")?;
+    let runs = cli_design_runs_list(&PathBuf::from(project_dir), &DesignId::new(design_id))?;
+    println!("{}", serde_json::to_string_pretty(&runs)?);
+    Ok(())
+}
+
+fn cmd_design_run_inspect(
+    project_dir: Option<String>,
+    design_id: Option<String>,
+    run_id: Option<String>,
+) -> Result<()> {
+    let project_dir = project_dir
+        .context("usage: fraia design-run-inspect <project-directory> <design-id> <run-id>")?;
+    let design_id = design_id
+        .context("usage: fraia design-run-inspect <project-directory> <design-id> <run-id>")?;
+    let run_id = run_id
+        .context("usage: fraia design-run-inspect <project-directory> <design-id> <run-id>")?;
+    let run = cli_design_run_inspect(
+        &PathBuf::from(project_dir),
+        &DesignId::new(design_id),
+        &run_id,
+    )?;
+    println!("{}", serde_json::to_string_pretty(&run)?);
+    Ok(())
+}
+
+fn cli_design_runs_list(
+    project_dir: &std::path::Path,
+    design_id: &DesignId,
+) -> Result<DesignRunList> {
+    list_design_runs(project_dir, design_id).map_err(Into::into)
+}
+
+fn cmd_design_runs_status(
+    project_dir: Option<String>,
+    design_id: Option<String>,
+    snapshot_id: Option<String>,
+    ancestor_snapshot_ids: Option<String>,
+) -> Result<()> {
+    let usage = "usage: fraia design-runs-status <project-directory> <design-id> <snapshot-id> [ancestor-snapshot-ids-comma-separated]";
+    let project_dir = project_dir.context(usage)?;
+    let design_id = design_id.context(usage)?;
+    let snapshot_id = snapshot_id.context(usage)?;
+    let ancestors = ancestor_snapshot_ids
+        .map(|ids| {
+            ids.split(',')
+                .filter(|id| !id.trim().is_empty())
+                .map(|id| id.trim().to_owned())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let statuses = cli_design_run_statuses(
+        &PathBuf::from(project_dir),
+        &DesignId::new(design_id),
+        &snapshot_id,
+        &ancestors,
+    )?;
+    println!("{}", serde_json::to_string_pretty(&statuses)?);
+    Ok(())
+}
+
+fn cli_design_run_statuses(
+    project_dir: &std::path::Path,
+    design_id: &DesignId,
+    snapshot_id: &str,
+    ancestor_snapshot_ids: &[String],
+) -> Result<Vec<fraia_core::DesignRunStatusProjection>> {
+    fraia_core::list_design_run_statuses(project_dir, design_id, snapshot_id, ancestor_snapshot_ids)
+        .map_err(Into::into)
+}
+
+fn cli_design_run_inspect(
+    project_dir: &std::path::Path,
+    design_id: &DesignId,
+    run_id: &str,
+) -> Result<InspectedDesignRun> {
+    inspect_design_run(project_dir, design_id, run_id).map_err(Into::into)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CliError<'a> {
+    schema: &'static str,
+    code: &'a str,
+    message: String,
+}
+
+fn run_machine_command(args: &[String], input: &mut impl Read, output: &mut impl Write) -> i32 {
+    match args.first().map(String::as_str) {
+        Some("operation-capabilities") if args.len() == 1 => {
+            let request = OperationRequest {
+                contract_version: OPERATION_CONTRACT_VERSION.into(),
+                request_id: "capabilities".into(),
+                operation: Operation::Capabilities,
+            };
+            let mut repository = match SqliteRevisionRepository::open_in_memory() {
+                Ok(repository) => repository,
+                Err(error) => {
+                    return write_cli_error(output, EXIT_REPOSITORY, "repository_error", error);
+                }
+            };
+            write_operation_response(output, execute_sqlite_operation(&mut repository, request))
+        }
+        Some("operation-schema") if args.len() == 1 => {
+            let schema = serde_json::json!({
+                "schema": "fraia.operation-schema.v1",
+                "contractVersion": OPERATION_CONTRACT_VERSION,
+                "transport": {
+                    "input": "one JSON OperationRequest on stdin",
+                    "output": "one JSON OperationResponse on stdout"
+                },
+                "commands": {
+                    "execute": "fraia operation --database <sqlite-path>",
+                    "capabilities": "fraia operation-capabilities"
+                },
+                "compatibilityCommands": [
+                    "init", "plan", "optimize", "validate", "inspect-model", "adopt",
+                    "demo", "frame-demo", "import-stick-frame", "frame-run-calculix",
+                    "beam-demo", "beam-init", "beam-size", "beam-analyze",
+                    "beam-compile-calculix", "beam-run-calculix",
+                    "design-runs-list", "design-run-inspect", "design-runs-status"
+                ],
+                "exitCodes": {
+                    "success": EXIT_SUCCESS,
+                    "operationError": EXIT_OPERATION_ERROR,
+                    "headConflict": EXIT_HEAD_CONFLICT,
+                    "snapshotConflict": EXIT_HEAD_CONFLICT,
+                    "runtimeUnavailable": EXIT_RUNTIME_UNAVAILABLE,
+                    "usage": EXIT_USAGE,
+                    "invalidInput": EXIT_INPUT,
+                    "repositoryError": EXIT_REPOSITORY
+                }
+            });
+            write_json_line(output, &schema, EXIT_REPOSITORY)
+        }
+        Some("operation") => {
+            if args.len() < 3 || args.get(1).map(String::as_str) != Some("--database") {
+                return write_cli_error(
+                    output,
+                    EXIT_USAGE,
+                    "usage",
+                    "usage: fraia operation --database <sqlite-path> [--input <json-path>] [--batch]",
+                );
+            }
+            let mut input_path = None;
+            let mut batch = false;
+            let mut index = 3;
+            while index < args.len() {
+                match args[index].as_str() {
+                    "--input" if index + 1 < args.len() => {
+                        input_path = Some(args[index + 1].as_str());
+                        index += 2;
+                    }
+                    "--batch" => {
+                        batch = true;
+                        index += 1;
+                    }
+                    _ => {
+                        return write_cli_error(
+                            output,
+                            EXIT_USAGE,
+                            "usage",
+                            "usage: fraia operation --database <sqlite-path> [--input <json-path>] [--batch]",
+                        );
+                    }
+                }
+            }
+            let bytes = if let Some(path) = input_path {
+                match fs::read(path) {
+                    Ok(bytes) => bytes,
+                    Err(error) => return write_cli_error(output, EXIT_INPUT, "input_error", error),
+                }
+            } else {
+                let mut bytes = Vec::new();
+                if let Err(error) = input.read_to_end(&mut bytes) {
+                    return write_cli_error(output, EXIT_INPUT, "input_error", error);
+                }
+                bytes
+            };
+            let database_path = PathBuf::from(&args[2]);
+            let mut repository = match SqliteRevisionRepository::open(&database_path) {
+                Ok(repository) => repository,
+                Err(error) => {
+                    return write_cli_error(output, EXIT_REPOSITORY, "repository_error", error);
+                }
+            };
+            if batch {
+                return run_operation_batch(
+                    &mut repository,
+                    &bytes,
+                    output,
+                    operation_design_run_context(&database_path).as_ref(),
+                );
+            }
+            let request = match serde_json::from_slice::<OperationRequest>(&bytes) {
+                Ok(request) => request,
+                Err(error) => {
+                    return write_cli_error(output, EXIT_INPUT, "invalid_json", error);
+                }
+            };
+            write_operation_response(
+                output,
+                execute_cli_operation(
+                    &mut repository,
+                    request,
+                    operation_design_run_context(&database_path).as_ref(),
+                ),
+            )
+        }
+        _ => write_cli_error(
+            output,
+            EXIT_USAGE,
+            "usage",
+            "usage: fraia operation --database <sqlite-path> [--input <json-path>] [--batch] | operation-capabilities | operation-schema",
+        ),
+    }
+}
+
+fn run_operation_batch(
+    repository: &mut SqliteRevisionRepository,
+    bytes: &[u8],
+    output: &mut impl Write,
+    run_context: Option<&DesignRunOperationContext>,
+) -> i32 {
+    let input = match std::str::from_utf8(bytes) {
+        Ok(input) => input,
+        Err(error) => return write_cli_error(output, EXIT_INPUT, "invalid_utf8", error),
+    };
+    let mut exit = EXIT_SUCCESS;
+    let mut saw_request = false;
+    for (line_index, line) in input.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        saw_request = true;
+        let request = match serde_json::from_str::<OperationRequest>(line) {
+            Ok(request) => request,
+            Err(error) => {
+                let code = write_cli_error(
+                    output,
+                    EXIT_INPUT,
+                    "invalid_json",
+                    format!("line {}: {error}", line_index + 1),
+                );
+                exit = exit.max(code);
+                continue;
+            }
+        };
+        let code = write_operation_response(
+            output,
+            execute_cli_operation(repository, request, run_context),
+        );
+        exit = exit.max(code);
+    }
+    if !saw_request {
+        return write_cli_error(
+            output,
+            EXIT_INPUT,
+            "empty_batch",
+            "batch input contains no operation requests",
+        );
+    }
+    exit
+}
+
+fn execute_cli_operation(
+    repository: &mut SqliteRevisionRepository,
+    request: OperationRequest,
+    run_context: Option<&DesignRunOperationContext>,
+) -> fraia_revision::operations::OperationResponse {
+    match run_context {
+        Some(context) => execute_sqlite_operation_with_design_runs(repository, request, context),
+        None => execute_sqlite_operation(repository, request),
+    }
+}
+
+fn operation_design_run_context(
+    database_path: &std::path::Path,
+) -> Option<DesignRunOperationContext> {
+    if database_path.file_name()?.to_str()? != "workspace.sqlite" {
+        return None;
+    }
+    let design_dir = database_path.parent()?;
+    let designs_dir = design_dir.parent()?;
+    if designs_dir.file_name()?.to_str()? != "designs" {
+        return None;
+    }
+    let project_dir = designs_dir.parent()?;
+    let package = load_project_package(project_dir).ok()?;
+    let design_id = DesignId::new(design_dir.file_name()?.to_str()?);
+    if !package
+        .manifest
+        .designs
+        .iter()
+        .any(|entry| entry.id == design_id)
+    {
+        return None;
+    }
+    Some(DesignRunOperationContext::new(
+        project_dir,
+        package.manifest.id,
+        design_id,
+        fraia_core::DesignRunActor {
+            actor_type: "cli".into(),
+            actor_id: "fraia.operations.v1".into(),
+        },
+        fraia_core::utils::timestamp_id(),
+    ))
+}
+
+fn operation_exit(response: &fraia_revision::operations::OperationResponse) -> i32 {
+    match &response.outcome {
+        OperationOutcome::Success { result }
+            if matches!(
+                result.as_ref(),
+                fraia_revision::operations::OperationResult::SnapshotAnalysed { run }
+                    if matches!(run.outcome, fraia_revision::analysis_service::SnapshotAnalysisOutcome::Unsupported { .. })
+            ) =>
+        {
+            EXIT_RUNTIME_UNAVAILABLE
+        }
+        OperationOutcome::Success { .. } => EXIT_SUCCESS,
+        OperationOutcome::Error { error }
+            if matches!(
+                error.code,
+                fraia_revision::operations::OperationErrorCode::ExpectedHeadMismatch
+                    | fraia_revision::operations::OperationErrorCode::ExpectedSnapshotMismatch
+            ) =>
+        {
+            EXIT_HEAD_CONFLICT
+        }
+        OperationOutcome::Error { error }
+            if error.code == fraia_revision::operations::OperationErrorCode::RepositoryError =>
+        {
+            EXIT_REPOSITORY
+        }
+        OperationOutcome::Error { .. } => EXIT_OPERATION_ERROR,
+    }
+}
+
+fn write_operation_response(
+    output: &mut impl Write,
+    response: fraia_revision::operations::OperationResponse,
+) -> i32 {
+    let exit = operation_exit(&response);
+    if write_json_line(output, &response, EXIT_REPOSITORY) == EXIT_SUCCESS {
+        exit
+    } else {
+        EXIT_REPOSITORY
+    }
+}
+
+fn write_json_line(output: &mut impl Write, value: &impl Serialize, failure_exit: i32) -> i32 {
+    if serde_json::to_writer(&mut *output, value).is_ok() && output.write_all(b"\n").is_ok() {
+        EXIT_SUCCESS
+    } else {
+        failure_exit
+    }
+}
+
+fn write_cli_error(
+    output: &mut impl Write,
+    exit: i32,
+    code: &str,
+    message: impl std::fmt::Display,
+) -> i32 {
+    let error = CliError {
+        schema: "fraia.cli.error.v1",
+        code,
+        message: message.to_string(),
+    };
+    if write_json_line(output, &error, EXIT_REPOSITORY) == EXIT_SUCCESS {
+        exit
+    } else {
+        EXIT_REPOSITORY
     }
 }
 
@@ -1179,14 +1590,80 @@ fn require_dir(value: Option<String>, usage: &str) -> Result<PathBuf> {
 
 fn print_help() {
     println!(
-        "Fraia Rust MVP\n\nCommands:\n  fraia init <projectDir>\n  fraia plan <projectDir>\n  fraia optimize <projectDir>\n  fraia validate <projectDir>\n  fraia inspect-model <projectDir> [--json]\n  fraia adopt <projectDir> <optionIndex>\n  fraia demo [projectDir]\n  fraia frame-demo [projectDir]\n  fraia import-stick-frame <projectDir> <inputJson>\n  fraia frame-run-calculix <projectDir>\n  fraia beam-demo [projectDir]\n  fraia beam-init <projectDir> <spanM> <udlKnPerM> [pointLoadKn] [pointLoadXM]\n  fraia beam-size <projectDir>\n  fraia beam-analyze <projectDir>\n  fraia beam-compile-calculix <projectDir>\n  fraia beam-run-calculix <projectDir>\n"
+        "Fraia Rust MVP\n\nMachine interface:\n  fraia operation --database <sqlitePath>\n  fraia operation-capabilities\n  fraia operation-schema\n\nCompatibility-only human commands:\n  fraia init <projectDir>\n  fraia plan <projectDir>\n  fraia optimize <projectDir>\n  fraia validate <projectDir>\n  fraia inspect-model <projectDir> [--json]\n  fraia adopt <projectDir> <optionIndex>\n  fraia demo [projectDir]\n  fraia frame-demo [projectDir]\n  fraia import-stick-frame <projectDir> <inputJson>\n  fraia frame-run-calculix <projectDir>\n  fraia beam-demo [projectDir]\n  fraia beam-init <projectDir> <spanM> <udlKnPerM> [pointLoadKn] [pointLoadXM]\n  fraia beam-size <projectDir>\n  fraia beam-analyze <projectDir>\n  fraia beam-compile-calculix <projectDir>\n  fraia beam-run-calculix <projectDir>\n  fraia design-runs-list <projectDir> <designId>\n  fraia design-run-inspect <projectDir> <designId> <runId>\n  fraia design-runs-status <projectDir> <designId> <snapshotId> [ancestorSnapshotIdsCommaSeparated]\n"
     );
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fraia_core::BuilderNodeParameters;
+    use fraia_core::{BuilderNodeParameters, StructuralModel};
+    use fraia_revision::{
+        ConversationId, ProjectId, RevisionId, SnapshotId,
+        analysis_service::AnalysisSettings,
+        snapshot::ModelSnapshot,
+        sqlite::{StoredConversation, StoredProjectRoot, StoredRevision, StoredSnapshot},
+    };
+
+    static CALCULIX_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn seed_operation_database(path: &std::path::Path, model: StructuralModel) -> SnapshotId {
+        seed_operation_database_for_project(path, model, "cli-project")
+    }
+
+    fn seed_operation_database_for_project(
+        path: &std::path::Path,
+        model: StructuralModel,
+        project_id: &str,
+    ) -> SnapshotId {
+        let snapshot = ModelSnapshot::capture(model).unwrap();
+        let snapshot_id = snapshot.id().clone();
+        let mut repository = SqliteRevisionRepository::open(path).unwrap();
+        repository
+            .create_project(StoredProjectRoot {
+                project_id: ProjectId::new(project_id),
+                root_conversation: StoredConversation {
+                    id: ConversationId::from("overall"),
+                    project_id: ProjectId::new(project_id),
+                    purpose: "CLI adapter test".into(),
+                    origin_json: "{\"kind\":\"root\"}".into(),
+                    head_revision_id: RevisionId::from("root"),
+                },
+                root_revision: StoredRevision {
+                    id: RevisionId::from("root"),
+                    snapshot_id: snapshot_id.clone(),
+                    parent_revision_id: None,
+                    conversation_id: ConversationId::from("overall"),
+                    metadata_json: "{\"operation\":\"root\"}".into(),
+                },
+                root_snapshot: StoredSnapshot {
+                    id: snapshot_id.clone(),
+                    format_version: snapshot.canonical_format_version().as_str().into(),
+                    canonical_bytes: snapshot.canonical_bytes().to_vec(),
+                },
+            })
+            .unwrap();
+        snapshot_id
+    }
+
+    fn run_json_operation(
+        database: &std::path::Path,
+        request: &OperationRequest,
+    ) -> (i32, Vec<u8>, serde_json::Value) {
+        let input = serde_json::to_vec(request).unwrap();
+        let mut output = Vec::new();
+        let exit = run_machine_command(
+            &[
+                "operation".into(),
+                "--database".into(),
+                database.to_string_lossy().into_owned(),
+            ],
+            &mut input.as_slice(),
+            &mut output,
+        );
+        let value = serde_json::from_slice(&output).unwrap();
+        (exit, output, value)
+    }
 
     #[test]
     fn cmd_validate_writes_validation_and_engineering_artifacts() {
@@ -1385,23 +1862,24 @@ mod tests {
 
     #[test]
     fn cmd_frame_run_calculix_fails_clearly_when_runtime_missing() {
+        let _environment = CALCULIX_ENV_LOCK.lock().unwrap();
         let temp_dir = std::env::temp_dir().join(format!(
             "fraia-cli-frame-calculix-run-{}",
             fraia_core::utils::timestamp_id()
         ));
         cmd_frame_demo(Some(temp_dir.to_string_lossy().to_string())).expect("frame demo command");
-        let original = std::env::var_os("FRAIA_CCX_PATH");
+        let original = std::env::var_os("FRAIA_DISABLE_CALCULIX_RUNTIME");
         unsafe {
-            std::env::set_var("FRAIA_CCX_PATH", "/definitely/missing/ccx");
+            std::env::set_var("FRAIA_DISABLE_CALCULIX_RUNTIME", "1");
         }
         let err = cmd_frame_run_calculix(Some(temp_dir.to_string_lossy().to_string()))
             .expect_err("runtime-unavailable error");
         match original {
             Some(value) => unsafe {
-                std::env::set_var("FRAIA_CCX_PATH", value);
+                std::env::set_var("FRAIA_DISABLE_CALCULIX_RUNTIME", value);
             },
             None => unsafe {
-                std::env::remove_var("FRAIA_CCX_PATH");
+                std::env::remove_var("FRAIA_DISABLE_CALCULIX_RUNTIME");
             },
         }
 
@@ -1621,6 +2099,7 @@ mod tests {
 
     #[test]
     fn cmd_beam_run_calculix_fails_clearly_when_runtime_missing() {
+        let _environment = CALCULIX_ENV_LOCK.lock().unwrap();
         let temp_dir = std::env::temp_dir().join(format!(
             "fraia-cli-beam-calculix-run-{}",
             fraia_core::utils::timestamp_id()
@@ -1628,18 +2107,18 @@ mod tests {
         cmd_beam_demo(Some(temp_dir.to_string_lossy().to_string())).expect("beam demo command");
         cmd_beam_size(Some(temp_dir.to_string_lossy().to_string())).expect("beam size command");
 
-        let original = std::env::var_os("FRAIA_CCX_PATH");
+        let original = std::env::var_os("FRAIA_DISABLE_CALCULIX_RUNTIME");
         unsafe {
-            std::env::set_var("FRAIA_CCX_PATH", "/definitely/missing/ccx");
+            std::env::set_var("FRAIA_DISABLE_CALCULIX_RUNTIME", "1");
         }
         let err = cmd_beam_run_calculix(Some(temp_dir.to_string_lossy().to_string()))
             .expect_err("runtime-unavailable error");
         match original {
             Some(value) => unsafe {
-                std::env::set_var("FRAIA_CCX_PATH", value);
+                std::env::set_var("FRAIA_DISABLE_CALCULIX_RUNTIME", value);
             },
             None => unsafe {
-                std::env::remove_var("FRAIA_CCX_PATH");
+                std::env::remove_var("FRAIA_DISABLE_CALCULIX_RUNTIME");
             },
         }
 
@@ -1661,5 +2140,352 @@ mod tests {
         assert_eq!(run_count, 0);
 
         let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn operation_schema_is_stable_single_line_json() {
+        let mut output = Vec::new();
+        let exit = run_machine_command(
+            &["operation-schema".into()],
+            &mut std::io::empty(),
+            &mut output,
+        );
+        assert_eq!(exit, EXIT_SUCCESS);
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            concat!(
+                "{\"commands\":{\"capabilities\":\"fraia operation-capabilities\",",
+                "\"execute\":\"fraia operation --database <sqlite-path>\"},",
+                "\"compatibilityCommands\":[\"init\",\"plan\",\"optimize\",\"validate\",",
+                "\"inspect-model\",\"adopt\",\"demo\",\"frame-demo\",\"import-stick-frame\",",
+                "\"frame-run-calculix\",\"beam-demo\",\"beam-init\",\"beam-size\",",
+                "\"beam-analyze\",\"beam-compile-calculix\",\"beam-run-calculix\",",
+                "\"design-runs-list\",\"design-run-inspect\",\"design-runs-status\"],",
+                "\"contractVersion\":\"fraia.operations.v1\",",
+                "\"exitCodes\":{\"headConflict\":3,\"invalidInput\":65,\"operationError\":2,",
+                "\"repositoryError\":70,\"runtimeUnavailable\":4,\"snapshotConflict\":3,",
+                "\"success\":0,\"usage\":64},",
+                "\"schema\":\"fraia.operation-schema.v1\",",
+                "\"transport\":{\"input\":\"one JSON OperationRequest on stdin\",",
+                "\"output\":\"one JSON OperationResponse on stdout\"}}\n"
+            )
+        );
+    }
+
+    #[test]
+    fn capability_adapter_matches_shared_operation_contract() {
+        let mut output = Vec::new();
+        let exit = run_machine_command(
+            &["operation-capabilities".into()],
+            &mut std::io::empty(),
+            &mut output,
+        );
+        assert_eq!(exit, EXIT_SUCCESS);
+        let cli: serde_json::Value = serde_json::from_slice(&output).unwrap();
+
+        let mut repository = SqliteRevisionRepository::open_in_memory().unwrap();
+        let direct = execute_sqlite_operation(
+            &mut repository,
+            OperationRequest {
+                contract_version: OPERATION_CONTRACT_VERSION.into(),
+                request_id: "capabilities".into(),
+                operation: Operation::Capabilities,
+            },
+        );
+        assert_eq!(cli, serde_json::to_value(direct).unwrap());
+        let operations = cli["result"]["operations"].as_array().unwrap();
+        for operation in [
+            "reject_structural_patch",
+            "validate_snapshot",
+            "analyse_snapshot",
+            "inspect_analysis_evidence",
+        ] {
+            assert!(operations.iter().any(|value| value == operation));
+        }
+        let features = cli["result"]["features"].as_array().unwrap();
+        for primitive in ["node", "member", "plate", "support", "load", "release"] {
+            assert!(
+                features
+                    .iter()
+                    .any(|value| value == &format!("patch_{primitive}"))
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_machine_input_has_stable_json_and_exit_code() {
+        let mut output = Vec::new();
+        let exit = run_machine_command(
+            &["operation".into(), "--database".into(), ":memory:".into()],
+            &mut "not-json".as_bytes(),
+            &mut output,
+        );
+        assert_eq!(exit, EXIT_INPUT);
+        let value: serde_json::Value = serde_json::from_slice(&output).unwrap();
+        assert_eq!(value["schema"], "fraia.cli.error.v1");
+        assert_eq!(value["code"], "invalid_json");
+    }
+
+    #[test]
+    fn repository_operation_error_uses_repository_exit_code() {
+        let request = serde_json::json!({
+            "contractVersion": "fraia.operations.v1",
+            "requestId": "inspect-missing",
+            "operation": "inspect",
+            "parameters": { "conversation_id": "missing" }
+        })
+        .to_string();
+        let mut output = Vec::new();
+        let exit = run_machine_command(
+            &["operation".into(), "--database".into(), ":memory:".into()],
+            &mut request.as_bytes(),
+            &mut output,
+        );
+        assert_eq!(exit, EXIT_REPOSITORY);
+        let value: serde_json::Value = serde_json::from_slice(&output).unwrap();
+        assert_eq!(value["status"], "error");
+        assert_eq!(value["error"]["code"], "repository_error");
+    }
+
+    #[test]
+    fn snapshot_conflict_has_stable_json_and_conflict_exit() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("snapshot-conflict.sqlite");
+        seed_operation_database(&database, StructuralModel::empty());
+        let (exit, _, value) = run_json_operation(
+            &database,
+            &OperationRequest {
+                contract_version: OPERATION_CONTRACT_VERSION.into(),
+                request_id: "snapshot-conflict".into(),
+                operation: Operation::ValidateSnapshot {
+                    revision_id: RevisionId::from("root"),
+                    expected_snapshot_id: SnapshotId::from("wrong"),
+                },
+            },
+        );
+        assert_eq!(exit, EXIT_HEAD_CONFLICT);
+        assert_eq!(value["status"], "error");
+        assert_eq!(value["error"]["code"], "expected_snapshot_mismatch");
+        assert_eq!(value["error"]["snapshotConflict"]["revisionId"], "root");
+    }
+
+    #[test]
+    fn analysis_and_evidence_outputs_match_shared_executor_across_restart() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("analysis.sqlite");
+        let snapshot_id = seed_operation_database(&database, StructuralModel::empty());
+        let request = OperationRequest {
+            contract_version: OPERATION_CONTRACT_VERSION.into(),
+            request_id: "analyse".into(),
+            operation: Operation::AnalyseSnapshot {
+                revision_id: RevisionId::from("root"),
+                expected_snapshot_id: snapshot_id,
+                evidence_id: fraia_revision::EvidenceId::from("evidence"),
+                settings: AnalysisSettings::frame3d(),
+            },
+        };
+        let (exit, first_bytes, first) = run_json_operation(&database, &request);
+        assert_eq!(exit, EXIT_RUNTIME_UNAVAILABLE);
+        assert_eq!(first["result"]["type"], "snapshot_analysed");
+        assert_eq!(first["result"]["run"]["outcome"]["status"], "unsupported");
+        assert!(first["result"]["run"]["evidence"]["analysis_manifest"]["metrics"].is_null());
+
+        let (replay_exit, replay_bytes, replay) = run_json_operation(&database, &request);
+        assert_eq!(replay_exit, EXIT_RUNTIME_UNAVAILABLE);
+        assert_eq!(replay_bytes, first_bytes);
+        assert_eq!(replay, first);
+
+        let (inspect_exit, _, inspected) = run_json_operation(
+            &database,
+            &OperationRequest {
+                contract_version: OPERATION_CONTRACT_VERSION.into(),
+                request_id: "inspect-evidence".into(),
+                operation: Operation::InspectAnalysisEvidence {
+                    evidence_id: fraia_revision::EvidenceId::from("evidence"),
+                    against_revision_id: RevisionId::from("root"),
+                },
+            },
+        );
+        assert_eq!(inspect_exit, EXIT_SUCCESS);
+        assert_eq!(inspected["result"]["type"], "analysis_evidence_inspection");
+        assert_eq!(inspected["result"]["staleness"]["status"], "current");
+    }
+
+    #[test]
+    fn managed_design_operation_publishes_and_returns_the_canonical_run_id() {
+        let directory = tempfile::tempdir().unwrap();
+        let project = directory.path().join("project");
+        let package = fraia_core::create_named_project_package(&project, "CLI run").unwrap();
+        let design_id = package.designs[0].manifest.id.clone();
+        let database = fraia_core::design_package_paths(&project, &design_id)
+            .unwrap()
+            .workspace_database;
+        let snapshot_id = seed_operation_database_for_project(
+            &database,
+            StructuralModel::empty(),
+            design_id.as_str(),
+        );
+        let (exit, _, value) = run_json_operation(
+            &database,
+            &OperationRequest {
+                contract_version: OPERATION_CONTRACT_VERSION.into(),
+                request_id: "managed-analysis".into(),
+                operation: Operation::AnalyseSnapshot {
+                    revision_id: RevisionId::from("root"),
+                    expected_snapshot_id: snapshot_id,
+                    evidence_id: fraia_revision::EvidenceId::from("managed-evidence"),
+                    settings: AnalysisSettings::frame3d(),
+                },
+            },
+        );
+        assert_eq!(exit, EXIT_RUNTIME_UNAVAILABLE);
+        let run_id = value["result"]["run"]["canonical_run_id"]
+            .as_str()
+            .expect("canonical run id");
+        assert_eq!(
+            value["result"]["run"]["evidence"]["analysis_manifest"]["canonical_run_id"],
+            run_id
+        );
+        assert_eq!(
+            list_design_runs(&project, &design_id).unwrap().runs[0].run_id,
+            run_id
+        );
+    }
+
+    #[test]
+    fn failed_analysis_is_a_truthful_successful_adapter_response() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("failed-analysis.sqlite");
+        let snapshot_id = seed_operation_database(&database, StructuralModel::empty());
+        let (exit, _, value) = run_json_operation(
+            &database,
+            &OperationRequest {
+                contract_version: OPERATION_CONTRACT_VERSION.into(),
+                request_id: "failed-analysis".into(),
+                operation: Operation::AnalyseSnapshot {
+                    revision_id: RevisionId::from("root"),
+                    expected_snapshot_id: snapshot_id,
+                    evidence_id: fraia_revision::EvidenceId::from("failed-evidence"),
+                    settings: AnalysisSettings::frame2d(),
+                },
+            },
+        );
+        assert_eq!(exit, EXIT_SUCCESS);
+        assert_eq!(value["result"]["run"]["outcome"]["status"], "failed");
+        let manifest = &value["result"]["run"]["evidence"]["analysis_manifest"];
+        assert!(manifest["metrics"].is_null());
+        assert!(manifest["result_hash"].is_null());
+        assert!(!manifest["diagnostics"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn newline_delimited_batch_emits_one_stable_response_per_request() {
+        let directory = std::env::temp_dir().join(format!(
+            "fraia-cli-operation-batch-{}",
+            fraia_core::utils::timestamp_id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let database = directory.join("batch.sqlite");
+        let first = serde_json::json!({
+            "contractVersion": "fraia.operations.v1",
+            "requestId": "cap-1",
+            "operation": "capabilities"
+        });
+        let second = serde_json::json!({
+            "contractVersion": "fraia.operations.v1",
+            "requestId": "cap-2",
+            "operation": "capabilities"
+        });
+        let input = format!("{}\n{}\n", first, second);
+        let mut output = Vec::new();
+        let exit = run_machine_command(
+            &[
+                "operation".into(),
+                "--database".into(),
+                database.to_string_lossy().into_owned(),
+                "--batch".into(),
+            ],
+            &mut input.as_bytes(),
+            &mut output,
+        );
+        assert_eq!(exit, EXIT_SUCCESS);
+        let lines = String::from_utf8(output).unwrap();
+        let values = lines
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(values.len(), 2);
+        assert_eq!(values[0]["requestId"], "cap-1");
+        assert_eq!(values[1]["requestId"], "cap-2");
+        assert_eq!(values[0]["result"], values[1]["result"]);
+
+        let input_path = directory.join("requests.ndjson");
+        fs::write(&input_path, input).unwrap();
+        let mut file_output = Vec::new();
+        let file_exit = run_machine_command(
+            &[
+                "operation".into(),
+                "--database".into(),
+                database.to_string_lossy().into_owned(),
+                "--input".into(),
+                input_path.to_string_lossy().into_owned(),
+                "--batch".into(),
+            ],
+            &mut std::io::empty(),
+            &mut file_output,
+        );
+        assert_eq!(file_exit, EXIT_SUCCESS);
+        assert_eq!(file_output, lines.as_bytes());
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn design_run_commands_read_the_canonical_core_index_without_adapter_state() {
+        let directory = tempfile::tempdir().unwrap();
+        let project = directory.path().join("project");
+        let package = fraia_core::create_named_project_package(&project, "CLI runs").unwrap();
+        let design_id = package.designs[0].manifest.id.clone();
+        let run = fraia_core::publish_design_run(
+            &project,
+            fraia_core::PublishDesignRunRequest {
+                project_id: package.manifest.id,
+                design_id: design_id.clone(),
+                parent_run_id: None,
+                created_at: "2026-08-13T04:00:00Z".into(),
+                actor: fraia_core::DesignRunActor {
+                    actor_type: "cli_test".into(),
+                    actor_id: "fixture".into(),
+                },
+                run_kind: "frame3d_analysis".into(),
+                authored_revision_id: "revision-1".into(),
+                authored_snapshot_id: "snapshot-1".into(),
+                resolved_snapshot_id: None,
+                request: serde_json::json!({"analysis":"frame3d"}),
+                settings: serde_json::json!({"version":1}),
+                solver_identity: "fraia.frame3d.unavailable.v1".into(),
+                runtime_identity: "fraia.runtime.v1".into(),
+                input_identity: None,
+                result_identity: None,
+                status: fraia_core::DesignRunStatus::Unsupported,
+                diagnostics: vec![fraia_core::DesignRunDiagnostic {
+                    severity: fraia_core::DesignRunDiagnosticSeverity::Warning,
+                    code: "solver.unsupported".into(),
+                    message: "No reviewed solver supports this request.".into(),
+                }],
+                metrics: None,
+                attachments: Vec::new(),
+            },
+        )
+        .unwrap();
+        let cli_list = cli_design_runs_list(&project, &design_id).unwrap();
+        assert_eq!(cli_list, list_design_runs(&project, &design_id).unwrap());
+        assert_eq!(
+            cli_design_run_inspect(&project, &design_id, &run.run_id).unwrap(),
+            inspect_design_run(&project, &design_id, &run.run_id).unwrap()
+        );
+        assert_eq!(
+            cli_design_run_statuses(&project, &design_id, "snapshot-1", &[]).unwrap(),
+            fraia_core::list_design_run_statuses(&project, &design_id, "snapshot-1", &[]).unwrap()
+        );
     }
 }

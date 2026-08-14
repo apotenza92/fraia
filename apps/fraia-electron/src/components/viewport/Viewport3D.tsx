@@ -5633,6 +5633,7 @@ export function Viewport3D({
       viewGizmo.dispose();
       controls.dispose();
       renderer.dispose();
+      renderer.forceContextLoss();
       selectionCanvas.remove();
       memberObjects.forEach((o) => o.geometry.dispose());
       memberBatchObjects.forEach((o) => o.geometry.dispose());

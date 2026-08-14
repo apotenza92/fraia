@@ -92,7 +92,23 @@ if (!fs.existsSync(path.join(repositoryRoot, ".agents/skills/shadcn/SKILL.md")))
   findings.push(".agents/skills/shadcn/SKILL.md: official project-local skill is missing")
 }
 
-for (const component of ["button", "button-group", "field", "kbd", "spinner", "tabs", "toggle", "toggle-group"]) {
+for (const component of [
+  "alert",
+  "bubble",
+  "button",
+  "button-group",
+  "field",
+  "input-group",
+  "kbd",
+  "marker",
+  "message",
+  "message-scroller",
+  "select",
+  "spinner",
+  "tabs",
+  "toggle",
+  "toggle-group",
+]) {
   if (!fs.existsSync(path.join(uiRoot, `${component}.tsx`))) {
     findings.push(`src/components/ui/${component}.tsx: required official component is missing`)
   }
@@ -177,7 +193,38 @@ for (const file of compositionFiles.filter((candidate) => /\.tsx$/.test(candidat
   }
 
   function visit(node) {
+    if (ts.isJsxElement(node) && ts.isIdentifier(node.openingElement.tagName)) {
+      const tagName = node.openingElement.tagName.text
+      if (tagName === "SelectContent") {
+        const hasUngroupedItem = node.children.some((child) =>
+          ts.isJsxElement(child) && ts.isIdentifier(child.openingElement.tagName) && child.openingElement.tagName.text === "SelectItem"
+          || ts.isJsxSelfClosingElement(child) && ts.isIdentifier(child.tagName) && child.tagName.text === "SelectItem"
+        )
+        if (hasUngroupedItem) {
+          const line = parsed.getLineAndCharacterOfPosition(node.getStart()).line + 1
+          findings.push(`${relative(file)}:${line}: SelectItem must be inside SelectGroup`)
+        }
+      }
+      if (tagName === "InputGroup") {
+        const hasRawControl = node.children.some((child) =>
+          ts.isJsxElement(child) && ts.isIdentifier(child.openingElement.tagName) && ["Input", "Textarea"].includes(child.openingElement.tagName.text)
+          || ts.isJsxSelfClosingElement(child) && ts.isIdentifier(child.tagName) && ["Input", "Textarea"].includes(child.tagName.text)
+        )
+        if (hasRawControl) {
+          const line = parsed.getLineAndCharacterOfPosition(node.getStart()).line + 1
+          findings.push(`${relative(file)}:${line}: InputGroup must use InputGroupInput or InputGroupTextarea`)
+        }
+      }
+    }
     if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && ts.isIdentifier(node.tagName) && generatedNames.has(node.tagName.text)) {
+      if (node.tagName.text === "Select" && !node.attributes.properties.some((property) => ts.isJsxAttribute(property) && property.name.text === "items")) {
+        const line = parsed.getLineAndCharacterOfPosition(node.getStart()).line + 1
+        findings.push(`${relative(file)}:${line}: Base UI Select requires a root items prop`)
+      }
+      if (node.tagName.text === "SelectValue" && node.attributes.properties.some((property) => ts.isJsxAttribute(property) && property.name.text === "placeholder")) {
+        const line = parsed.getLineAndCharacterOfPosition(node.getStart()).line + 1
+        findings.push(`${relative(file)}:${line}: Base UI Select placeholder must be a null item, not SelectValue placeholder`)
+      }
       if (node.tagName.text === "TableRow" && node.attributes.properties.some((property) => ts.isJsxAttribute(property) && property.name.text === "onClick")) {
         const line = parsed.getLineAndCharacterOfPosition(node.getStart()).line + 1
         findings.push(`${relative(file)}:${line}: interactive table rows must expose selection through an official control`)
@@ -213,6 +260,46 @@ for (const file of compositionFiles.filter((candidate) => /\.tsx$/.test(candidat
     ts.forEachChild(node, visit)
   }
   visit(parsed)
+}
+
+const conversationWorkspacePath = path.join(sourceRoot, "components/conversation/ConversationWorkspace.tsx")
+const conversationWorkspace = fs.readFileSync(conversationWorkspacePath, "utf8")
+const chatTranscriptPath = path.join(sourceRoot, "components/chat/ChatTranscript.tsx")
+const chatTranscript = fs.readFileSync(chatTranscriptPath, "utf8")
+for (const required of [
+  "<ChatTranscript",
+  "<ChatTranscriptMessage",
+  "<ChatTranscriptActivity",
+  "<ChatTranscriptCancel",
+  "<InputGroup>",
+  "<InputGroupTextarea",
+  "<InputGroupAddon",
+  "<Alert",
+  "<Field>",
+]) {
+  if (!conversationWorkspace.includes(required)) findings.push(`ConversationWorkspace.tsx: conversation contract requires ${required}`)
+}
+for (const prohibited of [
+  '@/components/ui/message-scroller',
+  '@/components/ui/message',
+  '@/components/ui/bubble',
+  '@/components/ui/textarea',
+]) {
+  if (conversationWorkspace.includes(prohibited)) findings.push(`ConversationWorkspace.tsx: use the shared ChatTranscript/InputGroup composition instead of ${prohibited}`)
+}
+if (!conversationWorkspace.includes('aria-disabled={!composer.trim() || sending}')) {
+  findings.push("ConversationWorkspace.tsx: the nested send action must use aria-disabled so InputGroup does not mute the enabled textarea")
+}
+if (conversationWorkspace.includes(' disabled={!composer.trim() || sending}')) {
+  findings.push("ConversationWorkspace.tsx: a disabled InputGroup descendant mutes the entire composer through the official has-disabled state")
+}
+for (const required of [
+  "autoScroll",
+  "<MessageScrollerButton />",
+  "messageId={messageId}",
+  "scrollAnchor={scrollAnchor",
+]) {
+  if (!chatTranscript.includes(required)) findings.push(`ChatTranscript.tsx: official scroller contract requires ${required}`)
 }
 
 const appShellPath = path.join(sourceRoot, "components/layout/AppShell.tsx")

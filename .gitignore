@@ -8,6 +8,8 @@ __pycache__/
 *.pyc
 apps/fraia-electron/node_modules/
 apps/fraia-electron/dist/
+apps/fraia-electron/tmp/
+apps/fraia-electron/test-results/
 apps/fraia-electron/.package/
 apps/fraia-electron/release/
 apps/fraia-electron/ci-output/

@@ -100,6 +100,25 @@ Likely early tool families:
 - inspect run status
 - inspect run summary
 
+The accepted-design `fraia.operations.v1` `analyse_snapshot` operation uses the
+exact accepted revision, expected authored snapshot, evidence id, and analysis
+settings. When the operation runs against a package-owned design database, it
+publishes one canonical immutable design run for every completed, failed, or
+unsupported attempt. The operation response and stored analysis evidence both
+carry the same canonical run id.
+
+An exact operation-receipt replay returns the original run id. A retry uses a
+new request and evidence id and creates a new truthful attempt. It does not
+reuse or mutate a completed run. Run listing retains all attempts. The status
+projection compares each run's authored snapshot with the inspected snapshot
+and its explicit ancestors, so a descendant edit marks prior evidence stale and
+a rerun against the new snapshot becomes current.
+
+The application service exposes design-scoped list, inspect, and status
+projections. The managed-package CLI operation adapter publishes through the
+same service. Legacy or isolated SQLite databases can still execute the
+operation contract, but they do not claim a canonical design-run identity.
+
 ## 4.7 Results operations
 - query displacements
 - query forces/reactions
@@ -221,7 +240,17 @@ Every turn uses a new low-level in-memory Pi agent with no coding-agent session,
 
 Fraia 0.0.3 exposes one public connection: **Sign in with ChatGPT** through Pi's `openai-codex` OAuth flow. The sign-in action always selects browser login and opens the authorization URL in the user's default browser; Fraia does not expose the headless device-code method. It does not expose provider search, API-key entry, model selection, or reasoning selection. The ChatGPT authorization is stored as an Electron `safeStorage` encrypted blob beneath Electron user data. If operating-system encryption is unavailable, Fraia refuses to persist the connection rather than falling back to plaintext. Projects, chat records, logs, and diagnostics never contain provider credentials. Pi sessions and duplicate Pi transcripts are not persisted.
 
-Every 0.0.3 workflow is locked to `{ providerId: "openai-codex", modelId: "gpt-5.6-luna", reasoningEffort: "low" }`. Existing model-only and per-surface settings still deserialize for compatibility, then project migration replaces them with that reviewed tuple. If Luna is absent or unavailable, the next turn is blocked; Fraia never silently switches model, provider, or reasoning effort. Committed assistant messages and AI-derived design-option batches retain the exact provider, model, reasoning effort, and catalogue timestamp provenance.
+Every current workflow is locked to `{ providerId: "openai-codex", modelId: "gpt-5.6-luna", reasoningEffort: "high" }`. Existing model-only and per-surface settings still deserialize for compatibility, then project migration replaces them with that reviewed tuple. If Luna is absent or unavailable, the next turn is blocked; Fraia never silently switches model, provider, or reasoning effort. Committed assistant messages and AI-derived design-option batches retain the exact provider, model, reasoning effort, and catalogue timestamp provenance.
+
+### 8.2 Adapter priority
+
+The canonical typed Rust operation layer is required. The embedded desktop
+agent calls that layer through the local sidecar. The existing CLI should become
+the deterministic test and automation adapter over the same operations.
+
+An MCP adapter is deferred. Add it only when an external agent must operate a
+Fraia project outside the desktop application. MCP must never become a second
+engineering implementation or a prerequisite for the desktop conversation.
 
 ---
 

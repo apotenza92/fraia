@@ -30,6 +30,15 @@ pub const ANALYSIS_SETTINGS_FORMAT_VERSION: &str = "fraia.analysis.settings.v1";
 pub const ANALYSIS_INPUT_FORMAT_VERSION: &str = "fraia.analysis.input.v1";
 pub const ANALYSIS_RESULT_FORMAT_VERSION: &str = "fraia.analysis.result.v1";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AnalysisExecutionStage {
+    Preparing,
+    Resolving,
+    Solving,
+    Collecting,
+}
+
 /// Conservative limits used only to produce deterministic check evidence.
 /// They are explicitly persisted with the run and are not a code-compliance
 /// claim.
@@ -125,9 +134,13 @@ impl AnalysisSettings {
 /// Immutable, caller-readable result of one analysis attempt. `evidence` is
 /// always bound to the exact authored snapshot, including unsuccessful runs;
 /// callers must inspect `outcome` and diagnostics rather than infer success.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SnapshotAnalysisRun {
     pub revision_id: RevisionId,
+    /// Canonical design-run identity after a project adapter publishes this
+    /// attempt. Transient analysis can leave it absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canonical_run_id: Option<String>,
     pub evidence: AnalysisEvidence,
     pub outcome: SnapshotAnalysisOutcome,
     /// Durable canonical payload for the resolved derivative, when a
@@ -137,14 +150,15 @@ pub struct SnapshotAnalysisRun {
     pub resolved_snapshot: Option<ResolvedSnapshotRecord>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResolvedSnapshotRecord {
     pub id: SnapshotId,
     pub format_version: String,
     pub canonical_bytes: Vec<u8>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum SnapshotAnalysisOutcome {
     Completed {
         resolved_snapshot_id: SnapshotId,
@@ -270,6 +284,7 @@ pub enum SnapshotAnalysisError {
     DuplicateEvidence(EvidenceId),
     InvalidSettings(String),
     Serialization(String),
+    Cancelled,
 }
 
 impl From<RepositoryError> for SnapshotAnalysisError {
@@ -299,6 +314,7 @@ impl fmt::Display for SnapshotAnalysisError {
                     "could not hash deterministic analysis data: {error}"
                 )
             }
+            Self::Cancelled => formatter.write_str("analysis attempt was cancelled"),
         }
     }
 }
@@ -345,6 +361,32 @@ pub fn analyse_accepted_revision_with_settings(
     evidence_id: EvidenceId,
     settings: AnalysisSettings,
 ) -> Result<SnapshotAnalysisRun, SnapshotAnalysisError> {
+    analyse_accepted_revision_with_control(
+        repository,
+        revision_id,
+        evidence_id,
+        settings,
+        |_| {},
+        || false,
+    )
+}
+
+pub fn analyse_accepted_revision_with_control<P, C>(
+    repository: &mut InMemoryRevisionRepository,
+    revision_id: &RevisionId,
+    evidence_id: EvidenceId,
+    settings: AnalysisSettings,
+    mut progress: P,
+    mut cancelled: C,
+) -> Result<SnapshotAnalysisRun, SnapshotAnalysisError>
+where
+    P: FnMut(AnalysisExecutionStage),
+    C: FnMut() -> bool,
+{
+    progress(AnalysisExecutionStage::Preparing);
+    if cancelled() {
+        return Err(SnapshotAnalysisError::Cancelled);
+    }
     if repository.evidence(&evidence_id).is_ok() {
         return Err(SnapshotAnalysisError::DuplicateEvidence(evidence_id));
     }
@@ -367,6 +409,10 @@ pub fn analyse_accepted_revision_with_settings(
             realized_model: model,
         })
     };
+    progress(AnalysisExecutionStage::Resolving);
+    if cancelled() {
+        return Err(SnapshotAnalysisError::Cancelled);
+    }
     let derivation = derive_from_snapshot(
         SnapshotBoundStructuralModel::new(authored_id.as_str(), snapshot.model()),
         settings.request.clone(),
@@ -401,6 +447,10 @@ pub fn analyse_accepted_revision_with_settings(
             )
         }
         DeterministicDerivationOutcome::Derived(DeterministicDerivation::Frame2D(derived)) => {
+            progress(AnalysisExecutionStage::Solving);
+            if cancelled() {
+                return Err(SnapshotAnalysisError::Cancelled);
+            }
             let resolved_id = SnapshotId::from(derived.manifest.derived_id.clone());
             let input_hash = input_identity(Some(&resolved_id), Some(&derived.realization.model))?;
             let mut diagnostics: Vec<String> = derived
@@ -409,16 +459,23 @@ pub fn analyse_accepted_revision_with_settings(
                 .iter()
                 .map(|diagnostic| format!("{}: {}", diagnostic.code, diagnostic.message))
                 .collect();
-            let mut results: Vec<_> = match derived
-                .realization
-                .model
-                .combos
-                .iter()
-                .map(|combo| solve_frame_2d(&derived.realization.model, combo))
-                .collect::<Result<Vec<_>, _>>()
-            {
-                Ok(results) => results,
-                Err(error) => {
+            let mut solved = Vec::new();
+            let mut solve_error = None;
+            for combo in &derived.realization.model.combos {
+                if cancelled() {
+                    return Err(SnapshotAnalysisError::Cancelled);
+                }
+                match solve_frame_2d(&derived.realization.model, combo) {
+                    Ok(result) => solved.push(result),
+                    Err(error) => {
+                        solve_error = Some(error);
+                        break;
+                    }
+                }
+            }
+            let mut results: Vec<_> = match solve_error {
+                None => solved,
+                Some(error) => {
                     diagnostics.push(format!("solver.frame2d-failed: {error}"));
                     let manifest = manifest(
                         &authored_id,
@@ -440,15 +497,24 @@ pub fn analyse_accepted_revision_with_settings(
                         manifest,
                     )?;
                     let outcome = SnapshotAnalysisOutcome::Failed { diagnostics };
+                    progress(AnalysisExecutionStage::Collecting);
+                    if cancelled() {
+                        return Err(SnapshotAnalysisError::Cancelled);
+                    }
                     repository.attach_evidence(revision_id, evidence.clone())?;
                     return Ok(SnapshotAnalysisRun {
                         revision_id: revision_id.clone(),
+                        canonical_run_id: None,
                         evidence,
                         outcome,
                         resolved_snapshot: Some(resolved_snapshot_record(&derived)?),
                     });
                 }
             };
+            if cancelled() {
+                return Err(SnapshotAnalysisError::Cancelled);
+            }
+            progress(AnalysisExecutionStage::Collecting);
             results.sort_by(|left, right| left.combo.id.cmp(&right.combo.id));
             let metrics = metrics_for_results(&results);
             if !metrics.is_finite() {
@@ -517,9 +583,13 @@ pub fn analyse_accepted_revision_with_settings(
             }
         }
     };
+    if cancelled() {
+        return Err(SnapshotAnalysisError::Cancelled);
+    }
     repository.attach_evidence(revision_id, evidence.clone())?;
     Ok(SnapshotAnalysisRun {
         revision_id: revision_id.clone(),
+        canonical_run_id: None,
         evidence,
         outcome,
         resolved_snapshot,
@@ -722,6 +792,7 @@ fn manifest(
         settings_payload,
         metrics,
         attachments,
+        canonical_run_id: None,
     })
 }
 

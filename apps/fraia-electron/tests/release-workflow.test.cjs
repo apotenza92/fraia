@@ -257,6 +257,7 @@ test('private-source and package prerequisites fail before any secret-bearing jo
   assert.match(packageMacos, /environment: release-signing/);
   assert.match(packageMacos, /secrets\.APPLE_SIGNING_CERTIFICATE_P12_BASE64/);
   assert.match(validate, /npm run check:icons/);
+  assert.match(validate, /npm run verify:import-runtimes:built/);
   assert.match(validate, /build\/macos\/Fraia\.icon\/Assets\/01-artwork-dark\.svg/);
 });
 
@@ -506,7 +507,7 @@ test('native package checks pin the reviewed macOS icon toolchain and determinis
   assert.match(packagedE2e, /require\.resolve\('@playwright\/test\/cli'\)/);
   assert.match(packagedE2e, /spawnSync\(process\.execPath/);
   assert.match(packagedE2e, /assertMacosMinimumVersion/);
-  assert.match(packagedElectronTest, /test\.setTimeout\(120_000\)/);
+  assert.match(packagedElectronTest, /test\.setTimeout\(300_000\)/);
   assert.match(packagedElectronTest, /\[packaged-e2e\]/);
   assert.match(continuousIntegration, /AssetCatalogAgent-AssetRuntime/);
   assert.match(continuousIntegration, /Retrying once after a verified Xcode AssetCatalogAgent infrastructure crash/);
@@ -547,10 +548,15 @@ test('native updater menu exposes manual checking and every supported persisted 
 test('application menu delegates reload and whole-window zoom shortcuts to Electron roles', () => {
   for (const role of ['reload', 'forceReload', 'resetZoom', 'zoomIn', 'zoomOut', 'togglefullscreen']) {
     assert.match(mainProcess, new RegExp(`role: ['"]${role}['"]`));
-  }
-  for (const role of ['reload', 'forceReload', 'resetZoom', 'zoomIn', 'zoomOut', 'togglefullscreen']) {
     assert.doesNotMatch(mainProcess, new RegExp(`role: ['"]${role}['"][^}]*accelerator`));
   }
+  const explicitCommandAccelerators = [...mainProcess.matchAll(
+    /accelerator:\s*['"]((?:Cmd|Command|Ctrl|Control)[^'"]*)['"]/g,
+  )].map((match) => match[1]);
+  assert.deepEqual(explicitCommandAccelerators, [
+    'CommandOrControl+S',
+    'CommandOrControl+Shift+S',
+  ]);
 });
 
 test('packaged updater code ships TUF verification for Windows and Linux', () => {

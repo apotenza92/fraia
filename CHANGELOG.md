@@ -5,6 +5,27 @@ All notable user-facing changes to Fraia are documented here. Fraia follows
 workflow uses the matching version section below as the authoritative GitHub
 release notes and macOS updater notes.
 
+## [0.0.15] - 2026-08-13
+
+### Added
+
+- New blank models now open immediately as untitled projects in Fraia-managed recovery storage.
+- Save and Save As create one dedicated, inspectable project folder on macOS, Windows, and Linux.
+- The File menu now provides Save and Save As with standard cross-platform keyboard shortcuts.
+
+### Changed
+
+- Release jobs now build each native sidecar once, reuse reviewed renderer and sidecar artefacts, and split large application assets from updater-feed signing transfers.
+
+### Fixed
+
+- Creating a blank model no longer asks the user to select an existing folder or places Fraia files beside unrelated files.
+- Saving releases the Rust-owned SQLite workspace before moving project data, so the folder workflow remains safe on Windows.
+
+### Updating
+
+- Stable and Beta installations update to separately packaged `0.0.15` application identities on their existing channels.
+
 ## [0.0.14] - 2026-08-13
 
 ### Fixed

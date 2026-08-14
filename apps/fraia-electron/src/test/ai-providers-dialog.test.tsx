@@ -59,7 +59,8 @@ describe('Fraia AI setup', () => {
 
     expect(await screen.findByRole('dialog', { name: 'Fraia AI' })).toBeVisible();
     expect(screen.getByText('ChatGPT')).toBeVisible();
-    expect(screen.getByText('GPT-5.6 Luna · Low reasoning')).toBeVisible();
+    expect(screen.getByText('Fraia uses one reviewed model for every design conversation.')).toBeVisible();
+    expect(screen.queryByText(/gpt-5\.6|reasoning/i)).not.toBeInTheDocument();
     expect(screen.getByText('Sign in required')).toBeVisible();
     expect(screen.queryByText('Anthropic')).not.toBeInTheDocument();
     expect(screen.queryByText('Claude Sonnet')).not.toBeInTheDocument();
@@ -82,7 +83,7 @@ describe('Fraia AI setup', () => {
     render(<AiProvidersDialog open onOpenChange={vi.fn()} />);
 
     expect(await screen.findByText('Ready')).toBeVisible();
-    expect(screen.getByText('Encrypted ChatGPT authorization')).toBeVisible();
+    expect(screen.getByText('Signed in securely. Your authorization stays out of project files.')).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Sign in with ChatGPT' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Disconnect' }));
@@ -96,8 +97,33 @@ describe('Fraia AI setup', () => {
     render(<AiProvidersDialog open onOpenChange={vi.fn()} />);
 
     expect(await screen.findByText('Model unavailable')).toBeVisible();
-    expect(screen.getByText('GPT-5.6 Luna is unavailable')).toBeVisible();
-    expect(screen.getByText(/does not silently switch models/i)).toBeVisible();
+    expect(screen.getByText('Fraia AI is unavailable')).toBeVisible();
+    expect(screen.getByText(/will not switch to another model/i)).toBeVisible();
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+  });
+
+  it('shows one actionable connection sentence and hides technical detail by default', async () => {
+    const user = userEvent.setup();
+    installFraia({ aiProviders: vi.fn().mockRejectedValue(new Error("Error invoking remote method 'fraia:aiProviders': internal provider schema failure")) });
+
+    render(<AiProvidersDialog open onOpenChange={vi.fn()} />);
+
+    expect(await screen.findByText('Fraia could not finish that action. Try again.')).toBeVisible();
+    const details = screen.getByText('Details').closest('details');
+    expect(details).not.toHaveAttribute('open');
+    expect(details).toHaveTextContent('internal provider schema failure');
+    expect(screen.queryByText(/openai-codex|gpt-5\.6-luna/i)).not.toBeInTheDocument();
+    await user.click(screen.getByText('Details'));
+    expect(details).toHaveAttribute('open');
+  });
+
+  it('keeps the primary connection action last in keyboard order', async () => {
+    installFraia();
+    render(<AiProvidersDialog open onOpenChange={vi.fn()} />);
+    await screen.findByText('Sign in required');
+
+    const controls = screen.getAllByRole('button').map((button) => button.textContent?.trim() || button.getAttribute('aria-label'));
+    expect(controls.indexOf('Refresh')).toBeLessThan(controls.indexOf('Sign in with ChatGPT'));
+    expect(screen.getByRole('dialog')).toContainElement(screen.getByRole('button', { name: 'Close' }));
   });
 });

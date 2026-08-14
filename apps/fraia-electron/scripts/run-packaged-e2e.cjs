@@ -2,6 +2,7 @@ const { spawnSync } = require('node:child_process');
 const asar = require('@electron/asar');
 const fs = require('node:fs');
 const path = require('node:path');
+const { createHash } = require('node:crypto');
 const { assertBinaryArchitecture } = require('../binary-architecture.cjs');
 const { assertMacosMinimumVersion } = require('../macos-version-contract.cjs');
 const {
@@ -98,12 +99,30 @@ function verifyProductionDependencyBoundary(resources) {
   const entries = new Set(
     asar.listPackage(archive).map((entry) => entry.replaceAll('\\', '/')),
   );
+  for (const packagedContractFile of [
+    '/IMPORT_RUNTIME_NOTICES.txt',
+    '/import-runtime-licenses/LOPDF-MIT.txt',
+    '/import-runtime-licenses/PDFJS-APACHE-2.0.txt',
+    '/import-runtime-licenses/TESSERACTJS-APACHE-2.0.txt',
+    '/import-runtime-licenses/TESSDATA-FAST-APACHE-2.0.txt',
+    '/import-runtime-contract.cjs',
+    '/ocr-runtime.cjs',
+    '/ocr-runtime/eng.traineddata',
+    '/node_modules/tesseract.js/package.json',
+    '/node_modules/tesseract.js-core/package.json',
+  ]) {
+    if (!entries.has(packagedContractFile)) {
+      throw new Error(`Packaged Fraia is missing ${packagedContractFile}.`);
+    }
+  }
   const packageLock = JSON.parse(fs.readFileSync(path.join(appRoot, 'package-lock.json'), 'utf8'));
   const productionDependencies = [
     '@earendil-works/pi-agent-core',
     '@earendil-works/pi-ai',
     'electron-updater',
     'typebox',
+    'tesseract.js',
+    'tesseract.js-core',
   ];
   for (const dependency of productionDependencies) {
     const packagePath = `node_modules/${dependency}/package.json`;
@@ -113,9 +132,27 @@ function verifyProductionDependencyBoundary(resources) {
     const extractionPath = packagePath.split('/').join(path.sep);
     const packaged = JSON.parse(asar.extractFile(archive, extractionPath).toString('utf8'));
     const locked = packageLock.packages[`node_modules/${dependency}`];
-    if (packaged.version !== locked?.version || packaged.license !== 'MIT') {
+    const expectedLicense = dependency.startsWith('tesseract.js') ? 'Apache-2.0' : 'MIT';
+    if (packaged.version !== locked?.version || packaged.license !== expectedLicense) {
       throw new Error(`Packaged Fraia has unreviewed ${dependency} version or licence metadata.`);
     }
+  }
+  const importContract = require(path.join(appRoot, 'import-runtime-contract.cjs')).importRuntimeContract;
+  const ocr = importContract.importers.ocr;
+  for (const [asset, expectedSha256] of Object.entries(ocr.coreAssetSha256)) {
+    const packagePath = `node_modules/${ocr.corePackage}/${asset}`;
+    if (!entries.has(`/${packagePath}`)) {
+      throw new Error(`Packaged Fraia is missing reviewed OCR core asset ${asset}.`);
+    }
+    const packagedBytes = asar.extractFile(archive, packagePath.split('/').join(path.sep));
+    if (createHash('sha256').update(packagedBytes).digest('hex') !== expectedSha256) {
+      throw new Error(`Packaged OCR core asset ${asset} differs from the reviewed SHA-256.`);
+    }
+  }
+  const modelBytes = asar.extractFile(archive, ocr.modelFile.split('/').join(path.sep));
+  if (modelBytes.byteLength !== ocr.modelByteSize
+    || createHash('sha256').update(modelBytes).digest('hex') !== ocr.modelSha256) {
+    throw new Error('Packaged English OCR model differs from the reviewed contract.');
   }
 
   const excludedPackages = [
@@ -173,7 +210,14 @@ const result = spawnSync(process.execPath, [
   'tests/electron/packaged-app.spec.ts',
 ], {
   cwd: appRoot,
-  env: { ...process.env, FRAIA_PACKAGED_EXECUTABLE: layout.executable, FRAIA_DISABLE_UPDATES: '1' },
+  env: {
+    ...process.env,
+    FRAIA_PACKAGED_EXECUTABLE: layout.executable,
+    FRAIA_DISABLE_UPDATES: '1',
+    ...(process.env.FRAIA_REQUIRE_PACKAGED_CALCULIX === '1'
+      ? { FRAIA_CCX_PATH: packagedCalculixPath(layout.resources) }
+      : {}),
+  },
   stdio: 'inherit',
 });
 if (result.error) throw result.error;

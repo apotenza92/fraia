@@ -7,16 +7,25 @@ pub mod calculix;
 pub mod catalog;
 pub mod checks;
 pub mod design_actions;
+pub mod design_runs;
+pub mod drawing_interpretation;
+pub mod drawing_interpretation_store;
+pub mod dxf_ingest;
 pub mod engineering;
 pub mod frame2d;
 pub mod frame_calculix;
+pub mod ifc_ingest;
+pub mod mesh_ingest;
 pub mod model_understanding;
 pub mod optimizer;
 pub mod outputs;
+pub mod pdf_ingest;
 pub mod project;
 pub mod realization;
 pub mod scene;
+pub mod shelf;
 pub mod snapshot_derivation;
+pub mod sources;
 pub mod stick_import;
 pub mod structural_app;
 pub mod types;
@@ -41,19 +50,33 @@ pub use calculix::*;
 pub use catalog::{section_by_id, section_catalog, section_family, steel_material};
 pub use checks::*;
 pub use design_actions::*;
+pub use design_runs::*;
+pub use drawing_interpretation::*;
+pub use drawing_interpretation_store::*;
+pub use dxf_ingest::*;
 pub use engineering::*;
 pub use frame_calculix::*;
+pub use ifc_ingest::*;
+pub use mesh_ingest::*;
 pub use model_understanding::*;
 pub use optimizer::run_optimization;
 pub use outputs::*;
+pub use pdf_ingest::*;
 pub use project::{
-    ProjectPaths, apply_planning_draft, create_project, default_planning_draft,
-    default_planning_markdown, load_project, materialize_project_structural_model, planning_draft,
-    save_project, update_planning_markdown,
+    DESIGN_MANIFEST_SCHEMA_VERSION, DesignPackage, DesignPackagePaths, LegacyMigrationStage,
+    ManifestValidationError, PROJECT_MANIFEST_SCHEMA_VERSION, ProjectPackage, ProjectPackagePaths,
+    ProjectPaths, apply_planning_draft, create_named_project_package, create_project,
+    create_project_package, default_planning_draft, default_planning_markdown,
+    design_package_paths, load_project, load_project_package, materialize_project_structural_model,
+    migrate_legacy_project_package, new_blank_project_manifests, planning_draft,
+    project_package_paths, project_paths, save_project, save_project_package,
+    update_planning_markdown,
 };
 pub use realization::*;
 pub use scene::*;
+pub use shelf::*;
 pub use snapshot_derivation::*;
+pub use sources::*;
 pub use stick_import::*;
 pub use structural_app::*;
 pub use types::*;

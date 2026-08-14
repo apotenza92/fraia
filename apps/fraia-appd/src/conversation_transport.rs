@@ -5,21 +5,27 @@ use axum::{Extension, Json, Router, http::StatusCode, response::IntoResponse, ro
 use fraia_app_api::*;
 use fraia_core::{
     AssignmentTargetRef, LoadVector, MemberEnd, MemberEndTarget, ReleaseAssignment,
-    StructuralMember, StructuralModel, StructuralPlate, SupportAssignment,
-    understand_structural_model,
+    StructuralMember, StructuralModel, StructuralPlate, SupportAssignment, design_package_paths,
+    load_project_package, understand_structural_model,
 };
 use fraia_revision::{
     ConversationId, EvidenceId, ProjectId, RevisionId,
     agent_contract::AgentTurnProvenance,
     analysis_service::{
-        ResolvedSnapshotRecord, SnapshotAnalysisOutcome, SnapshotAnalysisRun,
-        analyse_accepted_revision, compare_completed_runs,
+        AnalysisSettings, ResolvedSnapshotRecord, SnapshotAnalysisOutcome, SnapshotAnalysisRun,
+        compare_completed_runs,
     },
     conversation::ConversationOrigin,
     diff::SemanticDiff,
     evidence::{
         AnalysisEvidence, AnalysisEvidenceManifest, AnalysisEvidenceStatus, AnalysisMetrics,
         EvidenceDependency,
+    },
+    operations::{
+        AnalysisOperationControl, DesignRunOperationContext, OPERATION_CONTRACT_VERSION, Operation,
+        OperationErrorCode, OperationOutcome, OperationRequest, OperationResponse, OperationResult,
+        execute_sqlite_operation, execute_sqlite_operation_with_design_runs,
+        execute_sqlite_operation_with_design_runs_controlled,
     },
     patch::{
         ForceUnit, Length, LineLoadUnit, LoadInput, LoadMagnitude, MemberRole, Position,
@@ -31,16 +37,117 @@ use fraia_revision::{
     },
     snapshot::ModelSnapshot,
     sqlite::{
-        SqliteRevisionRepository, StoredConversation, StoredEvidence, StoredProjectRoot,
-        StoredProposal, StoredRevision, StoredSnapshot,
+        SqliteRevisionRepository, StoredConversation, StoredProjectRoot, StoredRevision,
+        StoredSnapshot,
     },
     working_copy::WorkingCopy,
 };
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU8, Ordering},
+    },
+    time::{Duration, Instant},
 };
+
+const TEST_ANALYSIS_DELAY_ENV: &str = "FRAIA_TEST_ANALYSIS_DELAY_MS";
+const TEST_ANALYSIS_FAILURE_ENV: &str = "FRAIA_TEST_ANALYSIS_FAILURE";
+const MAX_TEST_ANALYSIS_DELAY_MILLIS: u64 = 30_000;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct AnalysisAttemptTestControl {
+    delay_millis: u64,
+    force_failure: bool,
+}
+
+fn resolve_analysis_attempt_test_control(
+    debug_build: bool,
+    mut read_env: impl FnMut(&str) -> Option<String>,
+) -> AnalysisAttemptTestControl {
+    if !debug_build {
+        return AnalysisAttemptTestControl::default();
+    }
+    let delay_millis = read_env(TEST_ANALYSIS_DELAY_ENV)
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or_default()
+        .min(MAX_TEST_ANALYSIS_DELAY_MILLIS);
+    let force_failure = read_env(TEST_ANALYSIS_FAILURE_ENV).is_some_and(|value| value == "1");
+    AnalysisAttemptTestControl {
+        delay_millis,
+        force_failure,
+    }
+}
+
+fn analysis_attempt_test_control() -> AnalysisAttemptTestControl {
+    resolve_analysis_attempt_test_control(cfg!(debug_assertions), |name| std::env::var(name).ok())
+}
+
+#[derive(Debug)]
+struct AnalysisAttemptEntry {
+    lifecycle: Arc<AtomicU8>,
+    started: Instant,
+    response: AnalysisAttemptResponse,
+    sequence: u64,
+}
+
+#[derive(Debug)]
+struct AnalysisAttemptRegistry {
+    attempts: Mutex<BTreeMap<String, AnalysisAttemptEntry>>,
+    test_control: AnalysisAttemptTestControl,
+}
+
+impl Default for AnalysisAttemptRegistry {
+    fn default() -> Self {
+        Self {
+            attempts: Mutex::default(),
+            test_control: analysis_attempt_test_control(),
+        }
+    }
+}
+
+fn persist_analysis_attempt(
+    directory: &Path,
+    sequence: u64,
+    response: &AnalysisAttemptResponse,
+) -> Result<(), String> {
+    std::fs::create_dir_all(directory).map_err(display)?;
+    let path = directory.join(format!("{sequence:020}.json"));
+    let bytes = serde_json::to_vec_pretty(response).map_err(display)?;
+    let mut file = std::fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&path)
+        .map_err(display)?;
+    use std::io::Write;
+    file.write_all(&bytes).map_err(display)?;
+    file.sync_all().map_err(display)?;
+    Ok(())
+}
+
+fn load_latest_analysis_attempt(
+    directory: &Path,
+) -> Result<(u64, AnalysisAttemptResponse), String> {
+    let mut files = std::fs::read_dir(directory)
+        .map_err(display)?
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
+        .collect::<Vec<_>>();
+    files.sort_by_key(|entry| entry.file_name());
+    let file = files
+        .last()
+        .ok_or_else(|| "analysis attempt has no durable state".to_string())?;
+    let sequence = file
+        .path()
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .and_then(|value| value.parse().ok())
+        .ok_or_else(|| "analysis attempt state sequence is invalid".to_string())?;
+    let response =
+        serde_json::from_slice(&std::fs::read(file.path()).map_err(display)?).map_err(display)?;
+    Ok((sequence, response))
+}
 
 /// The SQLite schema stores an opaque origin JSON value. Keep the transport's
 /// onboarding facts beside the revision origin so a restarted appd instance
@@ -53,6 +160,8 @@ struct PersistedConversationState {
     project_facts: ConversationProjectFacts,
     #[serde(default)]
     messages: Vec<String>,
+    #[serde(default)]
+    agent_responses: Vec<ConversationAgentRespondResponse>,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -66,23 +175,17 @@ struct PersistedConversationEnvelope {
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct PersistedAgentProvenance {
-    provider: String,
-    model: String,
-    turn_id: String,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct PersistedRevisionMetadata {
     #[serde(default)]
     author: String,
     #[serde(default)]
     semantic_diff: SemanticDiff,
     #[serde(default)]
-    operation: Option<RevisionOperation>,
+    operation: Option<serde_json::Value>,
     #[serde(default)]
-    agent_provenance: Option<PersistedAgentProvenance>,
+    proposal_id: Option<ProposalId>,
+    #[serde(default)]
+    agent_provenance: Option<AgentTurnProvenance>,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -104,7 +207,9 @@ struct ProjectConversationStore {
     sqlite_path: Option<PathBuf>,
     messages: BTreeMap<ConversationId, Vec<String>>,
     working_copies: BTreeMap<String, WorkingCopy>,
+    working_copy_operations: BTreeMap<String, Vec<StructuralOperation>>,
     analysis_runs: BTreeMap<EvidenceId, SnapshotAnalysisRun>,
+    agent_responses: BTreeMap<ConversationId, Vec<ConversationAgentRespondResponse>>,
 }
 pub type ConversationServiceHandle = Arc<Mutex<ConversationService>>;
 
@@ -117,8 +222,195 @@ impl Default for ConversationService {
 }
 
 impl ConversationService {
+    pub(crate) fn proposal_model_context(
+        &self,
+        project: &ProjectId,
+        conversation: &ConversationId,
+    ) -> Result<serde_json::Value, String> {
+        let store = self.store(project)?;
+        let head = store.repository.head(conversation).map_err(display)?;
+        let revision = store
+            .repository
+            .revision(&head.head_revision_id)
+            .map_err(display)?;
+        let model = store
+            .repository
+            .snapshot(revision.snapshot_id())
+            .map_err(display)?
+            .model();
+        Ok(serde_json::json!({
+            "currentNodeIds": model.nodes.iter().map(|item| item.id.clone()).collect::<Vec<_>>(),
+            "currentMemberIds": model.members.iter().map(|item| item.id.clone()).collect::<Vec<_>>(),
+            "allowedSectionIds": fraia_core::section_catalog().iter().map(|item| item.id.clone()).collect::<Vec<_>>(),
+            "allowedMaterialIds": ["steel"],
+        }))
+    }
+
+    pub(crate) fn validate_proposal_operations(
+        &self,
+        project: &ProjectId,
+        conversation: &ConversationId,
+        operations: &[ConversationProposalOperation],
+    ) -> Result<(), String> {
+        let store = self.store(project)?;
+        let head = store.repository.head(conversation).map_err(display)?;
+        let revision = store
+            .repository
+            .revision(&head.head_revision_id)
+            .map_err(display)?;
+        let model = store
+            .repository
+            .snapshot(revision.snapshot_id())
+            .map_err(display)?
+            .model();
+        let operations = operations
+            .iter()
+            .cloned()
+            .map(transport_operation)
+            .collect::<Result<Vec<_>, _>>()?;
+        fraia_revision::patch::apply_patch(model, &StructuralPatch { operations })
+            .map(|_| ())
+            .map_err(display)
+    }
+
+    fn analysis_attempt_path(
+        &self,
+        project_id: &ProjectId,
+        attempt_id: &str,
+    ) -> Result<PathBuf, String> {
+        if attempt_id.len() != 48 || !attempt_id.chars().all(|value| value.is_ascii_hexdigit()) {
+            return Err("analysis attempt id is invalid".into());
+        }
+        let workspace = self
+            .store(project_id)?
+            .sqlite_path
+            .as_ref()
+            .ok_or_else(|| "conversation project has no durable workspace".to_string())?;
+        Ok(workspace
+            .parent()
+            .ok_or_else(|| "design workspace has no parent directory".to_string())?
+            .join("analysis-attempts")
+            .join(attempt_id))
+    }
+    pub(crate) fn workspace_path(&self, project_id: &ProjectId) -> Result<&Path, String> {
+        self.store(project_id)?
+            .sqlite_path
+            .as_deref()
+            .ok_or_else(|| "conversation project has no durable workspace".to_string())
+    }
     pub fn unload(&mut self, project_id: &str) -> bool {
         self.projects.remove(&ProjectId::new(project_id)).is_some()
+    }
+
+    pub fn unload_workspace_path(&mut self, workspace: &Path) -> usize {
+        let before = self.projects.len();
+        self.projects
+            .retain(|_, store| store.sqlite_path.as_deref() != Some(workspace));
+        before - self.projects.len()
+    }
+
+    /// Executes the shared versioned operation contract against the workspace
+    /// database resolved from an already-open design. The request cannot
+    /// select an arbitrary filesystem path.
+    pub fn execute_operation(
+        &mut self,
+        project_id: &ProjectId,
+        request: OperationRequest,
+    ) -> Result<OperationResponse, String> {
+        self.execute_operation_maybe_controlled(project_id, request, None)
+    }
+
+    fn execute_operation_maybe_controlled(
+        &mut self,
+        project_id: &ProjectId,
+        request: OperationRequest,
+        mut control: Option<&mut AnalysisOperationControl<'_>>,
+    ) -> Result<OperationResponse, String> {
+        let path = self
+            .store(project_id)?
+            .sqlite_path
+            .clone()
+            .ok_or_else(|| "conversation project has no durable workspace".to_string())?;
+        let refresh = matches!(
+            &request.operation,
+            Operation::ProposeStructuralPatch { .. }
+                | Operation::AcceptStructuralPatch { .. }
+                | Operation::RejectStructuralPatch { .. }
+                | Operation::AnalyseSnapshot { .. }
+        );
+        let mut sqlite = SqliteRevisionRepository::open(&path).map_err(display)?;
+        let design_dir = path
+            .parent()
+            .ok_or_else(|| "design workspace has no design directory".to_string())?;
+        let project_dir = design_dir
+            .parent()
+            .and_then(Path::parent)
+            .ok_or_else(|| "design workspace has no project directory".to_string())?;
+        let response = if let Ok(package) = load_project_package(project_dir) {
+            let design_id = fraia_core::DesignId::new(
+                design_dir
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .ok_or_else(|| "design workspace directory has no valid id".to_string())?,
+            );
+            if !package
+                .designs
+                .iter()
+                .any(|design| design.manifest.id == design_id)
+            {
+                return Err(
+                    "active revision workspace does not belong to the project package".into(),
+                );
+            }
+            let run_context = DesignRunOperationContext::new(
+                project_dir,
+                package.manifest.id,
+                design_id,
+                fraia_core::DesignRunActor {
+                    actor_type: "app".into(),
+                    actor_id: "fraia-appd".into(),
+                },
+                fraia_core::utils::iso_now(),
+            );
+            match control.as_deref_mut() {
+                Some(control) => execute_sqlite_operation_with_design_runs_controlled(
+                    &mut sqlite,
+                    request,
+                    &run_context,
+                    control,
+                ),
+                None => {
+                    execute_sqlite_operation_with_design_runs(&mut sqlite, request, &run_context)
+                }
+            }
+        } else {
+            // Legacy and isolated fixture workspaces have no package-owned run
+            // store. They retain the operation contract without claiming a
+            // canonical design-run identity.
+            execute_sqlite_operation(&mut sqlite, request)
+        };
+        drop(sqlite);
+
+        if refresh && matches!(response.outcome, OperationOutcome::Success { .. }) {
+            let previous = self
+                .projects
+                .remove(project_id)
+                .ok_or_else(|| "unknown conversation project".to_string())?;
+            match hydrate_project(&path, project_id) {
+                Ok(mut hydrated) => {
+                    hydrated.working_copies = previous.working_copies;
+                    hydrated.working_copy_operations = previous.working_copy_operations;
+                    self.projects.insert(project_id.clone(), hydrated);
+                }
+                Err(error) => {
+                    self.projects.insert(project_id.clone(), previous);
+                    return Err(format!(
+                        "operation persisted but the active design could not be refreshed: {error}"
+                    ));
+                }
+            }
+        }
+        Ok(response)
     }
 
     /// Opens the durable appd transport repository. Electron remains only a
@@ -136,7 +428,7 @@ impl ConversationService {
         if request.purpose.trim().is_empty() {
             request.purpose = "Overall design".into();
         }
-        let path = project_workspace_database(&request.project_dir)?;
+        let path = project_workspace_database(&request.project_dir, &request.project_id)?;
         if path.exists() {
             if let Ok(store) = hydrate_project(&path, &request.project_id) {
                 self.projects.insert(request.project_id.clone(), store);
@@ -161,7 +453,9 @@ impl ConversationService {
             sqlite_path: Some(path),
             messages: BTreeMap::new(),
             working_copies: BTreeMap::new(),
+            working_copy_operations: BTreeMap::new(),
             analysis_runs: BTreeMap::new(),
+            agent_responses: BTreeMap::new(),
         };
         if let Some(sqlite) = store.sqlite.as_mut() {
             persist_root(
@@ -199,10 +493,20 @@ impl ConversationService {
                 .get(&request.conversation_id)
                 .cloned()
                 .unwrap_or_default();
+            let agent_responses = store
+                .agent_responses
+                .get(&request.conversation_id)
+                .cloned()
+                .unwrap_or_default();
             sqlite
                 .update_conversation_origin(
                     &request.conversation_id,
-                    &persisted_origin_json(conversation.origin(), &store.project_facts, &messages)?,
+                    &persisted_origin_json(
+                        conversation.origin(),
+                        &store.project_facts,
+                        &messages,
+                        &agent_responses,
+                    )?,
                 )
                 .map_err(display)?;
         }
@@ -235,6 +539,11 @@ impl ConversationService {
                             .get(&root.id)
                             .map(Vec::as_slice)
                             .unwrap_or(&[]),
+                        store
+                            .agent_responses
+                            .get(&root.id)
+                            .map(Vec::as_slice)
+                            .unwrap_or(&[]),
                     )?,
                 )
                 .map_err(display)?;
@@ -261,16 +570,28 @@ impl ConversationService {
             fixture.model,
         )
         .map_err(display)?;
+        let fixture_dir = tempfile::tempdir().map_err(display)?.keep();
+        let sqlite_path = fixture_dir.join("workspace.sqlite");
+        let mut sqlite = SqliteRevisionRepository::open(&sqlite_path).map_err(display)?;
+        persist_root(
+            &mut sqlite,
+            &request.project_id,
+            &repository,
+            &request.conversation_id,
+            &request.project_facts,
+        )?;
         self.projects.insert(
             request.project_id.clone(),
             ProjectConversationStore {
                 repository,
                 project_facts: std::mem::take(&mut request.project_facts),
-                sqlite: None,
-                sqlite_path: None,
+                sqlite: Some(sqlite),
+                sqlite_path: Some(sqlite_path),
                 messages: BTreeMap::new(),
                 working_copies: BTreeMap::new(),
+                working_copy_operations: BTreeMap::new(),
                 analysis_runs: BTreeMap::new(),
+                agent_responses: BTreeMap::new(),
             },
         );
         self.state(&request.project_id, &request.conversation_id)
@@ -280,6 +601,36 @@ impl ConversationService {
             provider: required_provenance(Some(request.provider.clone()), "provider")?,
             model: required_provenance(Some(request.model.clone()), "model")?,
             turn_id: required_provenance(Some(request.turn_id.clone()), "turn")?,
+            reasoning_effort: request.reasoning_effort.clone(),
+            catalogue_refreshed_at: request.catalogue_refreshed_at.clone(),
+            response_id: request.response_id.clone(),
+            response_text: request.response_text.clone(),
+            response_questions: request.response_questions.clone(),
+            shelf_item_ids: request
+                .source_context
+                .as_ref()
+                .map(|context| context.shelf_item_ids.clone())
+                .unwrap_or_default(),
+            drawing_interpretation_revision_ids: request
+                .source_context
+                .as_ref()
+                .map(|context| context.drawing_interpretation_revision_ids.clone())
+                .unwrap_or_default(),
+            drawing_interpretation_inference_ids: request
+                .source_context
+                .as_ref()
+                .map(|context| context.drawing_interpretation_inference_ids.clone())
+                .unwrap_or_default(),
+            assumptions: request
+                .source_context
+                .as_ref()
+                .map(|context| context.assumptions.clone())
+                .unwrap_or_default(),
+            evidence_limits: request
+                .source_context
+                .as_ref()
+                .map(|context| context.evidence_limits.clone())
+                .unwrap_or_default(),
         };
         let mut requested_operations = request.operations;
         if let Some(operation) = request.operation {
@@ -292,140 +643,111 @@ impl ConversationService {
             .into_iter()
             .map(transport_operation)
             .collect::<Result<Vec<_>, _>>()?;
-        let store = self.store_mut(&request.project_id)?;
-        let parent_revision_id =
-            normalize_legacy_root_revision(&store.repository, request.parent_revision_id);
-        let proposal_id = ProposalId::new(request.proposal_id.clone());
-        let patch = StructuralPatch { operations };
-        let conversation_id = request.conversation_id;
-        let proposed_revision_id = request.proposed_revision_id;
-        if let Some(mut sqlite) = store.sqlite.take() {
-            let mut candidate_repository = store.repository.clone();
-            if let Err(error) = candidate_repository.create_proposal_with_provenance(
-                proposal_id.clone(),
-                conversation_id.clone(),
-                parent_revision_id.clone(),
-                proposed_revision_id.clone(),
-                patch.clone(),
-                agent_provenance.clone(),
-            ) {
-                store.sqlite = Some(sqlite);
-                return Err(display(error));
-            }
-            let stored = stored_proposal(
-                &request.project_id,
-                &proposal_id,
-                &conversation_id,
+        let parent_revision_id = normalize_legacy_root_revision(
+            &self.store(&request.project_id)?.repository,
+            request.parent_revision_id,
+        );
+        if let Some(source_context) = &request.source_context {
+            validate_proposal_source_context(
+                self.store(&request.project_id)?,
                 &parent_revision_id,
-                &proposed_revision_id,
-                &patch,
-                Some(&agent_provenance),
+                source_context,
             )?;
-            if let Err(error) = sqlite.insert_proposal(&stored) {
-                store.sqlite = Some(sqlite);
-                return Err(display(error));
-            }
-            store.repository = candidate_repository;
-            store.sqlite = Some(sqlite);
-        } else {
-            store
-                .repository
-                .create_proposal_with_provenance(
-                    proposal_id,
-                    conversation_id,
-                    parent_revision_id,
-                    proposed_revision_id,
-                    patch,
-                    agent_provenance,
-                )
-                .map_err(display)?;
         }
-        Ok(())
+        let proposal_id = ProposalId::new(request.proposal_id.clone());
+        let response = self.execute_operation(
+            &request.project_id,
+            OperationRequest {
+                contract_version: OPERATION_CONTRACT_VERSION.into(),
+                request_id: format!("conversation-propose:{}:{}", request.turn_id, proposal_id),
+                operation: Operation::ProposeStructuralPatch {
+                    proposal_id,
+                    conversation_id: request.conversation_id,
+                    expected_head_revision_id: parent_revision_id,
+                    proposed_revision_id: request.proposed_revision_id,
+                    patch: StructuralPatch { operations },
+                    agent_provenance: Some(agent_provenance),
+                },
+            },
+        )?;
+        operation_result(response).map(|_| ())
     }
     pub fn accept(
         &mut self,
         request: ConversationProposalActionRequest,
     ) -> Result<ConversationRevisionResponse, String> {
-        let store = self.store_mut(&request.project_id)?;
         let proposal_id = ProposalId::new(request.proposal_id.clone());
-        let proposal = store
+        let proposal = self
+            .store(&request.project_id)?
             .repository
             .proposal(&proposal_id)
             .map_err(display)?
             .clone();
+        if let Some(authored) = proposal.agent_provenance() {
+            validate_current_interpretation_bindings(self.store(&request.project_id)?, authored)?;
+        }
         let provenance = ConversationAgentProvenance {
             provider: required_provenance(request.provider.clone(), "provider")?,
             model: required_provenance(request.model.clone(), "model")?,
             turn_id: required_provenance(request.turn_id.clone(), "turn")?,
         };
-        if let Some(mut sqlite) = store.sqlite.take() {
-            let mut candidate_repository = store.repository.clone();
-            let record = match candidate_repository.accept_proposal_with_provenance(
-                &proposal_id,
-                Some(AgentTurnProvenance {
-                    provider: provenance.provider.clone(),
-                    model: provenance.model.clone(),
-                    turn_id: provenance.turn_id.clone(),
-                }),
-            ) {
-                Ok(record) => record.clone(),
-                Err(error) => {
-                    store.sqlite = Some(sqlite);
-                    return Err(display(error));
-                }
-            };
-            if let Err(error) = persist_agent_revision(
-                &mut sqlite,
-                &candidate_repository,
-                &record,
-                Some(proposal.patch()),
-                &proposal_id,
-                &provenance,
-            ) {
-                store.sqlite = Some(sqlite);
-                return Err(error);
-            }
-            let response = revision_response(&record);
-            store.repository = candidate_repository;
-            store.sqlite = Some(sqlite);
-            return Ok(response);
+        let provenance = proposal
+            .agent_provenance()
+            .map(|authored| ConversationAgentProvenance {
+                provider: authored.provider.clone(),
+                model: authored.model.clone(),
+                turn_id: authored.turn_id.clone(),
+            })
+            .unwrap_or(provenance);
+        let response = self.execute_operation(
+            &request.project_id,
+            OperationRequest {
+                contract_version: OPERATION_CONTRACT_VERSION.into(),
+                request_id: format!("conversation-accept:{}:{}", provenance.turn_id, proposal_id),
+                operation: Operation::AcceptStructuralPatch {
+                    proposal_id,
+                    conversation_id: proposal.conversation_id().clone(),
+                    expected_head_revision_id: proposal.parent_revision_id().clone(),
+                },
+            },
+        )?;
+        match operation_result(response)? {
+            OperationResult::StructuralPatchAccepted {
+                revision_id,
+                parent_revision_id,
+                snapshot_id,
+                ..
+            } => Ok(ConversationRevisionResponse {
+                revision_id,
+                snapshot_id,
+                parent_revision_id: Some(parent_revision_id),
+                author: "agent".into(),
+                agent_provenance: Some(provenance),
+            }),
+            result => Err(format!("unexpected accept operation result: {result:?}")),
         }
-        let record = store
-            .repository
-            .accept_proposal_with_provenance(
-                &proposal_id,
-                Some(AgentTurnProvenance {
-                    provider: provenance.provider,
-                    model: provenance.model,
-                    turn_id: provenance.turn_id,
-                }),
-            )
-            .map_err(display)?;
-        let response = revision_response(record);
-        Ok(response)
     }
     pub fn reject(&mut self, request: ConversationProposalActionRequest) -> Result<(), String> {
-        let store = self.store_mut(&request.project_id)?;
         let proposal_id = ProposalId::new(request.proposal_id);
-        if let Some(mut sqlite) = store.sqlite.take() {
-            let mut candidate_repository = store.repository.clone();
-            if let Err(error) = candidate_repository.reject_proposal(&proposal_id) {
-                store.sqlite = Some(sqlite);
-                return Err(display(error));
-            }
-            if let Err(error) = sqlite.reject_proposal(&proposal_id) {
-                store.sqlite = Some(sqlite);
-                return Err(display(error));
-            }
-            store.repository = candidate_repository;
-            store.sqlite = Some(sqlite);
-            Ok(())
-        } else {
-            store
-                .repository
-                .reject_proposal(&proposal_id)
-                .map_err(display)
-        }
+        let proposal = self
+            .store(&request.project_id)?
+            .repository
+            .proposal(&proposal_id)
+            .map_err(display)?
+            .clone();
+        let response = self.execute_operation(
+            &request.project_id,
+            OperationRequest {
+                contract_version: OPERATION_CONTRACT_VERSION.into(),
+                request_id: format!("conversation-reject:{proposal_id}"),
+                operation: Operation::RejectStructuralPatch {
+                    proposal_id,
+                    conversation_id: proposal.conversation_id().clone(),
+                    expected_head_revision_id: proposal.parent_revision_id().clone(),
+                },
+            },
+        )?;
+        operation_result(response).map(|_| ())
     }
     pub fn fork(
         &mut self,
@@ -466,6 +788,7 @@ impl ConversationService {
                         conversation.origin(),
                         &store.project_facts,
                         &[],
+                        &[],
                     )?,
                     head_revision_id: conversation.head_revision_id().clone(),
                 })
@@ -477,7 +800,7 @@ impl ConversationService {
         &mut self,
         request: ConversationAnalysisRequest,
     ) -> Result<ConversationEvidenceResponse, String> {
-        let store = self.store_mut(&request.project_id)?;
+        let store = self.store(&request.project_id)?;
         store
             .repository
             .conversation(&request.conversation_id)
@@ -486,25 +809,30 @@ impl ConversationService {
             .repository
             .revision(&request.revision_id)
             .map_err(display)?;
-        let snapshot_id = revision.snapshot_id().clone();
-        if let Some(sqlite) = store.sqlite.as_ref() {
-            if let Ok(stored) = sqlite.evidence(&request.evidence_id) {
-                if stored.authored_snapshot_id != snapshot_id {
-                    return Err(format!(
-                        "analysis evidence `{}` is already bound to snapshot `{}`",
-                        request.evidence_id, stored.authored_snapshot_id
-                    ));
-                }
-                return restored_evidence_response(stored);
-            }
+        if let Some(provenance) = revision.agent_provenance() {
+            validate_current_interpretation_bindings(store, provenance)?;
         }
-        let mut candidate_repository = store.repository.clone();
-        let run = analyse_accepted_revision(
-            &mut candidate_repository,
-            &request.revision_id,
-            request.evidence_id.clone(),
-        )
-        .map_err(display)?;
+        let snapshot_id = revision.snapshot_id().clone();
+        let response = self.execute_operation(
+            &request.project_id,
+            OperationRequest {
+                contract_version: OPERATION_CONTRACT_VERSION.into(),
+                request_id: format!(
+                    "conversation-analyse:{}:{}:{}",
+                    request.revision_id, snapshot_id, request.evidence_id
+                ),
+                operation: Operation::AnalyseSnapshot {
+                    revision_id: request.revision_id,
+                    expected_snapshot_id: snapshot_id.clone(),
+                    evidence_id: request.evidence_id.clone(),
+                    settings: AnalysisSettings::frame2d(),
+                },
+            },
+        )?;
+        let run = match operation_result(response)? {
+            OperationResult::SnapshotAnalysed { run } => *run,
+            result => return Err(format!("unexpected analysis operation result: {result:?}")),
+        };
         let (status, summary, diagnostics) = match &run.outcome {
             SnapshotAnalysisOutcome::Completed { .. } => (
                 "success".to_owned(),
@@ -524,32 +852,6 @@ impl ConversationService {
             ),
         };
         let manifest = run.evidence.analysis_manifest();
-        let evidence = candidate_repository
-            .evidence(&request.evidence_id)
-            .map_err(display)?;
-        if let Some(mut sqlite) = store.sqlite.take() {
-            let resolved = run
-                .resolved_snapshot
-                .as_ref()
-                .map(|snapshot| StoredSnapshot {
-                    id: snapshot.id.clone(),
-                    format_version: snapshot.format_version.clone(),
-                    canonical_bytes: snapshot.canonical_bytes.clone(),
-                });
-            if let Err(error) =
-                sqlite.attach_evidence_with_snapshot(&stored_evidence(evidence)?, resolved.as_ref())
-            {
-                store.sqlite = Some(sqlite);
-                return Err(display(error));
-            }
-            store.repository = candidate_repository;
-            store.sqlite = Some(sqlite);
-        } else {
-            store.repository = candidate_repository;
-        }
-        store
-            .analysis_runs
-            .insert(request.evidence_id.clone(), run.clone());
         Ok(ConversationEvidenceResponse {
             evidence_id: request.evidence_id,
             authored_snapshot_id: snapshot_id,
@@ -557,6 +859,7 @@ impl ConversationService {
             status,
             summary,
             resolved_snapshot_id: run.evidence.resolved_snapshot_id().cloned(),
+            canonical_run_id: run.canonical_run_id.clone(),
             input_hash: manifest.and_then(|value| value.input_hash.clone()),
             result_hash: manifest.and_then(|value| value.result_hash.clone()),
             solver_identity: manifest.map(|value| value.solver_identity.clone()),
@@ -623,6 +926,7 @@ impl ConversationService {
                 "Evidence is current for the selected revision.".into()
             },
             resolved_snapshot_id: evidence_record.resolved_snapshot_id().cloned(),
+            canonical_run_id: evidence_record.canonical_run_id().map(str::to_owned),
             input_hash: None,
             result_hash: None,
             solver_identity: None,
@@ -649,6 +953,9 @@ impl ConversationService {
             source_snapshot_id: working_copy.source_snapshot_id().clone(),
         };
         store.working_copies.insert(working_copy_id, working_copy);
+        store
+            .working_copy_operations
+            .insert(response.working_copy_id.clone(), Vec::new());
         Ok(response)
     }
     pub fn apply_working_copy_operation(
@@ -663,9 +970,14 @@ impl ConversationService {
             .ok_or_else(|| "unknown working copy".to_string())?;
         working_copy
             .apply(&StructuralPatch {
-                operations: vec![operation],
+                operations: vec![operation.clone()],
             })
             .map_err(display)?;
+        store
+            .working_copy_operations
+            .entry(request.working_copy_id)
+            .or_default()
+            .push(operation);
         Ok(())
     }
     pub fn commit_working_copy(
@@ -677,53 +989,76 @@ impl ConversationService {
             .working_copies
             .remove(&request.working_copy_id)
             .ok_or_else(|| "unknown working copy".to_string())?;
-        if let Some(mut sqlite) = store.sqlite.take() {
-            let mut candidate_repository = store.repository.clone();
-            let mut candidate_working_copy = working_copy.clone();
-            let record = match candidate_repository.commit_working_copy(
-                &request.conversation_id,
-                &mut candidate_working_copy,
-                request.revision_id,
-            ) {
-                Ok(record) => record.clone(),
-                Err(error) => {
-                    store
-                        .working_copies
-                        .insert(request.working_copy_id, working_copy);
-                    store.sqlite = Some(sqlite);
-                    return Err(display(error));
-                }
-            };
-            if let Err(error) = persist_revision(&mut sqlite, &candidate_repository, &record, None)
-            {
-                store
+        let operations = store
+            .working_copy_operations
+            .remove(&request.working_copy_id)
+            .unwrap_or_default();
+        if operations.is_empty() {
+            store
+                .working_copies
+                .insert(request.working_copy_id, working_copy);
+            return Err("working copy has no typed operations to commit".into());
+        }
+        let parent_revision_id = working_copy.parent_revision_id().clone();
+        let proposal_id = ProposalId::new(format!("{}:proposal", request.working_copy_id));
+        let project_id = request.project_id.clone();
+        let conversation_id = request.conversation_id;
+        let revision_id = request.revision_id;
+        let working_copy_id = request.working_copy_id;
+        let _ = store;
+        let proposed = self.execute_operation(
+            &project_id,
+            OperationRequest {
+                contract_version: OPERATION_CONTRACT_VERSION.into(),
+                request_id: format!("working-copy-propose:{working_copy_id}"),
+                operation: Operation::ProposeStructuralPatch {
+                    proposal_id: proposal_id.clone(),
+                    conversation_id: conversation_id.clone(),
+                    expected_head_revision_id: parent_revision_id.clone(),
+                    proposed_revision_id: revision_id,
+                    patch: StructuralPatch { operations },
+                    agent_provenance: None,
+                },
+            },
+        );
+        let proposed = match proposed {
+            Ok(response) => response,
+            Err(error) => {
+                self.store_mut(&project_id)?
                     .working_copies
-                    .insert(request.working_copy_id, working_copy);
-                store.sqlite = Some(sqlite);
+                    .insert(working_copy_id, working_copy);
                 return Err(error);
             }
-            let response = revision_response(&record);
-            store.repository = candidate_repository;
-            store.sqlite = Some(sqlite);
-            Ok(response)
-        } else {
-            let mut working_copy = working_copy;
-            match store.repository.commit_working_copy(
-                &request.conversation_id,
-                &mut working_copy,
-                request.revision_id,
-            ) {
-                Ok(record) => Ok(revision_response(record)),
-                Err(error) => {
-                    store
-                        .working_copies
-                        .insert(request.working_copy_id, working_copy);
-                    Err(display(error))
-                }
-            }
+        };
+        operation_result(proposed)?;
+        let accepted = self.execute_operation(
+            &project_id,
+            OperationRequest {
+                contract_version: OPERATION_CONTRACT_VERSION.into(),
+                request_id: format!("working-copy-accept:{proposal_id}"),
+                operation: Operation::AcceptStructuralPatch {
+                    proposal_id,
+                    conversation_id,
+                    expected_head_revision_id: parent_revision_id.clone(),
+                },
+            },
+        )?;
+        match operation_result(accepted)? {
+            OperationResult::StructuralPatchAccepted {
+                revision_id,
+                snapshot_id,
+                ..
+            } => Ok(ConversationRevisionResponse {
+                revision_id,
+                snapshot_id,
+                parent_revision_id: Some(parent_revision_id),
+                author: "manual".into(),
+                agent_provenance: None,
+            }),
+            result => Err(format!("unexpected working-copy result: {result:?}")),
         }
     }
-    fn state(
+    pub(crate) fn state(
         &self,
         project: &ProjectId,
         conversation: &ConversationId,
@@ -751,7 +1086,54 @@ impl ConversationService {
                 .get(conversation)
                 .cloned()
                 .unwrap_or_default(),
+            agent_responses: store
+                .agent_responses
+                .get(conversation)
+                .cloned()
+                .unwrap_or_default(),
         })
+    }
+    pub(crate) fn persist_agent_response(
+        &mut self,
+        project: &ProjectId,
+        conversation_id: &ConversationId,
+        response: ConversationAgentRespondResponse,
+    ) -> Result<(), String> {
+        let store = self.store_mut(project)?;
+        let responses = store
+            .agent_responses
+            .entry(conversation_id.clone())
+            .or_default();
+        if responses
+            .iter()
+            .any(|existing| existing.response_id == response.response_id)
+        {
+            return Ok(());
+        }
+        responses.push(response);
+        let conversation = store
+            .repository
+            .conversation(conversation_id)
+            .map_err(display)?;
+        let messages = store
+            .messages
+            .get(conversation_id)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        if let Some(sqlite) = store.sqlite.as_mut() {
+            sqlite
+                .update_conversation_origin(
+                    conversation_id,
+                    &persisted_origin_json(
+                        conversation.origin(),
+                        &store.project_facts,
+                        messages,
+                        responses,
+                    )?,
+                )
+                .map_err(display)?;
+        }
+        Ok(())
     }
     fn store(&self, id: &ProjectId) -> Result<&ProjectConversationStore, String> {
         self.projects
@@ -797,6 +1179,12 @@ impl ConversationService {
                 "Evidence is current for the selected revision.".into()
             },
             resolved_snapshot_id: stored.resolved_snapshot_id,
+            canonical_run_id: serde_json::from_str::<PersistedEvidenceEnvelope>(
+                &stored.manifest_json,
+            )
+            .ok()
+            .and_then(|value| value.analysis_manifest)
+            .and_then(|value| value.canonical_run_id),
             input_hash: None,
             result_hash: None,
             solver_identity: None,
@@ -809,12 +1197,186 @@ impl ConversationService {
     }
 }
 
-fn project_workspace_database(project_dir: &str) -> Result<PathBuf, String> {
+fn project_workspace_database(
+    project_dir: &str,
+    revision_scope_id: &ProjectId,
+) -> Result<PathBuf, String> {
     let project_dir = PathBuf::from(project_dir);
     if !project_dir.is_absolute() {
         return Err("conversation project directory must be absolute".into());
     }
+    if let Ok(package) = load_project_package(&project_dir) {
+        let design = package
+            .designs
+            .iter()
+            .find(|design| design.manifest.id.as_str() == revision_scope_id.as_str())
+            .or_else(|| (package.designs.len() == 1).then(|| &package.designs[0]))
+            .ok_or_else(|| {
+                format!(
+                    "revision scope `{revision_scope_id}` does not identify a design in the project package"
+                )
+            })?;
+        return design_package_paths(&project_dir, &design.manifest.id)
+            .map(|paths| paths.workspace_database)
+            .map_err(display);
+    }
+    if project_dir
+        .parent()
+        .and_then(Path::file_name)
+        .is_some_and(|name| name == "designs")
+    {
+        let design_id = project_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| "design directory name is not valid UTF-8".to_string())?;
+        let root = project_dir
+            .parent()
+            .and_then(Path::parent)
+            .ok_or_else(|| "design directory has no project root".to_string())?;
+        let package = load_project_package(root).map_err(display)?;
+        if !package
+            .designs
+            .iter()
+            .any(|design| design.manifest.id.as_str() == design_id)
+        {
+            return Err("selected design is not present in the project package".into());
+        }
+        return Ok(project_dir.join("workspace.sqlite"));
+    }
     Ok(project_dir.join(".fraia").join("workspace.sqlite"))
+}
+
+fn validate_proposal_source_context(
+    store: &ProjectConversationStore,
+    parent_revision_id: &RevisionId,
+    context: &ConversationProposalSourceContext,
+) -> Result<(), String> {
+    let revision = store
+        .repository
+        .revision(parent_revision_id)
+        .map_err(display)?;
+    if revision.snapshot_id() != &context.expected_snapshot_id {
+        return Err(format!(
+            "proposal source context is stale: expected snapshot `{}`, current parent snapshot is `{}`",
+            context.expected_snapshot_id,
+            revision.snapshot_id()
+        ));
+    }
+    let workspace = store
+        .sqlite_path
+        .as_ref()
+        .ok_or_else(|| "proposal source context requires a durable design workspace".to_string())?;
+    let design_dir = workspace
+        .parent()
+        .ok_or_else(|| "design workspace has no design directory".to_string())?;
+    let actual_design_id = design_dir
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "design directory has no valid design id".to_string())?;
+    if context.design_id.as_str() != actual_design_id {
+        return Err("proposal source context belongs to a different design".into());
+    }
+    let project_dir = design_dir
+        .parent()
+        .and_then(Path::parent)
+        .ok_or_else(|| "design workspace has no project root".to_string())?;
+    let shelf = fraia_core::load_design_shelf(project_dir, &context.design_id).map_err(display)?;
+    let mut seen = std::collections::BTreeSet::new();
+    for item_id in &context.shelf_item_ids {
+        if !seen.insert(item_id) {
+            return Err(format!(
+                "duplicate design reference `{item_id}` in proposal context"
+            ));
+        }
+        let item = shelf
+            .items
+            .get(item_id)
+            .ok_or_else(|| format!("unknown current-design reference `{item_id}`"))?;
+        if !item.confirmation.confirmed {
+            return Err(format!("design reference `{item_id}` is not confirmed"));
+        }
+    }
+    let current_head = fraia_core::list_drawing_interpretations(project_dir, &context.design_id)
+        .map_err(display)?
+        .head_revision_id;
+    let mut eligible_inferences = std::collections::BTreeSet::new();
+    for interpretation_revision_id in &context.drawing_interpretation_revision_ids {
+        if current_head.as_deref() != Some(interpretation_revision_id) {
+            return Err(format!(
+                "drawing interpretation binding `{interpretation_revision_id}` is stale"
+            ));
+        }
+        let agent_context = fraia_core::drawing_interpretation_agent_context(
+            project_dir,
+            &context.design_id,
+            interpretation_revision_id,
+        )
+        .map_err(display)?;
+        eligible_inferences.extend(
+            agent_context
+                .inferred_assumptions
+                .into_iter()
+                .filter(|inference| !inference.materially_conflicted)
+                .map(|inference| inference.inference_id),
+        );
+    }
+    for inference_id in &context.drawing_interpretation_inference_ids {
+        if !eligible_inferences.contains(inference_id) {
+            return Err(format!(
+                "drawing inference `{inference_id}` is missing, low-confidence, conflicted, or not bound to the exact interpretation revision"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_current_interpretation_bindings(
+    store: &ProjectConversationStore,
+    provenance: &AgentTurnProvenance,
+) -> Result<(), String> {
+    if provenance.drawing_interpretation_revision_ids.is_empty() {
+        return Ok(());
+    }
+    let workspace = store
+        .sqlite_path
+        .as_ref()
+        .ok_or_else(|| "interpretation-bound proposal requires a durable workspace".to_string())?;
+    let design_dir = workspace
+        .parent()
+        .ok_or_else(|| "design workspace has no design directory".to_string())?;
+    let project_dir = design_dir
+        .parent()
+        .and_then(Path::parent)
+        .ok_or_else(|| "design workspace has no project root".to_string())?;
+    let design_id = fraia_core::DesignId::new(
+        design_dir
+            .file_name()
+            .and_then(|value| value.to_str())
+            .ok_or_else(|| "design workspace has no design id".to_string())?,
+    );
+    let head = fraia_core::list_drawing_interpretations(project_dir, &design_id)
+        .map_err(display)?
+        .head_revision_id;
+    for revision_id in &provenance.drawing_interpretation_revision_ids {
+        if head.as_deref() != Some(revision_id) {
+            return Err(format!(
+                "drawing interpretation binding `{revision_id}` is stale; current head is `{}`",
+                head.as_deref().unwrap_or("none")
+            ));
+        }
+    }
+    for inference_id in &provenance.drawing_interpretation_inference_ids {
+        if !provenance
+            .drawing_interpretation_revision_ids
+            .iter()
+            .any(|revision| inference_id.starts_with(&format!("{revision}:inference:")))
+        {
+            return Err(format!(
+                "drawing inference `{inference_id}` is not bound to an exact interpretation revision"
+            ));
+        }
+    }
+    Ok(())
 }
 fn hydrate_project(
     path: &Path,
@@ -910,20 +1472,35 @@ fn hydrate_project(
                 "system" => RevisionAuthorKind::System,
                 _ => RevisionAuthorKind::Manual,
             };
-            let operation = metadata.operation.unwrap_or_else(|| {
-                if author_kind == RevisionAuthorKind::Agent {
-                    RevisionOperation::AcceptedProposal {
-                        proposal_id: ProposalId::new(format!("restored:{}", stored.id)),
+            let operation = metadata
+                .operation
+                .and_then(|value| {
+                    serde_json::from_value::<RevisionOperation>(value.clone())
+                        .ok()
+                        .or_else(|| match value.as_str() {
+                            Some("accepted_proposal") => {
+                                Some(RevisionOperation::AcceptedProposal {
+                                    proposal_id: metadata.proposal_id.clone().unwrap_or_else(
+                                        || ProposalId::new(format!("restored:{}", stored.id)),
+                                    ),
+                                })
+                            }
+                            Some("manual_edit") => Some(RevisionOperation::ManualEdit),
+                            Some("user_patch") => Some(RevisionOperation::UserPatch),
+                            Some("root") => Some(RevisionOperation::Root),
+                            _ => None,
+                        })
+                })
+                .unwrap_or_else(|| {
+                    if author_kind == RevisionAuthorKind::Agent {
+                        RevisionOperation::AcceptedProposal {
+                            proposal_id: ProposalId::new(format!("restored:{}", stored.id)),
+                        }
+                    } else {
+                        RevisionOperation::ManualEdit
                     }
-                } else {
-                    RevisionOperation::ManualEdit
-                }
-            });
-            let provenance = metadata.agent_provenance.map(|value| AgentTurnProvenance {
-                provider: value.provider,
-                model: value.model,
-                turn_id: value.turn_id,
-            });
+                });
+            let provenance = metadata.agent_provenance;
             repository
                 .restore_revision(
                     stored.id,
@@ -950,11 +1527,29 @@ fn hydrate_project(
         .collect::<BTreeMap<_, _>>();
     let mut analysis_runs = BTreeMap::new();
     for stored in sqlite.project_evidence(project_id).map_err(display)? {
-        let envelope = serde_json::from_str::<PersistedEvidenceEnvelope>(&stored.manifest_json)
-            .map_err(display)?;
-        let Some(manifest) = envelope.analysis_manifest else {
-            continue;
+        let evidence = if let Ok(evidence) =
+            serde_json::from_str::<AnalysisEvidence>(&stored.manifest_json)
+        {
+            evidence
+        } else {
+            let envelope = serde_json::from_str::<PersistedEvidenceEnvelope>(&stored.manifest_json)
+                .map_err(display)?;
+            let Some(manifest) = envelope.analysis_manifest else {
+                continue;
+            };
+            AnalysisEvidence::with_analysis_manifest(
+                stored.id.clone(),
+                stored.authored_snapshot_id.clone(),
+                stored.resolved_snapshot_id.clone(),
+                envelope.dependencies,
+                manifest,
+            )
+            .map_err(display)?
         };
+        let manifest = evidence
+            .analysis_manifest()
+            .cloned()
+            .ok_or_else(|| "analysis evidence has no typed manifest".to_string())?;
         let revision_id = revision_by_snapshot
             .get(&stored.authored_snapshot_id)
             .cloned()
@@ -1007,18 +1602,11 @@ fn hydrate_project(
                 })
             })
             .transpose()?;
-        let evidence = AnalysisEvidence::with_analysis_manifest(
-            stored.id.clone(),
-            stored.authored_snapshot_id,
-            stored.resolved_snapshot_id,
-            envelope.dependencies,
-            manifest,
-        )
-        .map_err(display)?;
         analysis_runs.insert(
             stored.id,
             SnapshotAnalysisRun {
                 revision_id,
+                canonical_run_id: evidence.canonical_run_id().map(str::to_owned),
                 evidence,
                 outcome,
                 resolved_snapshot,
@@ -1026,6 +1614,10 @@ fn hydrate_project(
         );
     }
 
+    let mut agent_responses = BTreeMap::from([(
+        root.root_conversation.id.clone(),
+        root_state.state.agent_responses,
+    )]);
     for stored in sqlite.project_proposals(project_id).map_err(display)? {
         let patch = serde_json::from_str::<StructuralPatch>(&stored.patch_json).map_err(display)?;
         let status = match stored.status.as_str() {
@@ -1039,6 +1631,48 @@ fn hydrate_project(
             },
             other => return Err(format!("unknown durable proposal status `{other}`")),
         };
+        if let Some(provenance) = stored.agent_provenance.as_ref()
+            && let (Some(response_id), Some(text)) = (
+                provenance.response_id.clone(),
+                provenance.response_text.clone(),
+            )
+        {
+            let responses = agent_responses
+                .entry(stored.conversation_id.clone())
+                .or_default();
+            let operations = patch
+                .operations
+                .iter()
+                .map(conversation_operation_from_structural)
+                .collect::<Result<Vec<_>, _>>()?;
+            let hydrated = ConversationAgentRespondResponse {
+                response_id: response_id.clone(),
+                text,
+                questions: provenance.response_questions.clone(),
+                proposal: Some(ConversationAgentProposalResponse {
+                    proposal_id: stored.id.to_string(),
+                    proposed_revision_id: stored.proposed_revision_id.clone(),
+                    parent_revision_id: stored.parent_revision_id.clone(),
+                    status: stored.status.clone(),
+                    assumptions: provenance.assumptions.clone(),
+                    evidence_limits: provenance.evidence_limits.clone(),
+                    operations,
+                }),
+                provider: provenance.provider.clone(),
+                model: provenance.model.clone(),
+                reasoning_effort: provenance.reasoning_effort.clone().unwrap_or_default(),
+                catalogue_refreshed_at: provenance.catalogue_refreshed_at.clone(),
+                turn_id: provenance.turn_id.clone(),
+            };
+            if let Some(existing) = responses
+                .iter_mut()
+                .find(|response| response.response_id == response_id)
+            {
+                *existing = hydrated;
+            } else {
+                responses.push(hydrated);
+            }
+        }
         repository
             .restore_proposal(
                 stored.id,
@@ -1059,52 +1693,14 @@ fn hydrate_project(
         sqlite_path: Some(path.to_path_buf()),
         messages,
         working_copies: BTreeMap::new(),
+        working_copy_operations: BTreeMap::new(),
         analysis_runs,
+        agent_responses,
     })
 }
 
 fn persisted_conversation_envelope(origin_json: &str) -> PersistedConversationEnvelope {
     serde_json::from_str(origin_json).unwrap_or_default()
-}
-
-fn restored_evidence_response(
-    stored: StoredEvidence,
-) -> Result<ConversationEvidenceResponse, String> {
-    let envelope = serde_json::from_str::<PersistedEvidenceEnvelope>(&stored.manifest_json)
-        .map_err(display)?;
-    let manifest = envelope.analysis_manifest.ok_or_else(|| {
-        format!(
-            "durable analysis evidence `{}` has no typed analysis manifest",
-            stored.id
-        )
-    })?;
-    let (status, summary) = match manifest.status {
-        AnalysisEvidenceStatus::Completed => (
-            "success",
-            "Analysis evidence restored from durable storage.",
-        ),
-        AnalysisEvidenceStatus::Failed => (
-            "failed",
-            "The persisted analysis attempt failed; no result was fabricated.",
-        ),
-        AnalysisEvidenceStatus::Unsupported => (
-            "unsupported",
-            "The persisted analysis request was unsupported by the available analysis path.",
-        ),
-    };
-    Ok(ConversationEvidenceResponse {
-        evidence_id: stored.id,
-        authored_snapshot_id: stored.authored_snapshot_id,
-        stale: false,
-        status: status.into(),
-        summary: summary.into(),
-        resolved_snapshot_id: stored.resolved_snapshot_id,
-        input_hash: manifest.input_hash,
-        result_hash: manifest.result_hash,
-        solver_identity: Some(manifest.solver_identity),
-        metrics: manifest.metrics.as_ref().map(analysis_metrics_response),
-        diagnostics: manifest.diagnostics,
-    })
 }
 
 fn normalize_legacy_root_revision(
@@ -1122,11 +1718,13 @@ fn persisted_origin_json(
     origin: &impl serde::Serialize,
     project_facts: &ConversationProjectFacts,
     messages: &[String],
+    agent_responses: &[ConversationAgentRespondResponse],
 ) -> Result<String, String> {
     serde_json::to_string(&serde_json::json!({
         "origin": origin,
         "projectFacts": project_facts,
         "messages": messages,
+        "agentResponses": agent_responses,
     }))
     .map_err(display)
 }
@@ -1314,6 +1912,52 @@ fn transport_operation(
     }
 }
 
+fn conversation_operation_from_structural(
+    operation: &StructuralOperation,
+) -> Result<ConversationProposalOperation, String> {
+    match operation {
+        StructuralOperation::AddNode(node) => Ok(ConversationProposalOperation::AddNode {
+            id: node.id.clone(),
+            x: node.position.x.value,
+            y: node.position.y.value,
+            z: node.position.z.value,
+        }),
+        StructuralOperation::MoveNode { node_id, position } => {
+            Ok(ConversationProposalOperation::MoveNode {
+                node_id: node_id.clone(),
+                x: position.x.value,
+                y: position.y.value,
+                z: position.z.value,
+            })
+        }
+        StructuralOperation::AddMember(member) => Ok(ConversationProposalOperation::AddMember {
+            id: member.id.clone(),
+            start_node: member.start_node.clone(),
+            end_node: member.end_node.clone(),
+            role: member.role.clone(),
+            section_id: member.section_id.clone(),
+            material_id: member.material_id.clone(),
+        }),
+        StructuralOperation::AddSupport(support) => Ok(ConversationProposalOperation::AddSupport {
+            id: support.id.clone(),
+            target_node: support.target_node.clone(),
+            ux: support.ux,
+            uy: support.uy,
+            uz: support.uz,
+            rx: support.rx,
+            ry: support.ry,
+            rz: support.rz,
+        }),
+        StructuralOperation::SetMemberRole { member_id, role } => {
+            Ok(ConversationProposalOperation::SetMemberRole {
+                member_id: member_id.clone(),
+                role: role.as_str().into(),
+            })
+        }
+        _ => Err("persisted agent proposal contains an operation that the conversation adapter cannot project".into()),
+    }
+}
+
 fn release_assignment(
     id: String,
     member_id: String,
@@ -1406,30 +2050,6 @@ fn required_provenance(value: Option<String>, field: &str) -> Result<String, Str
     Ok(value)
 }
 
-fn revision_response(
-    record: &fraia_revision::repository::RevisionRecord,
-) -> ConversationRevisionResponse {
-    ConversationRevisionResponse {
-        revision_id: record.revision_id().clone(),
-        snapshot_id: record.snapshot_id().clone(),
-        parent_revision_id: record.parent_revision_id().cloned(),
-        author: match record.author_kind() {
-            RevisionAuthorKind::Agent => "agent",
-            RevisionAuthorKind::Manual => "manual",
-            RevisionAuthorKind::System => "system",
-            RevisionAuthorKind::User => "user",
-        }
-        .into(),
-        agent_provenance: record
-            .agent_provenance()
-            .map(|p| ConversationAgentProvenance {
-                provider: p.provider.clone(),
-                model: p.model.clone(),
-                turn_id: p.turn_id.clone(),
-            }),
-    }
-}
-
 fn stored_snapshot(snapshot: &ModelSnapshot) -> StoredSnapshot {
     StoredSnapshot {
         id: snapshot.id().clone(),
@@ -1458,33 +2078,12 @@ fn persist_root(
                 id: conversation.id().clone(),
                 project_id: conversation.project_id().clone(),
                 purpose: conversation.purpose().to_owned(),
-                origin_json: persisted_origin_json(conversation.origin(), project_facts, &[])?,
+                origin_json: persisted_origin_json(conversation.origin(), project_facts, &[], &[])?,
                 head_revision_id: conversation.head_revision_id().clone(),
             },
             root_revision: stored_revision(revision, None)?,
             root_snapshot: stored_snapshot(snapshot),
         })
-        .map_err(display)
-}
-
-fn persist_revision(
-    sqlite: &mut SqliteRevisionRepository,
-    repository: &InMemoryRevisionRepository,
-    revision: &RevisionRecord,
-    patch: Option<&StructuralPatch>,
-) -> Result<(), String> {
-    let snapshot = repository
-        .snapshot(revision.snapshot_id())
-        .map_err(display)?;
-    let stored_revision = stored_revision(revision, patch)?;
-    sqlite
-        .append_revision_with_snapshot(
-            &stored_revision,
-            &stored_snapshot(snapshot),
-            revision
-                .parent_revision_id()
-                .ok_or_else(|| "non-root revision has no parent".to_string())?,
-        )
         .map_err(display)
 }
 
@@ -1521,74 +2120,13 @@ fn stored_revision(
     })
 }
 
-fn stored_proposal(
-    project_id: &ProjectId,
-    id: &ProposalId,
-    conversation_id: &ConversationId,
-    parent_revision_id: &RevisionId,
-    proposed_revision_id: &RevisionId,
-    patch: &StructuralPatch,
-    agent_provenance: Option<&AgentTurnProvenance>,
-) -> Result<StoredProposal, String> {
-    Ok(StoredProposal {
-        id: id.clone(),
-        project_id: project_id.clone(),
-        conversation_id: conversation_id.clone(),
-        parent_revision_id: parent_revision_id.clone(),
-        proposed_revision_id: proposed_revision_id.clone(),
-        patch_json: serde_json::to_string(patch).map_err(display)?,
-        status: "pending".into(),
-        accepted_revision_id: None,
-        agent_provenance: agent_provenance.cloned(),
-    })
-}
-
-fn persist_agent_revision(
-    sqlite: &mut SqliteRevisionRepository,
-    repository: &InMemoryRevisionRepository,
-    revision: &RevisionRecord,
-    patch: Option<&StructuralPatch>,
-    proposal_id: &ProposalId,
-    provenance: &ConversationAgentProvenance,
-) -> Result<(), String> {
-    let snapshot = repository
-        .snapshot(revision.snapshot_id())
-        .map_err(display)?;
-    let stored_revision = stored_revision(revision, patch)?;
-    let agent_provenance = AgentTurnProvenance {
-        provider: provenance.provider.clone(),
-        model: provenance.model.clone(),
-        turn_id: provenance.turn_id.clone(),
-    };
-    sqlite
-        .append_revision_with_snapshot_and_proposal(
-            &stored_revision,
-            &stored_snapshot(snapshot),
-            revision
-                .parent_revision_id()
-                .ok_or_else(|| "non-root revision has no parent".to_string())?,
-            proposal_id,
-            Some(&agent_provenance),
-        )
-        .map_err(display)
-}
-
-fn stored_evidence(evidence: &AnalysisEvidence) -> Result<StoredEvidence, String> {
-    Ok(StoredEvidence {
-        id: evidence.id().clone(),
-        authored_snapshot_id: evidence.authored_snapshot_id().clone(),
-        resolved_snapshot_id: evidence.resolved_snapshot_id().cloned(),
-        manifest_json: serde_json::to_string(&serde_json::json!({
-            "dependencies": evidence.dependencies(),
-            "analysisManifest": evidence.analysis_manifest(),
-        }))
-        .map_err(display)?,
-        blob_ref: None,
-    })
-}
-
 pub fn router(service: ConversationServiceHandle) -> Router {
+    let analysis_attempts = Arc::new(AnalysisAttemptRegistry::default());
     Router::new()
+        .route("/operations/v1/execute", post(execute_operation))
+        .route("/analysis-attempts/start", post(start_analysis_attempt))
+        .route("/analysis-attempts/status", post(analysis_attempt_status))
+        .route("/analysis-attempts/cancel", post(cancel_analysis_attempt))
         .route("/conversations/create", post(create))
         .route("/conversations/converse", post(converse))
         .route("/conversations/facts", post(update_facts))
@@ -1610,6 +2148,385 @@ pub fn router(service: ConversationServiceHandle) -> Router {
             post(commit_working_copy),
         )
         .layer(Extension(service))
+        .layer(Extension(analysis_attempts))
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VersionedOperationRequest {
+    project_id: ProjectId,
+    request: OperationRequest,
+}
+
+async fn execute_operation(
+    Extension(service): Extension<ConversationServiceHandle>,
+    Json(request): Json<VersionedOperationRequest>,
+) -> impl IntoResponse {
+    match service
+        .lock()
+        .unwrap()
+        .execute_operation(&request.project_id, request.request)
+    {
+        Ok(response) => {
+            let status = operation_status(&response);
+            (status, Json(response)).into_response()
+        }
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse { error }),
+        )
+            .into_response(),
+    }
+}
+
+async fn start_analysis_attempt(
+    Extension(service): Extension<ConversationServiceHandle>,
+    Extension(registry): Extension<Arc<AnalysisAttemptRegistry>>,
+    Json(request): Json<AnalysisAttemptStartRequest>,
+) -> impl IntoResponse {
+    let (revision_id, authored_snapshot_id, evidence_id) = match &request.request.operation {
+        Operation::AnalyseSnapshot {
+            revision_id,
+            expected_snapshot_id,
+            evidence_id,
+            ..
+        } => (
+            revision_id.clone(),
+            expected_snapshot_id.clone(),
+            evidence_id.clone(),
+        ),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "analysis attempt start requires analyse_snapshot".into(),
+                }),
+            )
+                .into_response();
+        }
+    };
+    let mut random = [0u8; 24];
+    if let Err(error) = getrandom::fill(&mut random) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: error.to_string(),
+            }),
+        )
+            .into_response();
+    }
+    let attempt_id = random
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    // 0 running, 1 cancellation reserved, 2 publication reserved.
+    let lifecycle = Arc::new(AtomicU8::new(0));
+    let initial = AnalysisAttemptResponse {
+        attempt_id: attempt_id.clone(),
+        project_id: request.project_id.clone(),
+        revision_id,
+        authored_snapshot_id,
+        evidence_id,
+        stage: fraia_revision::analysis_service::AnalysisExecutionStage::Preparing,
+        status: AnalysisAttemptStatus::Running,
+        elapsed_millis: 0,
+        canonical_run_id: None,
+        diagnostics: Vec::new(),
+    };
+    let attempt_directory = match service
+        .lock()
+        .unwrap()
+        .analysis_attempt_path(&request.project_id, &attempt_id)
+    {
+        Ok(path) => path,
+        Err(error) => {
+            return (StatusCode::BAD_REQUEST, Json(ErrorResponse { error })).into_response();
+        }
+    };
+    if let Err(error) = persist_analysis_attempt(&attempt_directory, 0, &initial) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse { error }),
+        )
+            .into_response();
+    }
+    registry.attempts.lock().unwrap().insert(
+        attempt_id.clone(),
+        AnalysisAttemptEntry {
+            lifecycle: lifecycle.clone(),
+            started: Instant::now(),
+            response: initial.clone(),
+            sequence: 0,
+        },
+    );
+    let registry_for_job = registry.clone();
+    let attempt_id_for_job = attempt_id.clone();
+    let attempt_directory_for_job = attempt_directory.clone();
+    let test_control = registry.test_control;
+    tokio::spawn(async move {
+        // Let the start handler publish its 202 response before any worker can
+        // contend for the design service lock. The CPU-bound operation then
+        // runs only on Tokio's blocking pool.
+        tokio::task::yield_now().await;
+        let _ = tokio::task::spawn_blocking(move || {
+        let registry_for_progress = registry_for_job.clone();
+        let progress_attempt_id = attempt_id_for_job.clone();
+        let progress_directory = attempt_directory_for_job.clone();
+        let mut progress = move |stage| {
+            if let Ok(mut attempts) = registry_for_progress.attempts.lock()
+                && let Some(entry) = attempts.get_mut(&progress_attempt_id)
+            {
+                entry.response.stage = stage;
+                entry.response.elapsed_millis = entry
+                    .started
+                    .elapsed()
+                    .as_millis()
+                    .try_into()
+                    .unwrap_or(u64::MAX);
+                entry.sequence += 1;
+                let _ =
+                    persist_analysis_attempt(&progress_directory, entry.sequence, &entry.response);
+            }
+        };
+        let lifecycle_for_cancel = lifecycle.clone();
+        let mut cancelled = move || lifecycle_for_cancel.load(Ordering::Acquire) == 1;
+        let lifecycle_for_publication = lifecycle.clone();
+        let mut begin_publication = move || {
+            lifecycle_for_publication
+                .compare_exchange(0, 2, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+        };
+        let mut control = AnalysisOperationControl {
+            progress: &mut progress,
+            cancelled: &mut cancelled,
+            begin_publication: &mut begin_publication,
+        };
+        let delay_started = Instant::now();
+        while delay_started.elapsed() < Duration::from_millis(test_control.delay_millis)
+            && lifecycle.load(Ordering::Acquire) == 0
+        {
+            let remaining = Duration::from_millis(test_control.delay_millis)
+                .saturating_sub(delay_started.elapsed());
+            std::thread::sleep(remaining.min(Duration::from_millis(10)));
+        }
+        let result = if test_control.force_failure && lifecycle.load(Ordering::Acquire) == 0 {
+            Err("analysis.test-forced-failure: unpackaged test control requested failure".into())
+        } else {
+            service.lock().unwrap().execute_operation_maybe_controlled(
+                &request.project_id,
+                request.request,
+                Some(&mut control),
+            )
+        };
+        if let Ok(mut attempts) = registry_for_job.attempts.lock()
+            && let Some(entry) = attempts.get_mut(&attempt_id_for_job)
+        {
+            entry.response.elapsed_millis = entry
+                .started
+                .elapsed()
+                .as_millis()
+                .try_into()
+                .unwrap_or(u64::MAX);
+            if lifecycle.load(Ordering::Acquire) == 1 {
+                entry.response.status = AnalysisAttemptStatus::Cancelled;
+                entry.response.diagnostics = vec!["analysis.cancelled: cancelled by user".into()];
+                entry.sequence += 1;
+                let _ = persist_analysis_attempt(
+                    &attempt_directory_for_job,
+                    entry.sequence,
+                    &entry.response,
+                );
+                return;
+            }
+            match result {
+                Ok(response) => {
+                    match response.outcome {
+                        OperationOutcome::Success { result } => match *result {
+                            OperationResult::SnapshotAnalysed { run } => {
+                                entry.response.canonical_run_id = run.canonical_run_id.clone();
+                                entry.response.diagnostics = run.outcome.diagnostics().to_vec();
+                                entry.response.status = match run.outcome {
+                                    SnapshotAnalysisOutcome::Completed { .. } => {
+                                        AnalysisAttemptStatus::Completed
+                                    }
+                                    SnapshotAnalysisOutcome::Failed { .. } => {
+                                        AnalysisAttemptStatus::Failed
+                                    }
+                                    SnapshotAnalysisOutcome::Unsupported { .. } => {
+                                        AnalysisAttemptStatus::Unsupported
+                                    }
+                                };
+                            }
+                            _ => {
+                                entry.response.status = AnalysisAttemptStatus::Failed;
+                                entry.response.diagnostics = vec!["analysis.invalid-result: operation returned a non-analysis result".into()];
+                            }
+                        },
+                        OperationOutcome::Error { error } => {
+                            entry.response.status = if error.code == OperationErrorCode::Cancelled {
+                                AnalysisAttemptStatus::Cancelled
+                            } else {
+                                AnalysisAttemptStatus::Failed
+                            };
+                            entry.response.diagnostics = vec![error.message];
+                        }
+                    }
+                }
+                Err(error) => {
+                    entry.response.status = AnalysisAttemptStatus::Failed;
+                    entry.response.diagnostics = vec![error];
+                }
+            }
+            entry.sequence += 1;
+            let _ = persist_analysis_attempt(
+                &attempt_directory_for_job,
+                entry.sequence,
+                &entry.response,
+            );
+        }
+        })
+        .await;
+    });
+    (StatusCode::ACCEPTED, Json(initial)).into_response()
+}
+
+async fn analysis_attempt_status(
+    Extension(service): Extension<ConversationServiceHandle>,
+    Extension(registry): Extension<Arc<AnalysisAttemptRegistry>>,
+    Json(request): Json<AnalysisAttemptIdRequest>,
+) -> impl IntoResponse {
+    let mut attempts = registry.attempts.lock().unwrap();
+    if !attempts.contains_key(&request.attempt_id) {
+        let directory = match service
+            .lock()
+            .unwrap()
+            .analysis_attempt_path(&request.project_id, &request.attempt_id)
+        {
+            Ok(path) => path,
+            Err(error) => {
+                return (StatusCode::NOT_FOUND, Json(ErrorResponse { error })).into_response();
+            }
+        };
+        let (mut sequence, mut response) = match load_latest_analysis_attempt(&directory) {
+            Ok(value) => value,
+            Err(error) => {
+                return (StatusCode::NOT_FOUND, Json(ErrorResponse { error })).into_response();
+            }
+        };
+        if matches!(
+            response.status,
+            AnalysisAttemptStatus::Running | AnalysisAttemptStatus::Cancelling
+        ) {
+            response.status = AnalysisAttemptStatus::Failed;
+            response.diagnostics.push("analysis.interrupted: app restarted before a terminal evidence boundary; retry creates a new attempt".into());
+            sequence += 1;
+            if let Err(error) = persist_analysis_attempt(&directory, sequence, &response) {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse { error }),
+                )
+                    .into_response();
+            }
+        }
+        attempts.insert(
+            request.attempt_id.clone(),
+            AnalysisAttemptEntry {
+                lifecycle: Arc::new(AtomicU8::new(2)),
+                started: Instant::now(),
+                response,
+                sequence,
+            },
+        );
+    }
+    let entry = attempts.get(&request.attempt_id).unwrap();
+    if entry.response.project_id != request.project_id {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "analysis attempt was not found".into(),
+            }),
+        )
+            .into_response();
+    }
+    let mut response = entry.response.clone();
+    response.elapsed_millis = entry
+        .started
+        .elapsed()
+        .as_millis()
+        .try_into()
+        .unwrap_or(u64::MAX);
+    (StatusCode::OK, Json(response)).into_response()
+}
+
+async fn cancel_analysis_attempt(
+    Extension(service): Extension<ConversationServiceHandle>,
+    Extension(registry): Extension<Arc<AnalysisAttemptRegistry>>,
+    Json(request): Json<AnalysisAttemptIdRequest>,
+) -> impl IntoResponse {
+    let durable_directory = service
+        .lock()
+        .unwrap()
+        .analysis_attempt_path(&request.project_id, &request.attempt_id)
+        .ok();
+    let mut attempts = registry.attempts.lock().unwrap();
+    let Some(entry) = attempts.get_mut(&request.attempt_id) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "analysis attempt was not found".into(),
+            }),
+        )
+            .into_response();
+    };
+    if entry.response.project_id != request.project_id {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "analysis attempt was not found".into(),
+            }),
+        )
+            .into_response();
+    }
+    if entry.response.status == AnalysisAttemptStatus::Running {
+        if entry
+            .lifecycle
+            .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            entry.response.status = AnalysisAttemptStatus::Cancelling;
+            entry.sequence += 1;
+            if let Some(directory) = durable_directory {
+                let _ = persist_analysis_attempt(&directory, entry.sequence, &entry.response);
+            }
+        }
+    }
+    (StatusCode::OK, Json(entry.response.clone())).into_response()
+}
+
+fn operation_status(response: &OperationResponse) -> StatusCode {
+    match &response.outcome {
+        OperationOutcome::Success { .. } => StatusCode::OK,
+        OperationOutcome::Error { error }
+            if matches!(
+                error.code,
+                OperationErrorCode::ExpectedHeadMismatch
+                    | OperationErrorCode::ExpectedSnapshotMismatch
+            ) =>
+        {
+            StatusCode::CONFLICT
+        }
+        OperationOutcome::Error { error } if error.code == OperationErrorCode::RepositoryError => {
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+        OperationOutcome::Error { .. } => StatusCode::BAD_REQUEST,
+    }
+}
+
+fn operation_result(response: OperationResponse) -> Result<OperationResult, String> {
+    match response.outcome {
+        OperationOutcome::Success { result } => Ok(*result),
+        OperationOutcome::Error { error } => Err(error.message),
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -1719,7 +2636,221 @@ fn response<T: serde::Serialize>(result: Result<T, String>) -> axum::response::R
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fraia_revision::{
+        analysis_service::AnalysisSettings,
+        operations::{OPERATION_CONTRACT_VERSION, OperationResult},
+        patch::NodeInput,
+        repository::ProposalId,
+    };
     use tempfile::tempdir;
+
+    #[test]
+    fn unpackaged_debug_analysis_test_controls_are_bounded_and_explicit() {
+        let values = BTreeMap::from([
+            (TEST_ANALYSIS_DELAY_ENV, "999999".to_string()),
+            (TEST_ANALYSIS_FAILURE_ENV, "1".to_string()),
+        ]);
+        let control = resolve_analysis_attempt_test_control(true, |name| values.get(name).cloned());
+        assert_eq!(control.delay_millis, MAX_TEST_ANALYSIS_DELAY_MILLIS);
+        assert!(control.force_failure);
+
+        let invalid = BTreeMap::from([
+            (TEST_ANALYSIS_DELAY_ENV, "not-a-number".to_string()),
+            (TEST_ANALYSIS_FAILURE_ENV, "true".to_string()),
+        ]);
+        assert_eq!(
+            resolve_analysis_attempt_test_control(true, |name| invalid.get(name).cloned()),
+            AnalysisAttemptTestControl::default()
+        );
+    }
+
+    #[test]
+    fn production_analysis_ignores_test_control_environment() {
+        let control = resolve_analysis_attempt_test_control(false, |_| Some("1".to_string()));
+        assert_eq!(control, AnalysisAttemptTestControl::default());
+    }
+
+    #[tokio::test]
+    async fn analysis_attempt_start_returns_before_delayed_worker_takes_service_lock() {
+        let parent = tempdir().unwrap();
+        let project_dir = parent.path().join("attempt-start-project");
+        let package =
+            fraia_core::create_named_project_package(&project_dir, "Attempt start").unwrap();
+        let project_id = ProjectId::from(package.designs[0].manifest.id.as_str());
+        let conversation_id = ConversationId::from("overall");
+        let service = ConversationService::default();
+        let handle = Arc::new(Mutex::new(service));
+        let created = handle
+            .lock()
+            .unwrap()
+            .create(ConversationCreateRequest {
+                project_id: project_id.clone(),
+                project_dir: project_dir.display().to_string(),
+                conversation_id,
+                purpose: "Overall framing".into(),
+                project_facts: Default::default(),
+            })
+            .unwrap();
+        let registry = Arc::new(AnalysisAttemptRegistry {
+            attempts: Mutex::default(),
+            test_control: AnalysisAttemptTestControl {
+                delay_millis: 500,
+                force_failure: false,
+            },
+        });
+        let request = AnalysisAttemptStartRequest {
+            project_id,
+            request: OperationRequest {
+                contract_version: OPERATION_CONTRACT_VERSION.into(),
+                request_id: "delayed-start".into(),
+                operation: Operation::AnalyseSnapshot {
+                    revision_id: created.head_revision_id,
+                    expected_snapshot_id: created.head_snapshot_id,
+                    evidence_id: EvidenceId::from("delayed-start-evidence"),
+                    settings: AnalysisSettings::frame3d(),
+                },
+            },
+        };
+        let response = tokio::time::timeout(
+            Duration::from_millis(100),
+            start_analysis_attempt(Extension(handle), Extension(registry), Json(request)),
+        )
+        .await
+        .expect("start response must not wait for the analysis worker")
+        .into_response();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+    }
+
+    #[test]
+    fn analysis_attempt_journal_recovers_latest_terminal_state_and_keeps_prior_entries() {
+        let directory = tempdir().unwrap();
+        let attempt_dir = directory.path().join("attempt-a");
+        let mut response = AnalysisAttemptResponse {
+            attempt_id: "a".repeat(48),
+            project_id: ProjectId::new("design-a"),
+            revision_id: RevisionId::from("revision-a"),
+            authored_snapshot_id: fraia_revision::SnapshotId::from("snapshot-a"),
+            evidence_id: EvidenceId::from("evidence-a"),
+            stage: fraia_revision::analysis_service::AnalysisExecutionStage::Preparing,
+            status: AnalysisAttemptStatus::Running,
+            elapsed_millis: 0,
+            canonical_run_id: None,
+            diagnostics: Vec::new(),
+        };
+        persist_analysis_attempt(&attempt_dir, 0, &response).unwrap();
+        response.stage = fraia_revision::analysis_service::AnalysisExecutionStage::Collecting;
+        response.status = AnalysisAttemptStatus::Failed;
+        response.elapsed_millis = 42;
+        response.diagnostics = vec!["solver.failed: fixture".into()];
+        persist_analysis_attempt(&attempt_dir, 1, &response).unwrap();
+        let (sequence, recovered) = load_latest_analysis_attempt(&attempt_dir).unwrap();
+        assert_eq!(sequence, 1);
+        assert_eq!(recovered, response);
+        assert_eq!(std::fs::read_dir(&attempt_dir).unwrap().count(), 2);
+    }
+
+    #[test]
+    fn two_designs_reopen_distinct_user_and_agent_histories() {
+        let directory = tempdir().unwrap();
+        let mut package =
+            fraia_core::create_named_project_package(directory.path(), "House").unwrap();
+        let first = package.designs[0].clone();
+        let second_id = fraia_core::DesignId::new("design-second");
+        let mut second = first.clone();
+        second.manifest.id = second_id.clone();
+        second.manifest.name = "Braced option".into();
+        package
+            .manifest
+            .designs
+            .push(fraia_core::ProjectDesignEntry {
+                id: second_id.clone(),
+                name: second.manifest.name.clone(),
+            });
+        package.designs.push(second);
+        fraia_core::save_project_package(directory.path(), &package).unwrap();
+
+        let first_id = first.manifest.id;
+        let conversation_id = ConversationId::from("overall-framing");
+        let mut service = ConversationService::default();
+        for (design_id, user_text, response_id, response_text) in [
+            (
+                &first_id,
+                "Design the main frame.",
+                "response-main",
+                "Main-frame reply.",
+            ),
+            (
+                &second_id,
+                "Design the braced frame.",
+                "response-braced",
+                "Braced-frame reply.",
+            ),
+        ] {
+            let project_id = ProjectId::from(design_id.as_str());
+            service
+                .create(ConversationCreateRequest {
+                    project_id: project_id.clone(),
+                    project_dir: directory.path().display().to_string(),
+                    conversation_id: conversation_id.clone(),
+                    purpose: "Overall framing".into(),
+                    project_facts: Default::default(),
+                })
+                .unwrap();
+            service
+                .converse(ConversationMessageRequest {
+                    project_id: project_id.clone(),
+                    conversation_id: conversation_id.clone(),
+                    message: user_text.into(),
+                })
+                .unwrap();
+            service
+                .persist_agent_response(
+                    &project_id,
+                    &conversation_id,
+                    ConversationAgentRespondResponse {
+                        response_id: response_id.into(),
+                        text: response_text.into(),
+                        questions: Vec::new(),
+                        proposal: None,
+                        provider: "fake".into(),
+                        model: "gpt-5.6-luna".into(),
+                        reasoning_effort: "high".into(),
+                        catalogue_refreshed_at: None,
+                        turn_id: format!("turn-{response_id}"),
+                    },
+                )
+                .unwrap();
+        }
+        assert_ne!(
+            service
+                .workspace_path(&ProjectId::from(first_id.as_str()))
+                .unwrap(),
+            service
+                .workspace_path(&ProjectId::from(second_id.as_str()))
+                .unwrap()
+        );
+        drop(service);
+
+        let mut restarted = ConversationService::default();
+        for (design_id, user_text, response_id) in [
+            (&first_id, "Design the main frame.", "response-main"),
+            (&second_id, "Design the braced frame.", "response-braced"),
+        ] {
+            let state = restarted
+                .create(ConversationCreateRequest {
+                    project_id: ProjectId::from(design_id.as_str()),
+                    project_dir: directory.path().display().to_string(),
+                    conversation_id: conversation_id.clone(),
+                    purpose: "Overall framing".into(),
+                    project_facts: Default::default(),
+                })
+                .unwrap();
+            assert_eq!(state.messages, vec![user_text]);
+            assert_eq!(state.agent_responses.len(), 1);
+            assert_eq!(state.agent_responses[0].response_id, response_id);
+        }
+    }
+
     fn create_request() -> ConversationCreateRequest {
         ConversationCreateRequest {
             project_id: ProjectId::from("p"),
@@ -1739,6 +2870,368 @@ mod tests {
             },
         }
     }
+
+    #[test]
+    fn versioned_operation_adapter_uses_design_database_and_survives_restart() {
+        let parent = tempdir().unwrap();
+        let project_dir = parent.path().join("operation-project");
+        let created =
+            fraia_core::create_named_project_package(&project_dir, "Operation project").unwrap();
+        let request = ConversationCreateRequest {
+            project_id: ProjectId::from(created.designs[0].manifest.id.as_str()),
+            project_dir: project_dir.display().to_string(),
+            conversation_id: ConversationId::from("overall"),
+            purpose: "Overall framing".into(),
+            project_facts: Default::default(),
+        };
+        let mut service = ConversationService::default();
+        let root = service.create(request.clone()).unwrap();
+        let proposal = OperationRequest {
+            contract_version: OPERATION_CONTRACT_VERSION.into(),
+            request_id: "appd-propose".into(),
+            operation: Operation::ProposeStructuralPatch {
+                proposal_id: ProposalId::from("proposal-1"),
+                conversation_id: request.conversation_id.clone(),
+                expected_head_revision_id: root.head_revision_id.clone(),
+                proposed_revision_id: RevisionId::from("revision-1"),
+                patch: StructuralPatch {
+                    operations: vec![StructuralOperation::AddNode(NodeInput {
+                        id: "node-1".into(),
+                        position: Position {
+                            x: Length::meters(0.0),
+                            y: Length::meters(0.0),
+                            z: Length::meters(0.0),
+                        },
+                    })],
+                },
+                agent_provenance: None,
+            },
+        };
+        assert_eq!(
+            operation_status(
+                &service
+                    .execute_operation(&request.project_id, proposal)
+                    .unwrap()
+            ),
+            StatusCode::OK
+        );
+        let accepted = service
+            .execute_operation(
+                &request.project_id,
+                OperationRequest {
+                    contract_version: OPERATION_CONTRACT_VERSION.into(),
+                    request_id: "appd-accept".into(),
+                    operation: Operation::AcceptStructuralPatch {
+                        proposal_id: ProposalId::from("proposal-1"),
+                        conversation_id: request.conversation_id.clone(),
+                        expected_head_revision_id: root.head_revision_id,
+                    },
+                },
+            )
+            .unwrap();
+        let state = service
+            .state(&request.project_id, &request.conversation_id)
+            .unwrap();
+        assert_eq!(state.head_revision_id, RevisionId::from("revision-1"));
+
+        let analysis_request = OperationRequest {
+            contract_version: OPERATION_CONTRACT_VERSION.into(),
+            request_id: "appd-analysis".into(),
+            operation: Operation::AnalyseSnapshot {
+                revision_id: state.head_revision_id.clone(),
+                expected_snapshot_id: state.head_snapshot_id.clone(),
+                evidence_id: EvidenceId::from("evidence-1"),
+                settings: AnalysisSettings::frame3d(),
+            },
+        };
+        let analysed = service
+            .execute_operation(&request.project_id, analysis_request.clone())
+            .unwrap();
+        let canonical_run_id = match &analysed.outcome {
+            OperationOutcome::Success { result } => match result.as_ref() {
+                OperationResult::SnapshotAnalysed { run } => run
+                    .canonical_run_id
+                    .clone()
+                    .expect("managed package analysis publishes a canonical design run"),
+                other => panic!("unexpected analysis result: {other:?}"),
+            },
+            other => panic!("unexpected analysis response: {other:?}"),
+        };
+        match &analysed.outcome {
+            OperationOutcome::Success { result } => match result.as_ref() {
+                OperationResult::SnapshotAnalysed { run } => assert!(matches!(
+                    run.outcome,
+                    SnapshotAnalysisOutcome::Unsupported { .. }
+                )),
+                other => panic!("unexpected analysis result: {other:?}"),
+            },
+            other => panic!("unexpected analysis response: {other:?}"),
+        }
+
+        let package = load_project_package(&project_dir).unwrap();
+        let listed_runs =
+            fraia_core::list_design_runs(&project_dir, &package.designs[0].manifest.id).unwrap();
+        assert!(
+            listed_runs
+                .runs
+                .iter()
+                .any(|run| run.run_id == canonical_run_id)
+        );
+        let workspace = design_package_paths(&project_dir, &package.designs[0].manifest.id)
+            .unwrap()
+            .workspace_database;
+        assert!(workspace.is_file());
+        let direct = execute_sqlite_operation(
+            &mut SqliteRevisionRepository::open(&workspace).unwrap(),
+            analysis_request.clone(),
+        );
+        assert_eq!(
+            serde_json::to_value(direct).unwrap(),
+            serde_json::to_value(&analysed).unwrap()
+        );
+        drop(service);
+
+        let mut restarted = ConversationService::open_durable(&workspace).unwrap();
+        let restored = restarted.create(request.clone()).unwrap();
+        assert_eq!(restored.head_revision_id, RevisionId::from("revision-1"));
+        let replay = restarted
+            .execute_operation(&request.project_id, analysis_request)
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(replay).unwrap(),
+            serde_json::to_value(analysed).unwrap()
+        );
+        let inspected = restarted
+            .execute_operation(
+                &request.project_id,
+                OperationRequest {
+                    contract_version: OPERATION_CONTRACT_VERSION.into(),
+                    request_id: "appd-inspect-evidence".into(),
+                    operation: Operation::InspectAnalysisEvidence {
+                        evidence_id: EvidenceId::from("evidence-1"),
+                        against_revision_id: restored.head_revision_id,
+                    },
+                },
+            )
+            .unwrap();
+        assert_eq!(operation_status(&inspected), StatusCode::OK);
+        assert_eq!(operation_status(&accepted), StatusCode::OK);
+    }
+
+    #[test]
+    fn versioned_operation_adapter_maps_exact_snapshot_conflict_to_http_conflict() {
+        let mut service = ConversationService::default();
+        let request = create_request();
+        let root = service.create(request.clone()).unwrap();
+        let response = service
+            .execute_operation(
+                &request.project_id,
+                OperationRequest {
+                    contract_version: OPERATION_CONTRACT_VERSION.into(),
+                    request_id: "snapshot-conflict".into(),
+                    operation: Operation::ValidateSnapshot {
+                        revision_id: root.head_revision_id,
+                        expected_snapshot_id: fraia_revision::SnapshotId::from("wrong"),
+                    },
+                },
+            )
+            .unwrap();
+        assert_eq!(operation_status(&response), StatusCode::CONFLICT);
+        assert!(matches!(
+            response.outcome,
+            OperationOutcome::Error { error }
+                if error.code == OperationErrorCode::ExpectedSnapshotMismatch
+        ));
+    }
+
+    #[test]
+    fn proposal_rejects_stale_or_cross_design_source_binding_before_mutation() {
+        let mut service = ConversationService::default();
+        let root = service.create_fixture_demo(create_request()).unwrap();
+
+        let mut stale = proposal();
+        stale.source_context = Some(ConversationProposalSourceContext {
+            design_id: fraia_core::DesignId::new("wrong-design"),
+            expected_snapshot_id: fraia_revision::SnapshotId::from("stale-snapshot"),
+            shelf_item_ids: Vec::new(),
+            assumptions: vec!["Drawing scale is not confirmed.".into()],
+            evidence_limits: vec!["No elevation was selected.".into()],
+            drawing_interpretation_revision_ids: Vec::new(),
+            drawing_interpretation_inference_ids: Vec::new(),
+        });
+        assert!(service.propose(stale).unwrap_err().contains("is stale"));
+
+        let mut cross_design = proposal();
+        cross_design.source_context = Some(ConversationProposalSourceContext {
+            design_id: fraia_core::DesignId::new("wrong-design"),
+            expected_snapshot_id: root.head_snapshot_id.clone(),
+            shelf_item_ids: Vec::new(),
+            assumptions: Vec::new(),
+            evidence_limits: Vec::new(),
+            drawing_interpretation_revision_ids: Vec::new(),
+            drawing_interpretation_inference_ids: Vec::new(),
+        });
+        assert!(
+            service
+                .propose(cross_design)
+                .unwrap_err()
+                .contains("different design")
+        );
+        assert!(
+            service
+                .store(&ProjectId::from("p"))
+                .unwrap()
+                .repository
+                .proposal(&ProposalId::from("pr1"))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn structured_agent_response_and_full_provenance_survive_restart() {
+        let directory = tempdir().unwrap();
+        let mut request = create_request();
+        request.project_dir = directory.path().display().to_string();
+        let mut service = ConversationService::default();
+        service.create(request.clone()).unwrap();
+        let response = ConversationAgentRespondResponse {
+            response_id: "response-1".into(),
+            text: "Review this exact proposal.".into(),
+            questions: vec!["Confirm the support assumption?".into()],
+            proposal: None,
+            provider: "openai-codex".into(),
+            model: "gpt-5.6-luna".into(),
+            reasoning_effort: "high".into(),
+            catalogue_refreshed_at: Some("2026-08-13T00:00:00Z".into()),
+            turn_id: "turn-1".into(),
+        };
+        service
+            .persist_agent_response(
+                &request.project_id,
+                &request.conversation_id,
+                response.clone(),
+            )
+            .unwrap();
+        drop(service);
+
+        let mut restarted = ConversationService::default();
+        let state = restarted.create(request).unwrap();
+        assert_eq!(state.agent_responses.len(), 1);
+        assert_eq!(state.agent_responses[0].response_id, response.response_id);
+        assert_eq!(state.agent_responses[0].text, response.text);
+        assert_eq!(state.agent_responses[0].questions, response.questions);
+        assert_eq!(state.agent_responses[0].reasoning_effort, "high");
+    }
+
+    #[test]
+    fn pending_proposal_recovers_its_response_from_atomic_provenance() {
+        let directory = tempdir().unwrap();
+        fraia_core::create_named_project_package(directory.path(), "Recovery project").unwrap();
+        let mut request = create_request();
+        request.project_dir = directory.path().display().to_string();
+        let mut service = ConversationService::default();
+        let root = service.create(request.clone()).unwrap();
+        let mut proposal = first_geometry_proposal(root.head_revision_id.clone());
+        proposal.reasoning_effort = Some("high".into());
+        proposal.catalogue_refreshed_at = Some("2026-08-13T00:00:00Z".into());
+        proposal.response_id = Some("atomic-response".into());
+        proposal.response_text = Some("Review this recovered proposal.".into());
+        proposal.response_questions = vec!["Confirm the assumption?".into()];
+        let design_id = service
+            .projects
+            .get(&ProjectId::from("p"))
+            .unwrap()
+            .sqlite_path
+            .as_ref()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+        proposal.source_context = Some(ConversationProposalSourceContext {
+            design_id: fraia_core::DesignId::new(design_id),
+            expected_snapshot_id: root.head_snapshot_id,
+            shelf_item_ids: Vec::new(),
+            assumptions: vec!["Support locations need review.".into()],
+            evidence_limits: vec!["No analysis results are available.".into()],
+            drawing_interpretation_revision_ids: Vec::new(),
+            drawing_interpretation_inference_ids: Vec::new(),
+        });
+        let response_operations = proposal.operations.clone();
+        service.propose(proposal).unwrap();
+        service
+            .persist_agent_response(
+                &request.project_id,
+                &request.conversation_id,
+                ConversationAgentRespondResponse {
+                    response_id: "atomic-response".into(),
+                    text: "Review this recovered proposal.".into(),
+                    questions: vec!["Confirm the assumption?".into()],
+                    proposal: Some(ConversationAgentProposalResponse {
+                        proposal_id: "first-geometry".into(),
+                        proposed_revision_id: RevisionId::from("r1"),
+                        parent_revision_id: root.head_revision_id,
+                        status: "pending".into(),
+                        assumptions: vec!["Support locations need review.".into()],
+                        evidence_limits: vec!["No analysis results are available.".into()],
+                        operations: response_operations,
+                    }),
+                    provider: "fake".into(),
+                    model: "test".into(),
+                    reasoning_effort: "high".into(),
+                    catalogue_refreshed_at: Some("2026-08-13T00:00:00Z".into()),
+                    turn_id: "first".into(),
+                },
+            )
+            .unwrap();
+        service
+            .accept(ConversationProposalActionRequest {
+                project_id: ProjectId::from("p"),
+                proposal_id: "first-geometry".into(),
+                provider: Some("fake".into()),
+                model: Some("test".into()),
+                turn_id: Some("first".into()),
+            })
+            .unwrap();
+        drop(service);
+
+        let mut restarted = ConversationService::default();
+        let state = restarted.create(request).unwrap();
+        assert_eq!(state.agent_responses.len(), 1);
+        assert_eq!(state.agent_responses[0].response_id, "atomic-response");
+        assert_eq!(
+            state.agent_responses[0].proposal.as_ref().unwrap().status,
+            "accepted"
+        );
+        assert_eq!(
+            state.agent_responses[0]
+                .proposal
+                .as_ref()
+                .unwrap()
+                .operations
+                .len(),
+            5
+        );
+        let accepted = restarted
+            .projects
+            .get(&ProjectId::from("p"))
+            .unwrap()
+            .repository
+            .revision(&RevisionId::from("r1"))
+            .unwrap();
+        let provenance = accepted.agent_provenance().unwrap();
+        assert_eq!(provenance.response_id.as_deref(), Some("atomic-response"));
+        assert!(provenance.shelf_item_ids.is_empty());
+        assert!(provenance.drawing_interpretation_revision_ids.is_empty());
+        assert_eq!(
+            provenance.evidence_limits,
+            vec!["No analysis results are available."]
+        );
+    }
+
     fn proposal() -> ConversationProposalRequest {
         ConversationProposalRequest {
             project_id: ProjectId::from("p"),
@@ -1749,6 +3242,12 @@ mod tests {
             provider: "fake".into(),
             model: "test".into(),
             turn_id: "t1".into(),
+            reasoning_effort: None,
+            catalogue_refreshed_at: None,
+            response_id: None,
+            response_text: None,
+            response_questions: Vec::new(),
+            source_context: None,
             operations: vec![ConversationProposalOperation::SetMemberRole {
                 member_id: "rafter".into(),
                 role: "beam".into(),
@@ -1766,6 +3265,12 @@ mod tests {
             provider: "fake".into(),
             model: "test".into(),
             turn_id: "first".into(),
+            reasoning_effort: None,
+            catalogue_refreshed_at: None,
+            response_id: None,
+            response_text: None,
+            response_questions: Vec::new(),
+            source_context: None,
             operation: None,
             operations: vec![
                 ConversationProposalOperation::AddNode {
@@ -2347,7 +3852,7 @@ mod tests {
                 })
                 .unwrap();
             accepted_snapshot = accepted.snapshot_id.clone();
-            assert_eq!(accepted.agent_provenance.unwrap().turn_id, "turn");
+            assert_eq!(accepted.agent_provenance.unwrap().turn_id, "first");
             assert!(
                 SqliteRevisionRepository::open(&path)
                     .unwrap()
@@ -2409,7 +3914,7 @@ mod tests {
         assert_eq!(replayed.status, "success");
         assert_eq!(
             replayed.summary,
-            "Analysis evidence restored from durable storage."
+            "Analysis completed against the accepted snapshot."
         );
         assert!(
             service
@@ -2438,7 +3943,7 @@ mod tests {
             .agent_provenance()
             .unwrap()
             .clone();
-        assert_eq!(restored_provenance.turn_id, "turn");
+        assert_eq!(restored_provenance.turn_id, "first");
         assert_eq!(
             service
                 .state(&ProjectId::from("p"), &ConversationId::from("overall"))
@@ -2456,6 +3961,12 @@ mod tests {
                 provider: "provider".into(),
                 model: "model".into(),
                 turn_id: "restart-turn".into(),
+                reasoning_effort: None,
+                catalogue_refreshed_at: None,
+                response_id: None,
+                response_text: None,
+                response_questions: Vec::new(),
+                source_context: None,
                 operations: vec![ConversationProposalOperation::AddNode {
                     id: "restart-node".into(),
                     x: 10.0,
@@ -2486,5 +3997,123 @@ mod tests {
             .expect("create is idempotent after durable restart");
         assert_eq!(reopened.head_revision_id, RevisionId::from("restart-r2"));
         assert_eq!(reopened.messages, vec!["continue after restart"]);
+    }
+
+    #[test]
+    fn accepted_revision_and_snapshot_survive_legacy_package_migration_and_restart() {
+        let parent = tempdir().unwrap();
+        let project_dir = parent.path().join("legacy-lineage-project");
+        fraia_core::create_project(&project_dir, "Legacy lineage").expect("legacy project");
+        let legacy_workspace = project_dir.join(".fraia/workspace.sqlite");
+        let mut request = create_request();
+        request.project_dir = project_dir.display().to_string();
+
+        let accepted_revision;
+        let accepted_snapshot;
+        {
+            let mut service = ConversationService::open_durable(&legacy_workspace).unwrap();
+            let root = service.create(request.clone()).unwrap();
+            service
+                .propose(first_geometry_proposal(root.head_revision_id))
+                .unwrap();
+            let accepted = service
+                .accept(ConversationProposalActionRequest {
+                    project_id: ProjectId::from("p"),
+                    proposal_id: "first-geometry".into(),
+                    provider: Some("provider".into()),
+                    model: Some("model".into()),
+                    turn_id: Some("migration-turn".into()),
+                })
+                .unwrap();
+            accepted_revision = accepted.revision_id;
+            accepted_snapshot = accepted.snapshot_id;
+        }
+
+        crate::migrate_legacy_app_project(&project_dir)
+            .expect("appd migrates legacy package on open");
+        let package = load_project_package(&project_dir).expect("migrated package");
+        let design_paths = design_package_paths(&project_dir, &package.designs[0].manifest.id)
+            .expect("design package paths");
+        assert!(design_paths.workspace_database.is_file());
+        assert_eq!(
+            project_workspace_database(&request.project_dir, &request.project_id).unwrap(),
+            design_paths.workspace_database
+        );
+
+        let migrated_repository =
+            SqliteRevisionRepository::open(&design_paths.workspace_database).unwrap();
+        assert_eq!(
+            migrated_repository
+                .revision(&accepted_revision)
+                .unwrap()
+                .snapshot_id,
+            accepted_snapshot
+        );
+        assert!(migrated_repository.snapshot(&accepted_snapshot).is_ok());
+        let proposal = migrated_repository
+            .proposal(&ProposalId::from("first-geometry"))
+            .expect("accepted proposal survives migration");
+        assert_eq!(
+            proposal.accepted_revision_id,
+            Some(accepted_revision.clone())
+        );
+
+        let mut restarted = ConversationService::open_durable(&design_paths.workspace_database)
+            .expect("restart conversation service");
+        let restored = restarted
+            .create(request.clone())
+            .expect("hydrate migrated workspace");
+        assert_eq!(restored.head_revision_id, accepted_revision.clone());
+        assert_eq!(restored.head_snapshot_id, accepted_snapshot);
+        assert_eq!(restored.semantic_summary.counts.nodes, 2);
+        assert_eq!(restored.semantic_summary.counts.members, 1);
+
+        let (mut app_project, _) = crate::load_project(&project_dir).expect("load package state");
+        app_project.requirements.span_m = 31.0;
+        crate::save_project(&project_dir, &app_project)
+            .expect("save package state while design workspace is open");
+        restarted
+            .propose(ConversationProposalRequest {
+                project_id: ProjectId::from("p"),
+                conversation_id: ConversationId::from("overall"),
+                proposal_id: "post-package-save".into(),
+                proposed_revision_id: RevisionId::from("post-package-save-r2"),
+                parent_revision_id: accepted_revision,
+                provider: "provider".into(),
+                model: "model".into(),
+                turn_id: "post-package-save-turn".into(),
+                reasoning_effort: None,
+                catalogue_refreshed_at: None,
+                response_id: None,
+                response_text: None,
+                response_questions: Vec::new(),
+                source_context: None,
+                operations: vec![ConversationProposalOperation::AddNode {
+                    id: "post-save-node".into(),
+                    x: 8.0,
+                    y: 0.0,
+                    z: 0.0,
+                }],
+                operation: None,
+            })
+            .expect("open workspace remains writable after package save");
+        restarted
+            .accept(ConversationProposalActionRequest {
+                project_id: ProjectId::from("p"),
+                proposal_id: "post-package-save".into(),
+                provider: Some("provider".into()),
+                model: Some("model".into()),
+                turn_id: Some("post-package-save-turn".into()),
+            })
+            .expect("accept after package save");
+        drop(restarted);
+        let mut reopened = ConversationService::default();
+        let final_state = reopened
+            .create(request)
+            .expect("restart after package state save");
+        assert_eq!(
+            final_state.head_revision_id,
+            RevisionId::from("post-package-save-r2")
+        );
     }
 }

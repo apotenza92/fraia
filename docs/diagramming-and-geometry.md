@@ -235,4 +235,253 @@ This would make planning feel much more natural.
 
 ---
 
+## 14. Project files and design references
+
+Imported material should have two scopes.
+
+### Project files
+
+The project's files include the complete imported package: PDFs, images,
+DXF files, IFC models, and later supported CAD or neutral 3D formats. It is the
+durable project-wide resource bucket. Importing a source does not create or
+change a structural model.
+
+Each source records:
+
+- content hash, safe filename, media type, and import time
+- page, layout, layer, entity, object, unit, and coordinate metadata when present
+- deterministic derived thumbnails, page renderings, text, and geometry indexes
+- source warnings, parser version, and extraction provenance
+
+### Design references
+
+Each design has a small set of design references selected from the project
+files. A design reference can be:
+
+- one complete source page or model view
+- a rectangular or polygonal crop from a PDF page or image
+- a selected set of CAD layers, layouts, blocks, or entities
+- a selected set of IFC objects, levels, grids, or storeys
+- a saved 3D view or section plane
+
+Design references do not copy project files. They retain the exact source hash
+and source-space coordinates. A design conversation receives design references
+by default and can request another project file only through an explicit
+selection. This keeps model context small and makes every interpretation
+traceable.
+
+The UI calls this surface **Design references**. Existing persisted Shelf API
+identifiers remain unchanged for compatibility; new domain types should use a
+precise name such as `DesignReferenceSet` and `DesignReferenceItem`.
+
+## 15. Import trust levels
+
+Different formats carry different kinds of evidence. Fraia must not flatten
+them into one generic image-import path.
+
+### PDF and raster drawings
+
+Preserve native page text, paths, dimensions, and transforms when available.
+Render selected pages or crops for visual interpretation. Use optical character
+recognition only when native text is absent or unusable. Detected lines,
+symbols, and labels become diagram observations with confidence and provenance;
+they do not become structural objects automatically.
+
+### DXF and two-dimensional CAD
+
+Preserve units, model space, paper-space layouts, layers, blocks, entity ids,
+geometry, text, and dimensions. Ask what each selected view represents, whether
+it is plan/elevation/section/detail, and how views relate in 3D. A 2D CAD file
+must enter the same conversational calibration and confirmation flow as a PDF.
+
+Fraia indexes ASCII DXF with the bounded Rust parser `fraia.ascii-dxf.bounded`.
+The parser is part of Fraia's MIT-licensed source. It adds no third-party parser
+licence, native library, downloaded runtime, or platform-specific package. The
+same Rust code is compiled into each of the six supported desktop targets. It
+works offline and keeps Rust as the owner of source identity and provenance.
+
+The index preserves declared insertion units, model and paper layouts, layer
+visibility and freeze state, stable handles, classic and lightweight
+polylines, text, dimensions, blocks, inserts, and insert transforms. Nested
+block references remain references. Fraia does not expand them into structural
+geometry. Entity, pair, vertex, block-depth, byte, and parse-time limits fail
+closed. Invalid numeric records, reference cycles, binary DXF, and corrupt input
+do not publish a partial index. Unsupported entities and missing block
+references remain visible diagnostics.
+
+A DXF selection records the exact project file hash, layout, entity ids, and
+entity transforms. The user confirms the view role and its relation to design
+coordinates once. The parser then creates traceable, unconfirmed drawing
+observations. A line remains unclassified linework. It never becomes a member
+without later user confirmation and a structural proposal. Direct DWG remains
+unsupported and requires its own licence, fidelity, security, and six-target
+package decision.
+
+### IFC and semantic BIM
+
+Prefer IFC as the first semantic 3D building import. Preserve object ids,
+classes, placements, storeys, grids, properties, geometry, and units. Imported
+architectural objects remain references until the user confirms which objects
+or derived centre-lines should inform one structural design.
+
+The first IFC backend uses Fraia's bounded in-tree Rust STEP Part 21 subset
+parser, `fraia.ifc-step.bounded`. The parser is covered by Fraia's MIT licence.
+It introduces no third-party parser licence, native library, worker, runtime
+download, or target-specific package payload. It works offline as ordinary Rust
+on all six desktop targets. Rust owns the source hash, parser/version identity,
+immutable BIM index, and selection provenance.
+
+This subset preserves GlobalId, IFC class, local placement chains, storey and
+grid membership, property-set identity and values, declared length units,
+representation ids, and reference transforms. It does not tessellate every IFC
+representation and does not claim full schema coverage. Unsupported
+representations remain visible diagnostics instead of disappearing. Byte,
+record, entity, argument, and parse-time limits fail closed.
+
+Users can select exact objects, storeys, grids, or classes. Fraia resolves every
+selector to stable object identities and transforms. Parser-created semantic
+hints remain unconfirmed reference observations with no design geometry. An IFC
+class such as `IFCBEAM` never creates a Fraia member. Centre-lines, surfaces, and
+structural meaning require a later reviewed interpretation and explicit
+proposal.
+
+### Neutral solids and meshes
+
+STEP and IGES can preserve precise geometric solids but usually carry less
+building semantics than IFC. glTF, OBJ, and STL are primarily reference and
+visual geometry. Fraia should not infer authored structural members directly
+from a mesh without a reviewed interpretation step.
+
+Fraia Phase 1 indexes glTF 2.0, GLB 2.0, OBJ, and STL with the bounded in-tree
+Rust parser `fraia.neutral-mesh.bounded`. This parser is part of Fraia's
+MIT-licensed source. It adds no third-party parser licence, native library,
+worker, downloaded payload, or platform-specific runtime. The same Rust code
+compiles offline for all six desktop targets. Rust owns the immutable source
+hash, parser/version identity, stable object and group ids, exact glTF node
+matrices, mesh bounds, diagnostics, and saved-view provenance.
+
+glTF uses its defined metre and right-handed Y-up conventions. OBJ and STL do
+not define units or a reliable coordinate frame. Fraia therefore requires an
+engineer to confirm a positive conversion to metres before it can save an OBJ
+or STL view as a design reference. Saved views persist the exact source hash,
+selected object ids, camera, transform, orientation, scale, and section planes.
+Unsupported topology remains a diagnostic. No mesh entity creates a node,
+member, plate, support, load, or release.
+
+The Phase 1 parser does not follow external glTF buffers or OBJ material files.
+It does not tessellate STEP or IGES. Fraia must not start STEP or IGES support
+until a separate geometry-kernel review approves the licence, offline package,
+determinism, memory limits, and all six native targets.
+
+The desktop renderer requests mesh bytes by project and source identity. The
+main process returns a bounded binary body only after it verifies package
+containment, rejects symbolic links, and rechecks the recorded hash and byte
+size. It returns the source id, SHA-256 hash, media type, and byte size in
+response headers. It never returns a native path. Mesh indexing uses opaque,
+bounded main-process jobs with running, cancelling, completed, cancelled, and
+failed states. A cancelled parse publishes no partial derivative.
+
+### Proprietary authoring formats
+
+Direct DWG and RVT ingestion is not an initial release requirement. Prefer DXF
+and IFC export paths first. Any later proprietary-format adapter must pass a
+separate licence, packaging, fidelity, and six-target runtime review.
+
+## 16. Selected-view interpretation
+
+The first drawing workflow should support selecting one plan crop and one
+elevation or section crop from different pages. Fraia should let the user:
+
+1. browse project file thumbnails and extracted drawing titles
+2. open a page, layout, model view, or 3D source
+3. draw one or more crop or selection regions
+4. label each item as plan, elevation, section, detail, schedule, or reference
+5. calibrate scale and orientation when source units are insufficient
+6. add the items as design references
+7. align shared grids, levels, points, or axes between design references
+8. review the interpreted diagram overlay before any model proposal exists
+
+Multiple design references may describe the same geometry from different views. The
+interpretation layer should retain cross-view correspondence and uncertainty
+instead of choosing one silently.
+
+### Shipped PDF renderer boundary
+
+Fraia renders managed PDF project files with the Apache-2.0 licensed
+`pdfjs-dist` 6.2.108 browser build. Vite bundles the renderer and its dedicated
+worker for offline use. Electron main resolves a file only from its project
+directory and internal source id, rejects paths outside managed file storage, and
+verifies the stored byte count and SHA-256 before returning bytes to the
+isolated renderer. The renderer never receives a native file path.
+
+The PDF worker is allowed by the desktop content security policy through
+`worker-src 'self' blob:`. The production renderer loads PDF.js only when the
+page browser opens. The uncompressed split browser chunk is approximately 428
+KB and its worker is 1.26 MB. PDF.js is a build dependency, so its optional Node
+canvas package is not a packaged runtime dependency. Fraia does not ship or
+invoke Poppler. Poppler remains a test-only visual verification tool.
+
+PDF.js draws pages only. Persisted crop geometry uses the exact project file hash,
+page boxes, rotation, user unit, coordinate space, and source-to-display
+transform returned by the Rust PDF index. A changed hash or inconsistent page
+dimensions makes the browser read-only until the project file is re-indexed.
+
+### Spatial drawing-text inference
+
+The Rust PDF index preserves bounded native text runs with their source-space
+boxes, font size, extraction method, and parser version. View-role inference
+scores text inside the selected crop above text in a bounded surrounding margin.
+It returns ranked plan, elevation, section, detail, and schedule suggestions
+with exact cited boxes. A high-confidence, non-conflicting suggestion can prefill
+the workflow as **Fraia inferred**. It remains an assumption, not a confirmed
+fact. Close competing scores are materially conflicting and require one focused
+question. A later user correction creates a descendant interpretation revision
+and makes bindings to the older inference stale.
+
+Native text only is used. When a scanned page has no spatial native text, the
+backend returns an explicit OCR-unavailable diagnostic and no suggestion. It
+does not fabricate a title or view role. Page registers, title-block field
+grouping, callout graph matching, and richer rotation-aware glyph transforms
+remain follow-on extraction work.
+
+The reviewed first-release OCR runtime is Tesseract.js 7.0.0 with
+tesseract.js-core 7.0.0. Fraia packages the local worker and all six core
+variants selected by that runtime: baseline, SIMD, and relaxed SIMD, each with
+LSTM and non-LSTM forms. It uses only the Apache-2.0 English model from the
+exact tessdata_fast 4.1.0 commit recorded in the import runtime contract. Fraia
+does not use the English data npm package because its declared licence and
+upstream licence provenance conflict. No content-delivery-network or runtime
+download path is allowed.
+
+OCR runs only when bounded native PDF text is absent or explicitly unusable.
+The worker enforces input byte, pixel, word, character, and elapsed-time limits.
+Cancellation terminates the worker. Completed text is returned only as typed,
+unconfirmed inferred candidates. Each candidate retains the project file id and
+hash, page, crop, rotation, raster and source boxes, exact raster-to-source
+transform, confidence, engine version, model commit, and model SHA-256. OCR does
+not confirm a view role or create structural geometry. A failed, timed-out,
+cancelled, unavailable, or over-limit attempt returns one explicit terminal
+diagnostic and publishes no partial candidates.
+
+## 17. Drawing interpretation revision boundary
+
+`DrawingInterpretation` is the versioned boundary between selected source
+evidence and a later structural proposal. A revision contains typed drawing
+observations, exact Shelf and source coordinates, extraction provenance,
+confidence and uncertainty, explicit confirmation state, confirmed cross-view
+correspondences and transforms, and unresolved conflicts.
+
+Interpretation revisions belong to one design. They are immutable and use a
+content identity plus an exact parent identity. A new revision must compare its
+expected parent with the current design head. Parser and extraction adapters
+can create unconfirmed observations only. They cannot confirm their own output.
+
+Only a confirmed observation with confirmed design-coordinate geometry and no
+unresolved conflict can enter the proposal-constraint projection. This
+projection carries exact source provenance. It does not create or mutate
+structural primitives. Unknown future revision data must be preserved by a
+future schema reader or rejected. A current reader must not silently discard it.
+
+---
+
 _End of draft._

@@ -8,6 +8,8 @@ const {
   acquireLaunchLock,
   releaseLaunchLock,
   resolveLaunchConfig,
+  sourceProvenance,
+  viteArguments,
 } = require('../scripts/start-dev.cjs');
 
 test('development launcher uses one strict, identifiable server configuration', () => {
@@ -24,10 +26,21 @@ test('development launcher uses one strict, identifiable server configuration', 
     lockPath,
   });
   assert.equal(resolveLaunchConfig(['--clean', '--fresh-guide'], { FRAIA_DEV_LOCK_PATH: lockPath }).clean, true);
+  assert.deepEqual(viteArguments(resolveLaunchConfig([], {
+    FRAIA_DEV_LOCK_PATH: lockPath,
+    FRAIA_DEV_SERVER_PORT: '5187',
+  })), ['--host', '127.0.0.1', '--port', '5187', '--strictPort', '--force']);
   assert.throws(
     () => resolveLaunchConfig([], { FRAIA_DEV_LOCK_PATH: lockPath, FRAIA_DEV_SERVER_PORT: '80' }),
     /between 1024 and 65535/,
   );
+});
+
+test('development launcher seals the current Electron main and preload provenance', () => {
+  const provenance = sourceProvenance(path.resolve(__dirname, '..'));
+  assert.equal(provenance['main.js'], fs.statSync(path.resolve(__dirname, '..', 'main.js')).mtimeMs);
+  assert.equal(provenance['preload.js'], fs.statSync(path.resolve(__dirname, '..', 'preload.js')).mtimeMs);
+  assert.notEqual(provenance['main.js'], provenance['preload.js']);
 });
 
 test('development launcher rejects a second live owner and recovers a stale lock', () => {

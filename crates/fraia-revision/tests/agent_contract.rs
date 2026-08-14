@@ -27,6 +27,7 @@ fn provenance() -> AgentTurnProvenance {
         provider: "test-provider".into(),
         model: "test-model".into(),
         turn_id: "turn-7".into(),
+        ..Default::default()
     }
 }
 

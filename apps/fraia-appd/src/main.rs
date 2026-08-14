@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, anyhow};
 use axum::{
-    Json, Router,
+    Extension, Json, Router,
     extract::{Query, Request, State},
     http::{HeaderMap, StatusCode, header::AUTHORIZATION},
     middleware::{self, Next},
@@ -14,49 +14,81 @@ use fraia_app_api::{
     AgentProviderStatusResponse, AgentReviewReplyRequest, AgentReviewReplyResponse,
     AgentSessionCancelRequest, AgentSessionRespondRequest, AgentSessionStartRequest,
     AgentSettingsUpdateRequest, AnalysisReadiness, AnalysisRunSummary, AppHealthResponse,
-    CoordinationGroup, CoordinationReport, CreateProjectRequest, DesignOptionAnalysisRequest,
-    DesignOptionDecisionUpdateRequest, DesignOptionIntent, DesignScheme, DesignSchemeGroupChoice,
-    DesignSchemeSectionCandidate, ErrorResponse, PlanningAnalysisBrief as ApiPlanningAnalysisBrief,
+    ConversationAgentProposalResponse, ConversationAgentRespondRequest,
+    ConversationAgentRespondResponse, ConversationProposalRequest,
+    ConversationProposalSourceContext, CoordinationGroup, CoordinationReport, CreateProjectRequest,
+    DesignOptionAnalysisRequest, DesignOptionDecisionUpdateRequest, DesignOptionIntent,
+    DesignRunInspectRequest, DesignRunList, DesignRunListRequest, DesignRunStatusProjection,
+    DesignRunStatusRequest, DesignScheme, DesignSchemeGroupChoice, DesignSchemeSectionCandidate,
+    DrawingInterpretation, DrawingInterpretationConfirmRequest,
+    DrawingInterpretationCorrectRequest, DrawingInterpretationCreateRequest,
+    DrawingInterpretationInspectRequest, DrawingInterpretationList,
+    DrawingInterpretationListRequest, DrawingInterpretationReconcileRequest,
+    DrawingInterpretationResolveConflictRequest, DxfIndexRequest, DxfIndexResult,
+    DxfPrepareSelectionRequest, ErrorResponse, IfcIndexRequest, IfcIndexResult,
+    IfcPrepareSelectionRequest, InspectedDesignRun, MeshContentRequest, MeshIndexJobIdRequest,
+    MeshIndexJobRequest, MeshIndexJobResponse, MeshIndexJobStatus, MeshIndexRequest,
+    MeshIndexResult, MeshPrepareSavedViewRequest, PdfCapabilityResponse, PdfIndexRequest,
+    PdfIndexResponse, PdfViewRoleInference, PdfViewRoleInferenceRequest,
+    PlanningAnalysisBrief as ApiPlanningAnalysisBrief,
     PlanningDesignConstraints as ApiPlanningDesignConstraints, PlanningDraft as ApiPlanningDraft,
     PlanningDraftRequest, PlanningGeometryAndLoads as ApiPlanningGeometryAndLoads,
     PlanningProjectIntent as ApiPlanningProjectIntent,
-    PlanningSystemBrief as ApiPlanningSystemBrief, ProjectPathRequest, SceneBounds, SceneLoad,
-    SceneMember, SceneNode, ScenePlate, SceneRelease, SceneSectionCoordination,
-    SceneSizeCoordination, SceneSupport, SummaryArtifactRef, WorkbenchDiagnostic,
+    PlanningSystemBrief as ApiPlanningSystemBrief, PreparedDxfSelection, PreparedIfcSelection,
+    PreparedMeshSavedView, ProjectPathRequest, SceneBounds, SceneLoad, SceneMember, SceneNode,
+    ScenePlate, SceneRelease, SceneSectionCoordination, SceneSizeCoordination, SceneSupport,
+    ShelfDocument, ShelfListRequest, ShelfRemoveRequest, ShelfRetargetRequest, ShelfUpsertRequest,
+    SourceDerivativeQueryRequest, SourceDerivativeQueryResponse, SourceImportRequest,
+    SourceImportResponse, SourceInspectRequest, SourceInspectResponse, SourceListRequest,
+    SourceListResponse, SourceRemoveRequest, SourceRemoveResponse, SourceSelectionIssueRequest,
+    SourceSelectionIssueResponse, SummaryArtifactRef, WorkbenchDiagnostic,
     WorkbenchOperationResponse, WorkbenchProjectOverview, WorkbenchProjectState, WorkbenchScene,
 };
-#[cfg(test)]
-use fraia_core::FRAIA_AI_PROVIDER_ID;
 use fraia_core::{
-    AgentMessage, AgentModelSettings, AgentProposedActionState, AgentSession, AgentState,
+    AgentMessage, AgentModelSettings, AgentProposedActionState, AgentSession,
     AgentSuggestedReplyGroup, AiProvenance, AssignmentTargetRef, BaseModelBrief,
     BaseModelBriefLoadDirection, BaseModelBriefLoadTarget, BaseModelBriefReadiness,
     BaseModelBriefVisualIntent, CalculixCompiledInput, CalculixExecutionArtifacts,
-    CalculixExecutionOutcome, DesignOptionBatch, DesignOptionComparisonEvidenceReference,
-    DesignOptionComparisonRun, DesignOptionRevision, DevelopmentPath, FRAIA_AI_MODEL_ID,
-    FRAIA_AI_REASONING_EFFORT, Force, FrameElementStressSummary, FrameModel2D,
+    CalculixExecutionOutcome, DesignId, DesignOptionBatch, DesignOptionComparisonEvidenceReference,
+    DesignOptionComparisonRun, DesignOptionRevision, DesignPackage, DevelopmentPath,
+    FRAIA_AI_MODEL_ID, FRAIA_AI_REASONING_EFFORT, Force, FrameElementStressSummary, FrameModel2D,
     FrameNodeDisplacementPoint, FrameSupportReactionPoint, LineLoad, LoadAssignment, LoadCase2D,
     LoadKind, LoadVector, PlanningAnalysisBrief as CorePlanningAnalysisBrief,
     PlanningDesignConstraints as CorePlanningDesignConstraints, PlanningDraft as CorePlanningDraft,
     PlanningGeometryAndLoads as CorePlanningGeometryAndLoads,
     PlanningProjectIntent as CorePlanningProjectIntent,
-    PlanningSystemBrief as CorePlanningSystemBrief, ProjectFile, QuantityKind, Stress,
-    StructuralMember, StructuralModel, StructuralNode, SupportAssignment,
+    PlanningSystemBrief as CorePlanningSystemBrief, ProjectDesignEntry, ProjectFile, QuantityKind,
+    Stress, StructuralMember, StructuralModel, StructuralNode, SupportAssignment,
     analyze_current_simply_supported_beam_project, apply_planning_draft, calculix_runtime_status,
-    canonical_value_from_unit, compile_frame_model_to_calculix_input, create_project,
+    canonical_value_from_unit, compile_frame_model_to_calculix_input, confirm_drawing_observations,
+    correct_drawing_observation, create_drawing_interpretation, create_named_project_package,
     current_simply_supported_beam_builder_params, default_planning_markdown,
-    derive_conservative_check_report, derive_design_action_report,
-    execute_calculix_compiled_input_with_runtime, execute_current_frame_project_in_calculix,
-    extract_frame_calculix_dat, format_quantity, frame2d::solve_frame_2d, load_project,
+    derive_conservative_check_report, derive_design_action_report, design_package_paths,
+    drawing_interpretation_agent_context, execute_calculix_compiled_input_with_runtime,
+    execute_current_frame_project_in_calculix, extract_frame_calculix_dat, format_quantity,
+    frame2d::solve_frame_2d, import_source, index_and_store_dxf, index_and_store_ifc,
+    index_and_store_mesh, index_and_store_pdf, infer_pdf_view_role, inspect_design_run,
+    inspect_source, list_design_run_statuses, list_design_runs, list_drawing_interpretations,
+    list_sources, load_design_shelf, load_drawing_interpretation,
+    load_project as load_legacy_project, load_project_package,
     materialize_project_structural_model, materialize_structural_model_from_builder_graph,
-    metric_structural_unit_profile, parse_quantity, planning_draft, portal_frame_builder_graph,
-    realize_structural_model_to_frame2d, render_beam_analysis_summary, render_beam_sizing_summary,
+    metric_structural_unit_profile, migrate_legacy_project_package, parse_quantity, planning_draft,
+    portal_frame_builder_graph, prepare_dxf_selection, prepare_ifc_selection,
+    prepare_mesh_saved_view, project_paths, read_managed_mesh_content,
+    realize_structural_model_to_frame2d, reconcile_drawing_interpretation, remove_shelf_item,
+    remove_source, render_beam_analysis_summary, render_beam_sizing_summary,
     render_frame_calculix_execution_summary, render_validation_summary, require_calculix_runtime,
-    save_project, section_by_id, section_catalog, section_family,
-    seed_simply_supported_beam_in_project, simply_supported_beam_builder_graph,
-    size_current_simply_supported_beam_in_project, steel_material, understand_structural_model,
-    update_planning_markdown, validate_structural_model,
+    resolve_drawing_interpretation_conflict, retarget_cross_design_shelf_item,
+    save_project as save_legacy_project, save_project_package, section_by_id, section_catalog,
+    section_family, simply_supported_beam_builder_graph,
+    size_current_simply_supported_beam_in_project, source_derivatives, source_shelf_references,
+    steel_material, understand_structural_model,
+    update_planning_markdown as update_legacy_planning_markdown, upsert_shelf_item,
+    validate_structural_model,
 };
+#[cfg(test)]
+use fraia_core::{FRAIA_AI_PROVIDER_ID, create_project};
+use fraia_revision::sqlite::SqliteRevisionRepository;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use std::{
@@ -64,15 +96,118 @@ use std::{
     fs,
     net::SocketAddr,
     path::{Path, PathBuf},
-    sync::Arc,
-    time::Duration,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 mod conversation_transport;
 
 const AGENT_JUSTIFIED_SECTION_SELECTION_POLICY: &str = "agent_justified";
+const CONVERSATION_AGENT_INSTRUCTION: &str = "Use only this exact Fraia context. Ask concise questions when evidence is insufficient. A proposal is optional and must echo the exact head, snapshot, design-reference, interpretation-revision, and inference-candidate bindings. Confirmed constraints are facts. Inferred drawing candidates are assumptions only: copy every material inferredDrawingAssumptions entry into proposal assumptions and state that it requires confirmation or is not a confirmed fact in evidenceLimits. Never promote conflicted or low-confidence evidence. Never invent analysis or project-file access. Never accept a proposal.";
 
-const DEFAULT_AI_TURN_TIMEOUT_SECONDS: u64 = 125;
+// The Electron AI runtime owns the 120-second turn deadline. This longer
+// transport timeout only bounds a broken loopback connection after that
+// runtime has emitted its terminal state.
+const AI_RUNTIME_TRANSPORT_TIMEOUT_SECONDS: u64 = 125;
+const CONVERSATION_AGENT_DEADLINE_MILLIS: u64 = 120_000;
+const SOURCE_SELECTION_TTL_SECONDS: u64 = 300;
+const MAX_MESH_INDEX_JOBS: usize = 128;
+
+#[derive(Debug)]
+struct SourceSelectionGrant {
+    project_dir: PathBuf,
+    selected_path: PathBuf,
+    expires_at: Instant,
+}
+
+#[derive(Debug, Default)]
+struct SourceSelectionRegistry {
+    grants: Mutex<BTreeMap<String, SourceSelectionGrant>>,
+}
+
+#[derive(Debug)]
+struct MeshIndexJob {
+    cancelled: Arc<AtomicBool>,
+    response: MeshIndexJobResponse,
+}
+
+#[derive(Debug, Default)]
+struct MeshIndexJobRegistry {
+    jobs: Mutex<BTreeMap<String, MeshIndexJob>>,
+}
+
+impl MeshIndexJobRegistry {
+    fn response(&self, job_id: &str) -> Result<MeshIndexJobResponse> {
+        self.jobs
+            .lock()
+            .map_err(|_| anyhow!("mesh job registry is unavailable"))?
+            .get(job_id)
+            .map(|job| job.response.clone())
+            .ok_or_else(|| anyhow!("mesh index job was not found"))
+    }
+}
+
+impl SourceSelectionRegistry {
+    fn issue(&self, project_dir: &Path, selected_path: &Path) -> Result<String> {
+        let project_dir = project_dir
+            .canonicalize()
+            .context("canonicalize selected project")?;
+        load_project_package(&project_dir)
+            .context("selection project is not an openable Fraia package")?;
+        let metadata = fs::symlink_metadata(selected_path).context("inspect selected source")?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err(anyhow!(
+                "the selected source must be a regular non-symlink file"
+            ));
+        }
+        let selected_path = selected_path
+            .canonicalize()
+            .context("canonicalize selected source")?;
+        let mut random = [0u8; 32];
+        getrandom::fill(&mut random).context("create source selection token")?;
+        let token = random
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let mut grants = self
+            .grants
+            .lock()
+            .map_err(|_| anyhow!("source selection registry is unavailable"))?;
+        let now = Instant::now();
+        grants.retain(|_, grant| grant.expires_at > now);
+        grants.insert(
+            token.clone(),
+            SourceSelectionGrant {
+                project_dir,
+                selected_path,
+                expires_at: now + Duration::from_secs(SOURCE_SELECTION_TTL_SECONDS),
+            },
+        );
+        Ok(token)
+    }
+
+    fn consume(&self, token: &str, project_dir: &Path) -> Result<PathBuf> {
+        let project_dir = project_dir
+            .canonicalize()
+            .context("canonicalize import project")?;
+        let mut grants = self
+            .grants
+            .lock()
+            .map_err(|_| anyhow!("source selection registry is unavailable"))?;
+        let grant = grants.remove(token).ok_or_else(|| {
+            anyhow!("source selection token is invalid, expired, or already used")
+        })?;
+        if grant.expires_at <= Instant::now() || grant.project_dir != project_dir {
+            return Err(anyhow!(
+                "source selection token is invalid for this project"
+            ));
+        }
+        Ok(grant.selected_path)
+    }
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -91,9 +226,13 @@ struct PiCatalogueResponse {
 #[serde(rename_all = "camelCase")]
 struct PiTurnRequest<'a> {
     request_id: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scope_id: Option<&'a str>,
     provider_id: &'a str,
     model_id: &'a str,
     reasoning_effort: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    deadline_at_unix_ms: Option<u64>,
     prompt: &'a str,
     response_schema: &'a Value,
 }
@@ -109,6 +248,37 @@ struct PiTurnResponse {
     catalogue_refreshed_at: Option<String>,
 }
 
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PiConversationResponse {
+    response_id: String,
+    text: String,
+    #[serde(default)]
+    questions: Vec<String>,
+    #[serde(default)]
+    proposal: Option<PiConversationProposal>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PiConversationProposal {
+    proposal_id: String,
+    proposed_revision_id: fraia_revision::RevisionId,
+    parent_revision_id: fraia_revision::RevisionId,
+    expected_snapshot_id: fraia_revision::SnapshotId,
+    #[serde(default)]
+    shelf_item_ids: Vec<String>,
+    #[serde(default)]
+    drawing_interpretation_revision_ids: Vec<String>,
+    #[serde(default)]
+    drawing_interpretation_inference_ids: Vec<String>,
+    #[serde(default)]
+    assumptions: Vec<String>,
+    #[serde(default)]
+    evidence_limits: Vec<String>,
+    operations: Vec<fraia_app_api::ConversationProposalOperation>,
+}
+
 fn ai_runtime_url() -> Result<String> {
     std::env::var("FRAIA_AI_URL")
         .context("Fraia's Pi AI runtime is unavailable; restart the desktop application")
@@ -122,7 +292,7 @@ fn ai_runtime_token() -> Result<String> {
 fn ai_runtime_client() -> Result<reqwest::blocking::Client> {
     reqwest::blocking::Client::builder()
         .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(DEFAULT_AI_TURN_TIMEOUT_SECONDS))
+        .timeout(Duration::from_secs(AI_RUNTIME_TRANSPORT_TIMEOUT_SECONDS))
         .build()
         .context("failed to create the Fraia AI runtime client")
 }
@@ -174,15 +344,60 @@ fn run_pi_turn<T: DeserializeOwned + Send>(
     prompt: &str,
     response_schema: &Value,
 ) -> Result<(T, PiTurnResponse)> {
-    run_on_blocking_thread(|| run_pi_turn_blocking(request_id, settings, prompt, response_schema))
+    run_pi_turn_scoped(request_id, None, settings, prompt, response_schema)
 }
 
-fn run_pi_turn_blocking<T: DeserializeOwned>(
+fn run_pi_turn_scoped<T: DeserializeOwned + Send>(
     request_id: &str,
+    scope_id: Option<&str>,
     settings: &AgentModelSettings,
     prompt: &str,
     response_schema: &Value,
 ) -> Result<(T, PiTurnResponse)> {
+    run_on_blocking_thread(|| {
+        run_pi_turn_blocking(request_id, scope_id, settings, prompt, response_schema)
+    })
+}
+
+fn run_pi_turn_blocking<T: DeserializeOwned>(
+    request_id: &str,
+    scope_id: Option<&str>,
+    settings: &AgentModelSettings,
+    prompt: &str,
+    response_schema: &Value,
+) -> Result<(T, PiTurnResponse)> {
+    let envelope =
+        run_pi_turn_envelope_blocking(request_id, scope_id, settings, prompt, response_schema)?;
+    let typed = serde_json::from_value(envelope.output.clone())
+        .context("Pi structured output failed Fraia's Rust type validation")?;
+    Ok((typed, envelope))
+}
+
+fn run_pi_turn_envelope_blocking(
+    request_id: &str,
+    scope_id: Option<&str>,
+    settings: &AgentModelSettings,
+    prompt: &str,
+    response_schema: &Value,
+) -> Result<PiTurnResponse> {
+    run_pi_turn_envelope_with_deadline_blocking(
+        request_id,
+        scope_id,
+        settings,
+        prompt,
+        response_schema,
+        None,
+    )
+}
+
+fn run_pi_turn_envelope_with_deadline_blocking(
+    request_id: &str,
+    scope_id: Option<&str>,
+    settings: &AgentModelSettings,
+    prompt: &str,
+    response_schema: &Value,
+    deadline_at_unix_ms: Option<u64>,
+) -> Result<PiTurnResponse> {
     let response = ai_runtime_client()?
         .post(format!(
             "{}/v1/turns",
@@ -191,9 +406,11 @@ fn run_pi_turn_blocking<T: DeserializeOwned>(
         .bearer_auth(ai_runtime_token()?)
         .json(&PiTurnRequest {
             request_id,
+            scope_id,
             provider_id: &settings.provider_id,
             model_id: &settings.model,
             reasoning_effort: &settings.reasoning_effort,
+            deadline_at_unix_ms,
             prompt,
             response_schema,
         })
@@ -213,11 +430,121 @@ fn run_pi_turn_blocking<T: DeserializeOwned>(
             .unwrap_or(body);
         return Err(anyhow!("Pi turn failed: {detail}"));
     }
-    let envelope: PiTurnResponse =
-        serde_json::from_str(&body).context("Pi returned an invalid turn envelope")?;
-    let typed = serde_json::from_value(envelope.output.clone())
-        .context("Pi structured output failed Fraia's Rust type validation")?;
-    Ok((typed, envelope))
+    serde_json::from_str(&body).context("Pi returned an invalid turn envelope")
+}
+
+fn run_pi_conversation_turn_with_correction(
+    request_id: &str,
+    scope_id: &str,
+    settings: &AgentModelSettings,
+    prompt: &str,
+    response_schema: &Value,
+) -> Result<(PiConversationResponse, PiTurnResponse)> {
+    run_on_blocking_thread(|| {
+        let deadline_at_unix_ms = conversation_agent_deadline_at_unix_ms()?;
+        let mut attempt = 0;
+        decode_pi_conversation_response_with_one_correction(
+            prompt,
+            response_schema,
+            |attempt_prompt| {
+                let attempt_request_id = if attempt == 0 {
+                    request_id.to_owned()
+                } else {
+                    format!("{request_id}:schema-correction")
+                };
+                attempt += 1;
+                run_pi_turn_envelope_with_deadline_blocking(
+                    &attempt_request_id,
+                    Some(scope_id),
+                    settings,
+                    attempt_prompt,
+                    response_schema,
+                    Some(deadline_at_unix_ms),
+                )
+            },
+        )
+    })
+}
+
+fn conversation_agent_deadline_at_unix_ms() -> Result<u64> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system clock is before the Unix epoch")?;
+    Ok(now.as_millis().min(u64::MAX as u128) as u64 + CONVERSATION_AGENT_DEADLINE_MILLIS)
+}
+
+fn decode_pi_conversation_response_with_one_correction(
+    original_prompt: &str,
+    response_schema: &Value,
+    mut run_turn: impl FnMut(&str) -> Result<PiTurnResponse>,
+) -> Result<(PiConversationResponse, PiTurnResponse)> {
+    let first = run_turn(original_prompt)?;
+    match serde_json::from_value(first.output.clone()) {
+        Ok(response) => Ok((response, first)),
+        Err(validation_error) => {
+            let correction_prompt = structured_response_correction_prompt(
+                original_prompt,
+                response_schema,
+                &first.output,
+                &validation_error.to_string(),
+            )?;
+            let corrected = run_turn(&correction_prompt)?;
+            let response = serde_json::from_value(corrected.output.clone()).with_context(|| {
+                format!(
+                    "Pi structured output failed Fraia's Rust type validation after one schema-correction attempt; first error: {validation_error}"
+                )
+            })?;
+            Ok((response, corrected))
+        }
+    }
+}
+
+fn decode_and_validate_pi_conversation_response_with_one_correction(
+    original_prompt: &str,
+    response_schema: &Value,
+    mut run_turn: impl FnMut(&str) -> Result<PiTurnResponse>,
+    mut validate: impl FnMut(&PiConversationResponse) -> Result<()>,
+) -> Result<(PiConversationResponse, PiTurnResponse)> {
+    let first = run_turn(original_prompt)?;
+    let first_result = serde_json::from_value::<PiConversationResponse>(first.output.clone())
+        .map_err(anyhow::Error::from)
+        .and_then(|response| validate(&response).map(|_| response));
+    match first_result {
+        Ok(response) => Ok((response, first)),
+        Err(validation_error) => {
+            let correction_prompt = structured_response_correction_prompt(
+                original_prompt,
+                response_schema,
+                &first.output,
+                &validation_error.to_string(),
+            )?;
+            let corrected = run_turn(&correction_prompt)?;
+            let response = serde_json::from_value(corrected.output.clone()).with_context(|| {
+                format!(
+                    "Pi structured output failed Fraia's Rust type validation after one schema-correction attempt; first error: {validation_error}"
+                )
+            })?;
+            validate(&response).with_context(|| {
+                format!(
+                    "Pi proposal failed Fraia's structural validation after one correction attempt; first error: {validation_error}"
+                )
+            })?;
+            Ok((response, corrected))
+        }
+    }
+}
+
+fn structured_response_correction_prompt(
+    original_prompt: &str,
+    response_schema: &Value,
+    rejected_output: &Value,
+    validation_error: &str,
+) -> Result<String> {
+    Ok(format!(
+        "Your previous structured response was rejected before any design mutation. Return one corrected response only. Preserve the engineering intent and exact context bindings. Do not add commentary outside the response object.\nValidation error: {validation_error}\nExact required JSON Schema:\n{}\nRejected structured response:\n{}\nOriginal request:\n{original_prompt}",
+        serde_json::to_string(response_schema)?,
+        serde_json::to_string(rejected_output)?,
+    ))
 }
 
 fn cancel_pi_turn(request_id: &str) -> Result<bool> {
@@ -267,23 +594,89 @@ async fn main() -> Result<()> {
             |error| anyhow!("failed to open the conversation revision repository: {error}"),
         )?,
     ));
+    let source_selections = Arc::new(SourceSelectionRegistry::default());
+    let mesh_jobs = Arc::new(MeshIndexJobRegistry::default());
     let app = Router::new()
         .route("/health", get(health))
         .route("/projects/create", post(create_project_handler))
         .route("/projects/open", post(open_project_handler))
+        .route(
+            "/projects/identity",
+            get(project_identity_handler).post(rename_project_identity_handler),
+        )
+        .route("/projects/designs", post(create_design_handler))
+        .route("/projects/designs/activate", post(activate_design_handler))
+        .route("/projects/designs/delete", post(delete_design_handler))
         .route("/projects/state", get(project_state_handler))
+        .route(
+            "/sources/selections/issue",
+            post(source_selection_issue_handler),
+        )
+        .route("/sources/import", post(source_import_handler))
+        .route("/sources/list", post(source_list_handler))
+        .route("/sources/inspect", post(source_inspect_handler))
+        .route("/sources/derivatives", post(source_derivatives_handler))
+        .route("/sources/remove", post(source_remove_handler))
+        .route("/pdf/index", post(pdf_index_handler))
+        .route(
+            "/pdf/view-role/infer",
+            post(pdf_view_role_inference_handler),
+        )
+        .route("/pdf/capabilities", get(pdf_capabilities_handler))
+        .route("/shelves/list", post(shelf_list_handler))
+        .route("/shelves/upsert", post(shelf_upsert_handler))
+        .route("/shelves/remove", post(shelf_remove_handler))
+        .route("/shelves/retarget", post(shelf_retarget_handler))
+        .route("/interpretations/list", post(interpretation_list_handler))
+        .route(
+            "/interpretations/inspect",
+            post(interpretation_inspect_handler),
+        )
+        .route(
+            "/interpretations/create",
+            post(interpretation_create_handler),
+        )
+        .route(
+            "/interpretations/confirm",
+            post(interpretation_confirm_handler),
+        )
+        .route(
+            "/interpretations/reconcile",
+            post(interpretation_reconcile_handler),
+        )
+        .route(
+            "/interpretations/conflicts/resolve",
+            post(interpretation_resolve_conflict_handler),
+        )
+        .route(
+            "/interpretations/correct",
+            post(interpretation_correct_handler),
+        )
+        .route("/design-runs/list", post(design_run_list_handler))
+        .route("/design-runs/inspect", post(design_run_inspect_handler))
+        .route("/design-runs/status", post(design_run_status_handler))
+        .route("/dxf/index", post(dxf_index_handler))
+        .route(
+            "/dxf/selections/prepare",
+            post(dxf_prepare_selection_handler),
+        )
+        .route("/ifc/index", post(ifc_index_handler))
+        .route(
+            "/ifc/selections/prepare",
+            post(ifc_prepare_selection_handler),
+        )
+        .route("/meshes/index", post(mesh_index_handler))
+        .route("/meshes/content", post(mesh_content_handler))
+        .route("/meshes/jobs/start", post(mesh_job_start_handler))
+        .route("/meshes/jobs/status", post(mesh_job_status_handler))
+        .route("/meshes/jobs/cancel", post(mesh_job_cancel_handler))
+        .route(
+            "/meshes/saved-views/prepare",
+            post(mesh_prepare_saved_view_handler),
+        )
         .route(
             "/projects/planning-draft",
             post(save_planning_draft_handler),
-        )
-        .route(
-            "/projects/materialize-planning",
-            post(materialize_planning_handler),
-        )
-        .route("/projects/analyse", post(analyse_planning_handler))
-        .route(
-            "/projects/design-option-analysis",
-            post(design_option_analysis_handler),
         )
         .route(
             "/projects/design-option-analysis/raw",
@@ -316,26 +709,19 @@ async fn main() -> Result<()> {
             "/agent/sessions/respond",
             post(agent_session_respond_handler),
         )
+        .route(
+            "/conversations/agent/respond",
+            post(conversation_agent_respond_handler),
+        )
         .route("/agent/sessions/cancel", post(agent_session_cancel_handler))
         .route(
             "/agent/pre-solve-coordinator",
             post(agent_pre_solve_coordinator_handler),
         )
-        .route("/agent/apply-review", post(agent_apply_review_handler))
-        .route("/projects/base-model/edit", post(base_model_edit_handler))
-        .route("/projects/seed-frame-demo", post(seed_frame_demo_handler))
-        .route(
-            "/projects/seed-frame-review-demo",
-            post(seed_frame_review_demo_handler),
-        )
-        .route("/projects/seed-beam-demo", post(seed_beam_demo_handler))
-        .route("/projects/beam-size", post(beam_size_handler))
-        .route("/projects/validate", post(validate_handler))
-        .route(
-            "/projects/frame-run-calculix",
-            post(frame_run_calculix_handler),
-        )
-        .merge(conversation_transport::router(conversation_service))
+        .merge(conversation_transport::router(conversation_service.clone()))
+        .layer(Extension(source_selections))
+        .layer(Extension(mesh_jobs))
+        .layer(Extension(conversation_service))
         .layer(middleware::from_fn_with_state(
             appd_token,
             require_appd_auth,
@@ -391,6 +777,1095 @@ async fn health() -> Json<AppHealthResponse> {
     })
 }
 
+async fn source_selection_issue_handler(
+    Extension(registry): Extension<Arc<SourceSelectionRegistry>>,
+    Json(request): Json<SourceSelectionIssueRequest>,
+) -> Result<Json<SourceSelectionIssueResponse>, ApiError> {
+    let token = registry
+        .issue(
+            Path::new(&request.project_dir),
+            Path::new(&request.selected_path),
+        )
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error))?;
+    Ok(Json(SourceSelectionIssueResponse {
+        selection_token: token,
+        expires_in_seconds: SOURCE_SELECTION_TTL_SECONDS,
+    }))
+}
+
+async fn source_import_handler(
+    Extension(registry): Extension<Arc<SourceSelectionRegistry>>,
+    Json(request): Json<SourceImportRequest>,
+) -> Result<Json<SourceImportResponse>, ApiError> {
+    let project_dir = PathBuf::from(&request.project_dir);
+    let selected_path = registry
+        .consume(&request.selection_token, &project_dir)
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error))?;
+    let result = tokio::task::spawn_blocking(move || {
+        import_source(
+            &project_dir,
+            fraia_core::SourceImportRequest {
+                selected_path,
+                display_alias: request.display_alias,
+                expected_media_type: request.expected_media_type,
+            },
+        )
+    })
+    .await
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+    .map_err(source_api_error)?;
+    Ok(Json(SourceImportResponse {
+        record: result.record,
+        job: result.job,
+        deduplicated: result.deduplicated,
+    }))
+}
+
+async fn source_list_handler(
+    Json(request): Json<SourceListRequest>,
+) -> Result<Json<SourceListResponse>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let sources = tokio::task::spawn_blocking(move || list_sources(&project_dir))
+        .await
+        .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+        .map_err(source_api_error)?;
+    Ok(Json(SourceListResponse { sources }))
+}
+
+async fn source_inspect_handler(
+    Json(request): Json<SourceInspectRequest>,
+) -> Result<Json<SourceInspectResponse>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let source_id = request.source_id;
+    let (source, derivatives) = tokio::task::spawn_blocking(move || {
+        Ok::<_, fraia_core::SourceLibraryError>((
+            inspect_source(&project_dir, &source_id)?,
+            source_derivatives(&project_dir, &source_id)?,
+        ))
+    })
+    .await
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+    .map_err(source_api_error)?;
+    Ok(Json(SourceInspectResponse {
+        source,
+        derivatives,
+    }))
+}
+
+async fn source_derivatives_handler(
+    Json(request): Json<SourceDerivativeQueryRequest>,
+) -> Result<Json<SourceDerivativeQueryResponse>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let source_id = request.source_id;
+    let derivatives =
+        tokio::task::spawn_blocking(move || source_derivatives(&project_dir, &source_id))
+            .await
+            .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+            .map_err(source_api_error)?;
+    Ok(Json(SourceDerivativeQueryResponse { derivatives }))
+}
+
+async fn source_remove_handler(
+    Json(request): Json<SourceRemoveRequest>,
+) -> Result<Json<SourceRemoveResponse>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let source_id = request.source_id;
+    let result = tokio::task::spawn_blocking(move || {
+        let references = source_shelf_references(&project_dir, &source_id)
+            .map_err(|error| fraia_core::SourceLibraryError::PolicyRejected(error.to_string()))?;
+        remove_source(&project_dir, &source_id, &references)
+    })
+    .await
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+    .map_err(source_api_error)?;
+    Ok(Json(SourceRemoveResponse {
+        source_id: result.source_id,
+        removed_derivatives: result.removed_derivatives,
+        removed_files: result.removed_files,
+    }))
+}
+
+async fn pdf_index_handler(
+    Json(request): Json<PdfIndexRequest>,
+) -> Result<Json<PdfIndexResponse>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let source_id = request.source_id;
+    let (index, index_derivative, resumed) =
+        tokio::task::spawn_blocking(move || index_and_store_pdf(&project_dir, &source_id))
+            .await
+            .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+            .map_err(pdf_api_error)?;
+    Ok(Json(PdfIndexResponse {
+        index,
+        index_derivative,
+        resumed,
+    }))
+}
+
+async fn pdf_view_role_inference_handler(
+    Json(request): Json<PdfViewRoleInferenceRequest>,
+) -> Result<Json<PdfViewRoleInference>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let inference = tokio::task::spawn_blocking(move || {
+        let (index, _, _) = index_and_store_pdf(&project_dir, &request.source_id)?;
+        infer_pdf_view_role(
+            &index,
+            request.page_number,
+            request.crop,
+            request.margin_points,
+        )
+    })
+    .await
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+    .map_err(pdf_api_error)?;
+    Ok(Json(inference))
+}
+
+async fn pdf_capabilities_handler() -> Json<PdfCapabilityResponse> {
+    Json(PdfCapabilityResponse {
+        parser: fraia_core::PDF_PARSER_ID.into(),
+        parser_version: "0.44.0".into(),
+        metadata_indexing_available: true,
+        packaged_renderer_available: false,
+        ocr_available: false,
+        diagnostics: vec![
+            fraia_core::pdf_renderer_unavailable_diagnostic(),
+            fraia_core::PdfDiagnostic {
+                code: fraia_core::PdfDiagnosticCode::OcrUnavailable,
+                message: "No bounded reviewed OCR runtime is integrated. Native PDF text is indexed; scanned text is not inferred.".into(),
+            },
+        ],
+    })
+}
+
+fn pdf_api_error(error: fraia_core::PdfIngestionError) -> ApiError {
+    use fraia_core::PdfDiagnosticCode as Code;
+    let status = match error.diagnostic.code {
+        Code::Oversized | Code::PageLimit | Code::DecompressionLimit => {
+            StatusCode::PAYLOAD_TOO_LARGE
+        }
+        Code::Timeout => StatusCode::GATEWAY_TIMEOUT,
+        Code::Cancelled => StatusCode::CONFLICT,
+        Code::Encrypted => StatusCode::UNPROCESSABLE_ENTITY,
+        Code::RendererUnavailable | Code::OcrUnavailable => StatusCode::NOT_IMPLEMENTED,
+        Code::Corrupt => StatusCode::BAD_REQUEST,
+    };
+    ApiError {
+        status,
+        message: error.to_string(),
+    }
+}
+
+async fn shelf_list_handler(
+    Json(request): Json<ShelfListRequest>,
+) -> Result<Json<ShelfDocument>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let shelf =
+        tokio::task::spawn_blocking(move || load_design_shelf(&project_dir, &request.design_id))
+            .await
+            .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+            .map_err(shelf_api_error)?;
+    Ok(Json(shelf))
+}
+
+async fn shelf_upsert_handler(
+    Json(request): Json<ShelfUpsertRequest>,
+) -> Result<Json<ShelfDocument>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let shelf = tokio::task::spawn_blocking(move || {
+        validate_cross_design_item(&project_dir, &request.design_id, &request.item)?;
+        upsert_shelf_item(&project_dir, &request.design_id, request.item)
+            .map_err(|error| anyhow!(error))
+    })
+    .await
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+    .map_err(|error| api_error(StatusCode::BAD_REQUEST, error))?;
+    Ok(Json(shelf))
+}
+
+async fn shelf_remove_handler(
+    Json(request): Json<ShelfRemoveRequest>,
+) -> Result<Json<ShelfDocument>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let shelf = tokio::task::spawn_blocking(move || {
+        remove_shelf_item(&project_dir, &request.design_id, &request.item_id)
+    })
+    .await
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+    .map_err(shelf_api_error)?;
+    Ok(Json(shelf))
+}
+
+async fn shelf_retarget_handler(
+    Json(request): Json<ShelfRetargetRequest>,
+) -> Result<Json<ShelfDocument>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let shelf = tokio::task::spawn_blocking(move || {
+        validate_cross_design_target(&project_dir, &request.design_id, &request.replacement)?;
+        retarget_cross_design_shelf_item(
+            &project_dir,
+            &request.design_id,
+            &request.item_id,
+            &request.expected,
+            request.replacement,
+        )
+        .map_err(|error| anyhow!(error))
+    })
+    .await
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+    .map_err(|error| api_error(StatusCode::CONFLICT, error))?;
+    Ok(Json(shelf))
+}
+
+async fn interpretation_list_handler(
+    Json(request): Json<DrawingInterpretationListRequest>,
+) -> Result<Json<DrawingInterpretationList>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let interpretations = tokio::task::spawn_blocking(move || {
+        list_drawing_interpretations(&project_dir, &request.design_id)
+    })
+    .await
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+    .map_err(interpretation_api_error)?;
+    Ok(Json(interpretations))
+}
+
+async fn interpretation_inspect_handler(
+    Json(request): Json<DrawingInterpretationInspectRequest>,
+) -> Result<Json<DrawingInterpretation>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let interpretation = tokio::task::spawn_blocking(move || {
+        load_drawing_interpretation(&project_dir, &request.design_id, &request.revision_id)
+    })
+    .await
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+    .map_err(interpretation_api_error)?;
+    Ok(Json(interpretation))
+}
+
+async fn interpretation_create_handler(
+    Json(request): Json<DrawingInterpretationCreateRequest>,
+) -> Result<Json<DrawingInterpretation>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let interpretation = tokio::task::spawn_blocking(move || {
+        create_drawing_interpretation(
+            &project_dir,
+            &request.design_id,
+            request.expected_parent_revision_id.as_deref(),
+            request.authority,
+            request.revision,
+        )
+    })
+    .await
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+    .map_err(interpretation_api_error)?;
+    Ok(Json(interpretation))
+}
+
+async fn interpretation_confirm_handler(
+    Json(request): Json<DrawingInterpretationConfirmRequest>,
+) -> Result<Json<DrawingInterpretation>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let interpretation = tokio::task::spawn_blocking(move || {
+        confirm_drawing_observations(&project_dir, &request.design_id, request.operation)
+    })
+    .await
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+    .map_err(interpretation_api_error)?;
+    Ok(Json(interpretation))
+}
+
+async fn interpretation_reconcile_handler(
+    Json(request): Json<DrawingInterpretationReconcileRequest>,
+) -> Result<Json<DrawingInterpretation>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let interpretation = tokio::task::spawn_blocking(move || {
+        reconcile_drawing_interpretation(&project_dir, &request.design_id, request.operation)
+    })
+    .await
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+    .map_err(interpretation_api_error)?;
+    Ok(Json(interpretation))
+}
+
+async fn interpretation_resolve_conflict_handler(
+    Json(request): Json<DrawingInterpretationResolveConflictRequest>,
+) -> Result<Json<DrawingInterpretation>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let interpretation = tokio::task::spawn_blocking(move || {
+        resolve_drawing_interpretation_conflict(&project_dir, &request.design_id, request.operation)
+    })
+    .await
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+    .map_err(interpretation_api_error)?;
+    Ok(Json(interpretation))
+}
+
+async fn interpretation_correct_handler(
+    Json(request): Json<DrawingInterpretationCorrectRequest>,
+) -> Result<Json<DrawingInterpretation>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let interpretation = tokio::task::spawn_blocking(move || {
+        correct_drawing_observation(&project_dir, &request.design_id, request.operation)
+    })
+    .await
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+    .map_err(interpretation_api_error)?;
+    Ok(Json(interpretation))
+}
+
+fn interpretation_api_error(error: fraia_core::DrawingInterpretationStoreError) -> ApiError {
+    use fraia_core::DrawingInterpretationStoreError as Error;
+    let status = match error {
+        Error::NotFound(_) => StatusCode::NOT_FOUND,
+        Error::ParentConflict { .. } => StatusCode::CONFLICT,
+        Error::Io(_) | Error::Json(_) | Error::Package(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        Error::Invalid(_) | Error::Domain(_) => StatusCode::BAD_REQUEST,
+    };
+    ApiError {
+        status,
+        message: error.to_string(),
+    }
+}
+
+async fn design_run_list_handler(
+    Json(request): Json<DesignRunListRequest>,
+) -> Result<Json<DesignRunList>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let runs =
+        tokio::task::spawn_blocking(move || list_design_runs(&project_dir, &request.design_id))
+            .await
+            .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+            .map_err(design_run_api_error)?;
+    Ok(Json(runs))
+}
+
+async fn design_run_inspect_handler(
+    Json(request): Json<DesignRunInspectRequest>,
+) -> Result<Json<InspectedDesignRun>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let run = tokio::task::spawn_blocking(move || {
+        inspect_design_run(&project_dir, &request.design_id, &request.run_id)
+    })
+    .await
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+    .map_err(design_run_api_error)?;
+    Ok(Json(run))
+}
+
+async fn design_run_status_handler(
+    Json(request): Json<DesignRunStatusRequest>,
+) -> Result<Json<Vec<DesignRunStatusProjection>>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let statuses = tokio::task::spawn_blocking(move || {
+        list_design_run_statuses(
+            &project_dir,
+            &request.design_id,
+            &request.inspected_snapshot_id,
+            &request.ancestor_snapshot_ids,
+        )
+    })
+    .await
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+    .map_err(design_run_api_error)?;
+    Ok(Json(statuses))
+}
+
+fn design_run_api_error(error: fraia_core::DesignRunStoreError) -> ApiError {
+    use fraia_core::DesignRunStoreError as Error;
+    let status = match error {
+        Error::NotFound(_) => StatusCode::NOT_FOUND,
+        Error::Invalid(_) => StatusCode::BAD_REQUEST,
+        Error::Io(_) | Error::Json(_) | Error::Package(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    ApiError {
+        status,
+        message: error.to_string(),
+    }
+}
+
+async fn dxf_index_handler(
+    Json(request): Json<DxfIndexRequest>,
+) -> Result<Json<DxfIndexResult>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let result = tokio::task::spawn_blocking(move || {
+        index_and_store_dxf(
+            &project_dir,
+            &request.source_id,
+            &fraia_core::SourceLibraryPolicy::default(),
+            &fraia_core::DxfParsePolicy::default(),
+        )
+    })
+    .await
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+    .map_err(dxf_api_error)?;
+    Ok(Json(result))
+}
+
+async fn dxf_prepare_selection_handler(
+    Json(request): Json<DxfPrepareSelectionRequest>,
+) -> Result<Json<PreparedDxfSelection>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let prepared = tokio::task::spawn_blocking(move || {
+        let indexed = index_and_store_dxf(
+            &project_dir,
+            &request.selection.source_id,
+            &fraia_core::SourceLibraryPolicy::default(),
+            &fraia_core::DxfParsePolicy::default(),
+        )?;
+        prepare_dxf_selection(
+            &project_dir,
+            &request.design_id,
+            &indexed.index,
+            request.selection,
+        )
+    })
+    .await
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+    .map_err(dxf_api_error)?;
+    Ok(Json(prepared))
+}
+
+fn dxf_api_error(error: fraia_core::DxfError) -> ApiError {
+    use fraia_core::DxfError as Error;
+    let status = match error {
+        Error::Source(fraia_core::SourceLibraryError::SourceNotFound(_)) => StatusCode::NOT_FOUND,
+        Error::Source(_) | Error::Json(_) | Error::Package(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        Error::Invalid(_)
+        | Error::UnsupportedBinary
+        | Error::Malformed { .. }
+        | Error::EntityLimit { .. }
+        | Error::PairLimit { .. }
+        | Error::VertexLimit { .. }
+        | Error::TimeLimit { .. } => StatusCode::BAD_REQUEST,
+    };
+    ApiError {
+        status,
+        message: error.to_string(),
+    }
+}
+
+async fn ifc_index_handler(
+    Json(request): Json<IfcIndexRequest>,
+) -> Result<Json<IfcIndexResult>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let result = tokio::task::spawn_blocking(move || {
+        index_and_store_ifc(
+            &project_dir,
+            &request.source_id,
+            &fraia_core::SourceLibraryPolicy::default(),
+            &fraia_core::IfcParsePolicy::default(),
+        )
+    })
+    .await
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+    .map_err(ifc_api_error)?;
+    Ok(Json(result))
+}
+
+async fn ifc_prepare_selection_handler(
+    Json(request): Json<IfcPrepareSelectionRequest>,
+) -> Result<Json<PreparedIfcSelection>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let result = tokio::task::spawn_blocking(move || {
+        let indexed = index_and_store_ifc(
+            &project_dir,
+            &request.selection.source_id,
+            &fraia_core::SourceLibraryPolicy::default(),
+            &fraia_core::IfcParsePolicy::default(),
+        )?;
+        prepare_ifc_selection(
+            &project_dir,
+            &request.design_id,
+            &indexed.index,
+            request.selection,
+        )
+    })
+    .await
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+    .map_err(ifc_api_error)?;
+    Ok(Json(result))
+}
+
+fn ifc_api_error(error: fraia_core::IfcError) -> ApiError {
+    use fraia_core::IfcError as Error;
+    let status = match error {
+        Error::Source(fraia_core::SourceLibraryError::SourceNotFound(_)) => StatusCode::NOT_FOUND,
+        Error::Source(_) | Error::Json(_) | Error::Package(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        Error::Invalid(_) | Error::Malformed(_) | Error::Limit(_) | Error::TimeLimit => {
+            StatusCode::BAD_REQUEST
+        }
+    };
+    ApiError {
+        status,
+        message: error.to_string(),
+    }
+}
+
+async fn mesh_index_handler(
+    Json(request): Json<MeshIndexRequest>,
+) -> Result<Json<MeshIndexResult>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let result = tokio::task::spawn_blocking(move || {
+        index_and_store_mesh(
+            &project_dir,
+            &request.source_id,
+            &fraia_core::SourceLibraryPolicy::default(),
+            &fraia_core::MeshParsePolicy::default(),
+        )
+    })
+    .await
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+    .map_err(mesh_api_error)?;
+    Ok(Json(result))
+}
+
+async fn mesh_prepare_saved_view_handler(
+    Json(request): Json<MeshPrepareSavedViewRequest>,
+) -> Result<Json<PreparedMeshSavedView>, ApiError> {
+    let project_dir = PathBuf::from(request.project_dir);
+    let result = tokio::task::spawn_blocking(move || {
+        let indexed = index_and_store_mesh(
+            &project_dir,
+            &request.view.source_id,
+            &fraia_core::SourceLibraryPolicy::default(),
+            &fraia_core::MeshParsePolicy::default(),
+        )?;
+        prepare_mesh_saved_view(
+            &project_dir,
+            &request.design_id,
+            &indexed.index,
+            request.view,
+        )
+    })
+    .await
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+    .map_err(mesh_api_error)?;
+    Ok(Json(result))
+}
+
+fn mesh_api_error(error: fraia_core::MeshError) -> ApiError {
+    use fraia_core::MeshError as Error;
+    let status = match error {
+        Error::Source(fraia_core::SourceLibraryError::SourceNotFound(_)) => StatusCode::NOT_FOUND,
+        Error::Source(_) | Error::Json(_) | Error::Package(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        Error::Invalid(_)
+        | Error::Malformed(_)
+        | Error::Limit(_)
+        | Error::Cancelled
+        | Error::TimeLimit => StatusCode::BAD_REQUEST,
+    };
+    ApiError {
+        status,
+        message: error.to_string(),
+    }
+}
+
+async fn mesh_content_handler(
+    Json(request): Json<MeshContentRequest>,
+) -> Result<Response, ApiError> {
+    let content = tokio::task::spawn_blocking(move || {
+        read_managed_mesh_content(
+            &PathBuf::from(request.project_dir),
+            &request.source_id,
+            fraia_core::MeshParsePolicy::default().max_bytes,
+        )
+    })
+    .await
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?
+    .map_err(mesh_api_error)?;
+    let mut response = Response::new(axum::body::Body::from(content.bytes));
+    *response.status_mut() = StatusCode::OK;
+    let headers = response.headers_mut();
+    for (name, value) in [
+        ("content-type", content.source.media_type),
+        ("x-fraia-source-id", content.source.id.to_string()),
+        ("x-fraia-source-sha256", content.source.sha256),
+        ("x-fraia-byte-size", content.source.byte_size.to_string()),
+    ] {
+        headers.insert(
+            axum::http::HeaderName::from_bytes(name.as_bytes())
+                .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?,
+            axum::http::HeaderValue::from_str(&value)
+                .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?,
+        );
+    }
+    Ok(response)
+}
+
+async fn mesh_job_start_handler(
+    Extension(registry): Extension<Arc<MeshIndexJobRegistry>>,
+    Json(request): Json<MeshIndexJobRequest>,
+) -> Result<Json<MeshIndexJobResponse>, ApiError> {
+    let mut random = [0u8; 24];
+    getrandom::fill(&mut random)
+        .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(error)))?;
+    let job_id = random
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let initial = MeshIndexJobResponse {
+        job_id: job_id.clone(),
+        status: MeshIndexJobStatus::Running,
+        result: None,
+        error: None,
+    };
+    let mut jobs = registry.jobs.lock().map_err(|_| {
+        api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            anyhow!("mesh job registry is unavailable"),
+        )
+    })?;
+    if jobs.len() >= MAX_MESH_INDEX_JOBS {
+        let terminal = jobs
+            .iter()
+            .filter(|(_, job)| {
+                matches!(
+                    job.response.status,
+                    MeshIndexJobStatus::Completed
+                        | MeshIndexJobStatus::Cancelled
+                        | MeshIndexJobStatus::Failed
+                )
+            })
+            .map(|(id, _)| id.clone())
+            .collect::<Vec<_>>();
+        for id in terminal {
+            jobs.remove(&id);
+            if jobs.len() < MAX_MESH_INDEX_JOBS {
+                break;
+            }
+        }
+    }
+    if jobs.len() >= MAX_MESH_INDEX_JOBS {
+        return Err(api_error(
+            StatusCode::TOO_MANY_REQUESTS,
+            anyhow!("mesh index job limit reached"),
+        ));
+    }
+    jobs.insert(
+        job_id.clone(),
+        MeshIndexJob {
+            cancelled: cancelled.clone(),
+            response: initial.clone(),
+        },
+    );
+    drop(jobs);
+    let registry_for_job = registry.clone();
+    let job_id_for_job = job_id.clone();
+    tokio::task::spawn_blocking(move || {
+        let project_dir = PathBuf::from(request.project_dir);
+        let result = fraia_core::index_and_store_mesh_with_cancel(
+            &project_dir,
+            &request.source_id,
+            &fraia_core::SourceLibraryPolicy::default(),
+            &fraia_core::MeshParsePolicy::default(),
+            || cancelled.load(Ordering::Acquire),
+        );
+        let (status, result, error) = match result {
+            Ok(result) => (MeshIndexJobStatus::Completed, Some(result), None),
+            Err(fraia_core::MeshError::Cancelled) => (MeshIndexJobStatus::Cancelled, None, None),
+            Err(error) => (MeshIndexJobStatus::Failed, None, Some(error.to_string())),
+        };
+        if let Ok(mut jobs) = registry_for_job.jobs.lock()
+            && let Some(job) = jobs.get_mut(&job_id_for_job)
+        {
+            job.response.status = status;
+            job.response.result = result;
+            job.response.error = error;
+        }
+    });
+    Ok(Json(initial))
+}
+
+async fn mesh_job_status_handler(
+    Extension(registry): Extension<Arc<MeshIndexJobRegistry>>,
+    Json(request): Json<MeshIndexJobIdRequest>,
+) -> Result<Json<MeshIndexJobResponse>, ApiError> {
+    registry
+        .response(&request.job_id)
+        .map(Json)
+        .map_err(|error| api_error(StatusCode::NOT_FOUND, error))
+}
+
+async fn mesh_job_cancel_handler(
+    Extension(registry): Extension<Arc<MeshIndexJobRegistry>>,
+    Json(request): Json<MeshIndexJobIdRequest>,
+) -> Result<Json<MeshIndexJobResponse>, ApiError> {
+    let mut jobs = registry.jobs.lock().map_err(|_| {
+        api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            anyhow!("mesh job registry is unavailable"),
+        )
+    })?;
+    let job = jobs.get_mut(&request.job_id).ok_or_else(|| {
+        api_error(
+            StatusCode::NOT_FOUND,
+            anyhow!("mesh index job was not found"),
+        )
+    })?;
+    if matches!(job.response.status, MeshIndexJobStatus::Running) {
+        job.cancelled.store(true, Ordering::Release);
+        job.response.status = MeshIndexJobStatus::Cancelling;
+    }
+    Ok(Json(job.response.clone()))
+}
+
+fn validate_cross_design_item(
+    project_dir: &Path,
+    owner_design_id: &DesignId,
+    item: &fraia_core::ShelfItem,
+) -> Result<()> {
+    if let fraia_core::ShelfItemContent::AcceptedDesignRevision { target } = &item.content {
+        validate_cross_design_target(project_dir, owner_design_id, target)?;
+    }
+    Ok(())
+}
+
+fn validate_cross_design_target(
+    project_dir: &Path,
+    owner_design_id: &DesignId,
+    target: &fraia_core::AcceptedDesignRevisionRef,
+) -> Result<()> {
+    if &target.design_id == owner_design_id || !target.read_only {
+        return Err(anyhow!(
+            "cross-design targets must be another design and read-only"
+        ));
+    }
+    let package = load_project_package(project_dir).context("load cross-design target project")?;
+    if package.manifest.id != target.project_id
+        || !package
+            .designs
+            .iter()
+            .any(|design| design.manifest.id == target.design_id)
+    {
+        return Err(anyhow!(
+            "cross-design target identity is not present in this project"
+        ));
+    }
+    let workspace = design_package_paths(project_dir, &target.design_id)
+        .map_err(|error| anyhow!(error))?
+        .workspace_database;
+    let repository = SqliteRevisionRepository::open(&workspace)
+        .context("open target design revision database")?;
+    let revision_id = fraia_revision::RevisionId::from(target.revision_id.clone());
+    let snapshot_id = fraia_revision::SnapshotId::from(target.snapshot_id.clone());
+    let revision = repository
+        .revision(&revision_id)
+        .context("load accepted target revision")?;
+    if revision.snapshot_id != snapshot_id {
+        return Err(anyhow!(
+            "cross-design revision does not own the supplied snapshot"
+        ));
+    }
+    repository
+        .snapshot(&snapshot_id)
+        .context("load accepted target snapshot")?;
+    Ok(())
+}
+
+fn source_api_error(error: fraia_core::SourceLibraryError) -> ApiError {
+    use fraia_core::SourceLibraryError as Error;
+    let status = match &error {
+        Error::SourceNotFound(_) => StatusCode::NOT_FOUND,
+        Error::SourceReferenced { .. } => StatusCode::CONFLICT,
+        Error::SourceTooLarge { .. } | Error::DerivativeTooLarge { .. } => {
+            StatusCode::PAYLOAD_TOO_LARGE
+        }
+        Error::UnsupportedContent => StatusCode::UNSUPPORTED_MEDIA_TYPE,
+        Error::ImportTimedOut { .. } => StatusCode::GATEWAY_TIMEOUT,
+        Error::Io(_) | Error::ProjectPackage(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        _ => StatusCode::BAD_REQUEST,
+    };
+    ApiError {
+        status,
+        message: error.to_string(),
+    }
+}
+
+fn shelf_api_error(error: fraia_core::ShelfError) -> ApiError {
+    let status = match error {
+        fraia_core::ShelfError::ItemNotFound(_) => StatusCode::NOT_FOUND,
+        fraia_core::ShelfError::RetargetConflict
+        | fraia_core::ShelfError::ItemReferenced { .. } => StatusCode::CONFLICT,
+        fraia_core::ShelfError::Io(_) | fraia_core::ShelfError::Package(_) => {
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+        _ => StatusCode::BAD_REQUEST,
+    };
+    ApiError {
+        status,
+        message: error.to_string(),
+    }
+}
+
+fn api_error(status: StatusCode, error: anyhow::Error) -> ApiError {
+    ApiError {
+        status,
+        message: format!("{error:#}"),
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ProjectLocation {
+    root: PathBuf,
+    design_id: Option<DesignId>,
+}
+
+fn project_location(path: &Path) -> ProjectLocation {
+    let is_design_dir = path
+        .parent()
+        .and_then(Path::file_name)
+        .is_some_and(|name| name == "designs");
+    if is_design_dir {
+        let root = path
+            .parent()
+            .and_then(Path::parent)
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| path.to_path_buf());
+        if root_uses_package_manifest(&root) {
+            return ProjectLocation {
+                root,
+                design_id: path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .map(DesignId::new),
+            };
+        }
+    }
+    ProjectLocation {
+        root: path.to_path_buf(),
+        design_id: None,
+    }
+}
+
+fn selected_package_design<'a>(
+    package: &'a fraia_core::ProjectPackage,
+    selected: Option<&DesignId>,
+) -> Result<&'a DesignPackage> {
+    match selected {
+        Some(design_id) => package
+            .designs
+            .iter()
+            .find(|design| &design.manifest.id == design_id)
+            .ok_or_else(|| anyhow!("The selected design no longer exists in this project.")),
+        None => package
+            .designs
+            .first()
+            .ok_or_else(|| anyhow!("project package has no design")),
+    }
+}
+
+/// Transitional appd compatibility boundary. Package-aware callers can select
+/// a design with its stable package directory. Legacy root projects still
+/// migrate atomically on first open.
+fn load_project(project_dir: &Path) -> Result<(ProjectFile, fraia_core::ProjectPaths)> {
+    let location = project_location(project_dir);
+    let package = match load_project_package(&location.root) {
+        Ok(package) => package,
+        Err(package_error) if root_uses_package_manifest(&location.root) => {
+            return Err(package_error)
+                .with_context(|| format!("failed to load package at {}", location.root.display()));
+        }
+        Err(_) => return load_legacy_project(&location.root),
+    };
+    let project = selected_package_design(&package, location.design_id.as_ref())?
+        .project
+        .clone();
+    Ok((project, project_paths(project_dir)))
+}
+
+fn migrate_legacy_app_project(project_dir: &Path) -> Result<()> {
+    prepare_legacy_workspace_backup(project_dir)?;
+    let package = migrate_legacy_project_package(project_dir).with_context(|| {
+        format!(
+            "failed to migrate legacy project at {}",
+            project_dir.display()
+        )
+    })?;
+    finalize_design_workspace_backup(project_dir, &package)
+}
+
+fn legacy_workspace_path(project_dir: &Path) -> PathBuf {
+    project_dir.join(".fraia").join("workspace.sqlite")
+}
+
+fn migration_workspace_backup_paths(project_dir: &Path) -> Result<(PathBuf, PathBuf)> {
+    let parent = project_dir
+        .parent()
+        .ok_or_else(|| anyhow!("project directory has no parent for workspace backup"))?;
+    let name = project_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| anyhow!("project directory name is not valid UTF-8"))?;
+    Ok((
+        parent.join(format!(".{name}.fraia-workspace-backup.sqlite")),
+        parent.join(format!(".{name}.fraia-workspace-backup.marker")),
+    ))
+}
+
+fn prepare_legacy_workspace_backup(project_dir: &Path) -> Result<()> {
+    let source = legacy_workspace_path(project_dir);
+    if !source.is_file() {
+        return Ok(());
+    }
+    let (backup, marker) = migration_workspace_backup_paths(project_dir)?;
+    if backup.exists() {
+        validate_workspace_backup_marker(project_dir, &backup, &marker)?;
+        SqliteRevisionRepository::open(&backup)
+            .context("validate retained migration workspace backup")?;
+        return Ok(());
+    }
+    if marker.exists() {
+        return Err(anyhow!(
+            "workspace migration marker `{}` exists without its backup",
+            marker.display()
+        ));
+    }
+    let source_repository = SqliteRevisionRepository::open(&source)
+        .with_context(|| format!("open legacy workspace `{}`", source.display()))?;
+    source_repository
+        .backup_to_path(&backup)
+        .with_context(|| format!("back up legacy workspace to `{}`", backup.display()))?;
+    fs::write(&marker, workspace_backup_marker_value(project_dir)?)
+        .with_context(|| format!("write workspace backup marker `{}`", marker.display()))?;
+    Ok(())
+}
+
+fn finalize_design_workspace_backup(
+    project_dir: &Path,
+    package: &fraia_core::ProjectPackage,
+) -> Result<()> {
+    let design = package
+        .designs
+        .first()
+        .ok_or_else(|| anyhow!("project package has no design"))?;
+    let target = design_package_paths(project_dir, &design.manifest.id)?.workspace_database;
+    let (backup, marker) = migration_workspace_backup_paths(project_dir)?;
+    if target.exists() {
+        SqliteRevisionRepository::open(&target)
+            .with_context(|| format!("validate design workspace `{}`", target.display()))?;
+        if backup.exists() {
+            validate_workspace_backup_marker(project_dir, &backup, &marker)?;
+            cleanup_workspace_migration_backup(&backup, &marker)?;
+        }
+        return Ok(());
+    }
+    let source = if backup.is_file() {
+        validate_workspace_backup_marker(project_dir, &backup, &marker)?;
+        backup.as_path()
+    } else {
+        let legacy = legacy_workspace_path(project_dir);
+        if !legacy.is_file() {
+            return Ok(());
+        }
+        return SqliteRevisionRepository::open(&legacy)
+            .with_context(|| format!("open preserved legacy workspace `{}`", legacy.display()))?
+            .backup_to_path(&target)
+            .with_context(|| format!("create design workspace `{}`", target.display()));
+    };
+    SqliteRevisionRepository::open(source)
+        .with_context(|| format!("open migration workspace backup `{}`", source.display()))?
+        .backup_to_path(&target)
+        .with_context(|| format!("create design workspace `{}`", target.display()))?;
+    cleanup_workspace_migration_backup(&backup, &marker)
+}
+
+fn validate_workspace_backup_marker(
+    project_dir: &Path,
+    backup: &Path,
+    marker: &Path,
+) -> Result<()> {
+    let marker_bytes = fs::read(marker).with_context(|| {
+        format!(
+            "workspace backup `{}` has no readable Fraia migration marker `{}`",
+            backup.display(),
+            marker.display()
+        )
+    })?;
+    if marker_bytes != workspace_backup_marker_value(project_dir)? {
+        return Err(anyhow!(
+            "workspace backup marker `{}` does not belong to project `{}`",
+            marker.display(),
+            project_dir.display()
+        ));
+    }
+    Ok(())
+}
+
+fn workspace_backup_marker_value(project_dir: &Path) -> Result<Vec<u8>> {
+    Ok(fs::canonicalize(project_dir)
+        .with_context(|| format!("resolve project path `{}`", project_dir.display()))?
+        .as_os_str()
+        .as_encoded_bytes()
+        .to_vec())
+}
+
+fn cleanup_workspace_migration_backup(backup: &Path, marker: &Path) -> Result<()> {
+    if backup.exists() {
+        fs::remove_file(backup)
+            .with_context(|| format!("remove workspace backup `{}`", backup.display()))?;
+    }
+    if marker.exists() {
+        fs::remove_file(marker)
+            .with_context(|| format!("remove workspace backup marker `{}`", marker.display()))?;
+    }
+    Ok(())
+}
+
+fn save_project(project_dir: &Path, project: &ProjectFile) -> Result<()> {
+    let location = project_location(project_dir);
+    match load_project_package(&location.root) {
+        Ok(mut package) => {
+            let design = match location.design_id.as_ref() {
+                Some(design_id) => package
+                    .designs
+                    .iter_mut()
+                    .find(|design| &design.manifest.id == design_id),
+                None => package.designs.first_mut(),
+            }
+            .ok_or_else(|| anyhow!("project package has no design"))?;
+            design.project = project.clone();
+            if !project.name.trim().is_empty() {
+                package.manifest.name = project.name.trim().into();
+            }
+            save_project_package(&location.root, &package)
+        }
+        Err(package_error) if root_uses_package_manifest(&location.root) => Err(package_error)
+            .with_context(|| format!("failed to load package at {}", location.root.display())),
+        Err(_) => save_legacy_project(&location.root, project),
+    }
+}
+
+fn update_planning_markdown(project_dir: &Path, markdown: &str) -> Result<()> {
+    let location = project_location(project_dir);
+    update_legacy_planning_markdown(&location.root, markdown)?;
+    if let Ok(package) = load_project_package(&location.root) {
+        let design = selected_package_design(&package, location.design_id.as_ref())?;
+        let paths = design_package_paths(&location.root, &design.manifest.id)?;
+        fs::write(&paths.planning_file, markdown).with_context(|| {
+            format!(
+                "failed to update design planning at {}",
+                paths.planning_file.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn root_uses_package_manifest(project_dir: &Path) -> bool {
+    fs::read(project_dir.join("fraia.project.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .and_then(|value| {
+            value
+                .get("schema_version")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .is_some_and(|schema| schema == fraia_core::PROJECT_MANIFEST_SCHEMA_VERSION)
+}
+
 async fn create_project_handler(
     Json(request): Json<CreateProjectRequest>,
 ) -> Result<Json<WorkbenchOperationResponse>, ApiError> {
@@ -401,12 +1876,18 @@ async fn create_project_handler(
             .unwrap_or("Fraia Project")
             .to_owned()
     });
-    let (project, paths) = create_project(&dir, &name)
+    let package = create_named_project_package(&dir, &name)
         .with_context(|| format!("failed to create project at {}", dir.display()))?;
+    let project = package
+        .designs
+        .first()
+        .ok_or_else(|| anyhow!("new project package has no design"))?
+        .project
+        .clone();
     update_planning_markdown(&dir, &default_planning_markdown(&project)).with_context(|| {
         format!(
             "failed to initialise planning markdown at {}",
-            paths.planning_file.display()
+            project_paths(&dir).planning_file.display()
         )
     })?;
     let state = build_workbench_state(&dir, &project)?;
@@ -417,9 +1898,20 @@ async fn create_project_handler(
 }
 
 async fn open_project_handler(
+    Extension(conversation_service): Extension<conversation_transport::ConversationServiceHandle>,
     Json(request): Json<ProjectPathRequest>,
 ) -> Result<Json<WorkbenchOperationResponse>, ApiError> {
     let dir = PathBuf::from(request.project_dir);
+    if !root_uses_package_manifest(&dir) {
+        let legacy_workspace = legacy_workspace_path(&dir);
+        conversation_service
+            .lock()
+            .map_err(|_| anyhow!("conversation service lock is poisoned"))?
+            .unload_workspace_path(&legacy_workspace);
+        migrate_legacy_app_project(&dir)?;
+    } else if let Ok(package) = load_project_package(&dir) {
+        finalize_design_workspace_backup(&dir, &package)?;
+    }
     let (project, _) = load_project(&dir)
         .with_context(|| format!("failed to load project from {}", dir.display()))?;
     let state = build_workbench_state(&dir, &project)?;
@@ -433,6 +1925,285 @@ async fn open_project_handler(
 #[serde(rename_all = "camelCase")]
 struct ProjectStateQuery {
     project_dir: String,
+    #[serde(default)]
+    design_id: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectDesignIdentity {
+    design_id: String,
+    design_name: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectIdentityResponse {
+    project_id: String,
+    project_name: String,
+    design_id: String,
+    design_name: String,
+    designs: Vec<ProjectDesignIdentity>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RenameProjectIdentityRequest {
+    project_dir: String,
+    project_id: String,
+    project_name: String,
+    design_id: String,
+    design_name: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesignIdentityRequest {
+    project_dir: String,
+    project_id: String,
+    design_id: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateDesignRequest {
+    project_dir: String,
+    project_id: String,
+    design_name: String,
+}
+
+fn package_identity(
+    project_dir: &Path,
+    selected_design_id: Option<&str>,
+) -> Result<ProjectIdentityResponse> {
+    let package = load_project_package(project_dir).with_context(|| {
+        format!(
+            "failed to load project identity from {}",
+            project_dir.display()
+        )
+    })?;
+    let design = match selected_design_id {
+        Some(design_id) => package
+            .designs
+            .iter()
+            .find(|design| design.manifest.id.as_str() == design_id),
+        None => package.designs.first(),
+    }
+    .ok_or_else(|| anyhow!("project package has no design"))?;
+    let designs = package
+        .designs
+        .iter()
+        .map(|design| ProjectDesignIdentity {
+            design_id: design.manifest.id.to_string(),
+            design_name: design.manifest.name.clone(),
+        })
+        .collect();
+    Ok(ProjectIdentityResponse {
+        project_id: package.manifest.id.to_string(),
+        project_name: package.manifest.name,
+        design_id: design.manifest.id.to_string(),
+        design_name: design.manifest.name.clone(),
+        designs,
+    })
+}
+
+async fn project_identity_handler(
+    Query(query): Query<ProjectStateQuery>,
+) -> Result<Json<ProjectIdentityResponse>, ApiError> {
+    Ok(Json(package_identity(
+        Path::new(&query.project_dir),
+        query.design_id.as_deref(),
+    )?))
+}
+
+async fn rename_project_identity_handler(
+    Json(request): Json<RenameProjectIdentityRequest>,
+) -> Result<Json<ProjectIdentityResponse>, ApiError> {
+    let project_name = request.project_name.trim();
+    if project_name.is_empty() {
+        return Err(anyhow!("Project name is required.").into());
+    }
+    let design_name = request.design_name.trim();
+    if design_name.is_empty() {
+        return Err(anyhow!("Design name is required.").into());
+    }
+
+    let project_dir = PathBuf::from(&request.project_dir);
+    let mut package = load_project_package(&project_dir).with_context(|| {
+        format!(
+            "failed to load project identity from {}",
+            project_dir.display()
+        )
+    })?;
+    if package.manifest.id.as_str() != request.project_id {
+        return Err(anyhow!("The selected project identity no longer matches this folder.").into());
+    }
+    let design_index = package
+        .designs
+        .iter()
+        .position(|design| design.manifest.id.as_str() == request.design_id)
+        .ok_or_else(|| anyhow!("The selected design no longer exists in this project."))?;
+    if package.designs.iter().enumerate().any(|(index, design)| {
+        index != design_index
+            && design
+                .manifest
+                .name
+                .trim()
+                .eq_ignore_ascii_case(design_name)
+    }) {
+        return Err(anyhow!("Design name must be unique within this project.").into());
+    }
+
+    package.manifest.name = project_name.into();
+    package.manifest.designs[design_index].name = design_name.into();
+    package.designs[design_index].manifest.name = design_name.into();
+    for design in &mut package.designs {
+        design.project.name = project_name.into();
+    }
+    save_project_package(&project_dir, &package).with_context(|| {
+        format!(
+            "failed to save project identity at {}",
+            project_dir.display()
+        )
+    })?;
+    Ok(Json(package_identity(
+        &project_dir,
+        Some(&request.design_id),
+    )?))
+}
+
+fn validate_project_request(
+    package: &fraia_core::ProjectPackage,
+    requested_project_id: &str,
+) -> Result<()> {
+    if package.manifest.id.as_str() != requested_project_id {
+        return Err(anyhow!(
+            "The selected project identity no longer matches this folder."
+        ));
+    }
+    Ok(())
+}
+
+fn require_unique_design_name(
+    package: &fraia_core::ProjectPackage,
+    design_name: &str,
+) -> Result<String> {
+    let name = design_name.trim();
+    if name.is_empty() {
+        return Err(anyhow!("Design name is required."));
+    }
+    if package
+        .designs
+        .iter()
+        .any(|design| design.manifest.name.trim().eq_ignore_ascii_case(name))
+    {
+        return Err(anyhow!("Design name must be unique within this project."));
+    }
+    Ok(name.to_owned())
+}
+
+fn blank_design_package(project_dir: &Path, project_name: &str) -> Result<DesignPackage> {
+    let parent = project_dir
+        .parent()
+        .ok_or_else(|| anyhow!("project directory has no parent"))?;
+    let project_folder = project_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| anyhow!("project directory name is not valid UTF-8"))?;
+    let seed_dir = parent.join(format!(
+        ".{project_folder}.fraia-new-design-{}",
+        fraia_core::utils::timestamp_id()
+    ));
+    let seed_result = create_named_project_package(&seed_dir, project_name);
+    let cleanup_result = if seed_dir.exists() {
+        fs::remove_dir_all(&seed_dir)
+            .with_context(|| format!("remove temporary design seed `{}`", seed_dir.display()))
+    } else {
+        Ok(())
+    };
+    let mut seed = seed_result?;
+    cleanup_result?;
+    seed.designs
+        .pop()
+        .ok_or_else(|| anyhow!("blank design seed has no design"))
+}
+
+async fn create_design_handler(
+    Json(request): Json<CreateDesignRequest>,
+) -> Result<Json<WorkbenchOperationResponse>, ApiError> {
+    let project_dir = PathBuf::from(&request.project_dir);
+    let mut package = load_project_package(&project_dir)?;
+    validate_project_request(&package, &request.project_id)?;
+    let design_name = require_unique_design_name(&package, &request.design_name)?;
+    let mut design = blank_design_package(&project_dir, &package.manifest.name)?;
+    design.manifest.name = design_name.clone();
+    design.project.name = package.manifest.name.clone();
+    let design_id = design.manifest.id.clone();
+    package.manifest.designs.push(ProjectDesignEntry {
+        id: design_id.clone(),
+        name: design_name.clone(),
+    });
+    package.designs.push(design);
+    save_project_package(&project_dir, &package)?;
+    let paths = design_package_paths(&project_dir, &design_id).map_err(anyhow::Error::from)?;
+    fs::write(
+        &paths.planning_file,
+        default_planning_markdown(&selected_package_design(&package, Some(&design_id))?.project),
+    )
+    .map_err(anyhow::Error::from)?;
+    let design_dir = paths.design_dir;
+    let (project, _) = load_project(&design_dir)?;
+    Ok(Json(WorkbenchOperationResponse {
+        message: format!("Created design {design_name}."),
+        state: build_workbench_state(&design_dir, &project)?,
+    }))
+}
+
+async fn activate_design_handler(
+    Json(request): Json<DesignIdentityRequest>,
+) -> Result<Json<WorkbenchOperationResponse>, ApiError> {
+    let project_dir = PathBuf::from(&request.project_dir);
+    let package = load_project_package(&project_dir)?;
+    validate_project_request(&package, &request.project_id)?;
+    let design_id = DesignId::new(&request.design_id);
+    let design = selected_package_design(&package, Some(&design_id))?;
+    let design_dir = design_package_paths(&project_dir, &design.manifest.id)
+        .map_err(anyhow::Error::from)?
+        .design_dir;
+    Ok(Json(WorkbenchOperationResponse {
+        message: format!("Activated design {}.", design.manifest.name),
+        state: build_workbench_state(&design_dir, &design.project)?,
+    }))
+}
+
+async fn delete_design_handler(
+    Extension(conversation_service): Extension<conversation_transport::ConversationServiceHandle>,
+    Json(request): Json<DesignIdentityRequest>,
+) -> Result<Json<ProjectIdentityResponse>, ApiError> {
+    let project_dir = PathBuf::from(&request.project_dir);
+    let mut package = load_project_package(&project_dir)?;
+    validate_project_request(&package, &request.project_id)?;
+    if package.designs.len() <= 1 {
+        return Err(anyhow!("A project must keep at least one design.").into());
+    }
+    let design_index = package
+        .designs
+        .iter()
+        .position(|design| design.manifest.id.as_str() == request.design_id)
+        .ok_or_else(|| anyhow!("The selected design no longer exists in this project."))?;
+    let deleted = package.designs.remove(design_index);
+    package.manifest.designs.remove(design_index);
+    conversation_service
+        .lock()
+        .map_err(|_| anyhow!("conversation service lock is poisoned"))?
+        .unload(&request.design_id);
+    save_project_package(&project_dir, &package)?;
+    let design_dir = design_package_paths(&project_dir, &deleted.manifest.id)
+        .map_err(anyhow::Error::from)?
+        .design_dir;
+    fs::remove_dir_all(&design_dir)
+        .with_context(|| format!("remove deleted design `{}`", design_dir.display()))?;
+    Ok(Json(package_identity(&project_dir, None)?))
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -633,233 +2404,6 @@ async fn save_planning_draft_handler(
     let state = build_workbench_state(&dir, &project)?;
     Ok(Json(WorkbenchOperationResponse {
         message: "Saved planning draft.".into(),
-        state,
-    }))
-}
-
-async fn materialize_planning_handler(
-    Json(request): Json<PlanningDraftRequest>,
-) -> Result<Json<WorkbenchOperationResponse>, ApiError> {
-    let dir = PathBuf::from(&request.project_dir);
-    let (mut project, _) = load_project(&dir)
-        .with_context(|| format!("failed to load project from {}", dir.display()))?;
-    let draft = api_planning_to_core(request.draft);
-    apply_planning_draft(&mut project, draft);
-
-    if let Some(structural) = project.structural_model.as_ref() {
-        let structural_readiness = evaluate_structural_solve_readiness(structural);
-        if structural_readiness.status != "ready" {
-            persist_project_and_markdown(&dir, &project)?;
-            let mut state = build_workbench_state(&dir, &project)?;
-            state.analysis_readiness = Some(structural_readiness.clone());
-            state.latest_run_summary = Some(AnalysisRunSummary {
-                status: "not_run".into(),
-                analysis_kind: "analysis".into(),
-                message: structural_readiness.summary.clone(),
-                run_id: None,
-            });
-            return Ok(Json(WorkbenchOperationResponse {
-                message: structural_readiness.summary,
-                state,
-            }));
-        }
-    }
-
-    let materialize = materialize_current_planning(&mut project)?;
-    persist_project_and_markdown(&dir, &project)?;
-
-    let mut state = build_workbench_state(&dir, &project)?;
-    state.latest_run_summary = Some(materialize.run_summary.clone());
-    Ok(Json(WorkbenchOperationResponse {
-        message: materialize.message,
-        state,
-    }))
-}
-
-async fn analyse_planning_handler(
-    Json(request): Json<PlanningDraftRequest>,
-) -> Result<Json<WorkbenchOperationResponse>, ApiError> {
-    let dir = PathBuf::from(&request.project_dir);
-    let (mut project, _) = load_project(&dir)
-        .with_context(|| format!("failed to load project from {}", dir.display()))?;
-    let draft = api_planning_to_core(request.draft);
-    apply_planning_draft(&mut project, draft);
-
-    let pending_decisions = pending_scheme_analysis_decisions(&project);
-    if !pending_decisions.is_empty() {
-        persist_project_and_markdown(&dir, &project)?;
-        let mut state = build_workbench_state(&dir, &project)?;
-        let detail = pending_decisions
-            .iter()
-            .map(|decision| format!("{}: {}", decision.scheme_id, decision.prompt))
-            .collect::<Vec<_>>()
-            .join("\n");
-        merge_diagnostic(
-            &mut state,
-            WorkbenchDiagnostic {
-                severity: "warning".into(),
-                code: "analysis.design_option_decision_required".into(),
-                message: "Resolve pending design-option decisions before running analysis.".into(),
-                detail: Some(detail),
-            },
-        );
-        state.latest_run_summary = Some(AnalysisRunSummary {
-            status: "not_run".into(),
-            analysis_kind: "analysis".into(),
-            message: "Resolve pending design-option decisions before running analysis.".into(),
-            run_id: None,
-        });
-        return Ok(Json(WorkbenchOperationResponse {
-            message: "Resolve pending design-option decisions before running analysis.".into(),
-            state,
-        }));
-    }
-
-    let materialize = materialize_current_planning(&mut project)?;
-    if !materialize.can_analyse {
-        persist_project_and_markdown(&dir, &project)?;
-        let mut state = build_workbench_state(&dir, &project)?;
-        state.latest_run_summary = Some(materialize.run_summary);
-        return Ok(Json(WorkbenchOperationResponse {
-            message: materialize.message,
-            state,
-        }));
-    }
-
-    let analysis = match dispatch_analysis(&dir, &mut project) {
-        Ok(analysis) => analysis,
-        Err(error) => {
-            persist_project_and_markdown(&dir, &project)?;
-            let mut state = build_workbench_state(&dir, &project)?;
-            let failure = WorkbenchDiagnostic {
-                severity: "error".into(),
-                code: "analysis.run_failed".into(),
-                message: "Analysis run failed.".into(),
-                detail: Some(format!("{error:#}")),
-            };
-            merge_diagnostic(&mut state, failure);
-            state.latest_run_summary = Some(AnalysisRunSummary {
-                status: "failed".into(),
-                analysis_kind: "analysis".into(),
-                message: "Analysis run failed.".into(),
-                run_id: None,
-            });
-            return Ok(Json(WorkbenchOperationResponse {
-                message: "Analysis run failed.".into(),
-                state,
-            }));
-        }
-    };
-
-    let (reloaded, _) =
-        load_project(&dir).with_context(|| format!("failed to reload {}", dir.display()))?;
-    let mut state = build_workbench_state(&dir, &reloaded)?;
-    state.latest_run_summary = Some(analysis.run_summary.clone());
-    Ok(Json(WorkbenchOperationResponse {
-        message: analysis.message,
-        state,
-    }))
-}
-
-async fn design_option_analysis_handler(
-    Json(mut request): Json<DesignOptionAnalysisRequest>,
-) -> Result<Json<WorkbenchOperationResponse>, ApiError> {
-    let dir = PathBuf::from(&request.project_dir);
-    let (mut project, _) = load_project(&dir)
-        .with_context(|| format!("failed to load project from {}", dir.display()))?;
-    ensure_active_design_option_batch(&mut project);
-    refresh_design_option_batch_freshness(&mut project);
-    sync_active_design_option_revisions(&mut project);
-    let active_batch = project
-        .design_option_decisions
-        .active_batch_id
-        .as_ref()
-        .and_then(|id| {
-            project
-                .design_option_decisions
-                .batches
-                .iter()
-                .find(|batch| &batch.id == id)
-        })
-        .ok_or_else(|| anyhow!("no active design-option batch is available"))?;
-    if active_batch.status != "active" {
-        return Err(anyhow!(
-            "the current design-option batch is outdated; regenerate options before analysis"
-        )
-        .into());
-    }
-    let included_ids = active_batch
-        .option_revisions
-        .iter()
-        .filter(|revision| revision.included)
-        .map(|revision| revision.option_id.clone())
-        .collect::<Vec<_>>();
-    if included_ids.is_empty() {
-        return Err(anyhow!("include at least one design option before analysis").into());
-    }
-    let requested_ids = request
-        .scope
-        .as_ref()
-        .map(|scope| scope.option_ids.clone())
-        .unwrap_or_default();
-    if requested_ids.is_empty() {
-        request.scope = Some(fraia_app_api::DesignOptionAnalysisScope {
-            kind: "selected_design_options".into(),
-            option_ids: included_ids.clone(),
-        });
-    } else if requested_ids
-        .iter()
-        .any(|option_id| !included_ids.contains(option_id))
-    {
-        return Err(anyhow!("analysis scope contains an excluded design option").into());
-    }
-    let run_dir = persist_design_option_analysis_run(&dir, &project, &request)?;
-    let run_id = run_dir
-        .file_name()
-        .and_then(|name| name.to_str())
-        .map(str::to_owned);
-    let analysed_ids = request
-        .scope
-        .as_ref()
-        .map(|scope| scope.option_ids.clone())
-        .unwrap_or_else(|| included_ids.clone());
-    if let Some(run_id) = run_id.as_deref()
-        && let Some(batch) = project
-            .design_option_decisions
-            .batches
-            .iter_mut()
-            .find(|batch| {
-                Some(&batch.id) == project.design_option_decisions.active_batch_id.as_ref()
-            })
-    {
-        for revision in &mut batch.option_revisions {
-            if analysed_ids.contains(&revision.option_id) {
-                revision.latest_analysis_run_id = Some(run_id.to_owned());
-            }
-        }
-    }
-    let mut state = build_workbench_state(&dir, &project)?;
-    if let Some(run_id) = run_id.as_deref() {
-        record_design_option_comparison_run(
-            &mut project,
-            run_id,
-            &analysed_ids,
-            &state.design_schemes,
-        );
-        persist_project_and_markdown(&dir, &project)?;
-        state = build_workbench_state(&dir, &project)?;
-    }
-    state.latest_run_summary = Some(AnalysisRunSummary {
-        status: "completed".into(),
-        analysis_kind: "design_option_analysis".into(),
-        message: "Analysed design-option candidate sections with CalculiX.".into(),
-        run_id: run_id.clone(),
-    });
-    Ok(Json(WorkbenchOperationResponse {
-        message: format!(
-            "Analysed design options. Artefacts saved to {}",
-            run_dir.display()
-        ),
         state,
     }))
 }
@@ -1317,114 +2861,423 @@ async fn agent_session_respond_handler(
     }))
 }
 
+async fn conversation_agent_respond_handler(
+    Extension(conversation_service): Extension<conversation_transport::ConversationServiceHandle>,
+    Json(request): Json<ConversationAgentRespondRequest>,
+) -> Result<Json<ConversationAgentRespondResponse>, ApiError> {
+    if request.text.trim().is_empty() {
+        return Err(anyhow!("conversation agent request requires text").into());
+    }
+    let service = conversation_service
+        .lock()
+        .map_err(|_| anyhow!("conversation service lock was poisoned"))?;
+    let state = service
+        .state(&request.project_id, &request.conversation_id)
+        .map_err(anyhow::Error::msg)?;
+    if state.head_revision_id != request.expected_head_revision_id
+        || state.head_snapshot_id != request.expected_snapshot_id
+    {
+        return Err(anyhow!(
+            "conversation agent context is stale: expected head `{}` snapshot `{}`, actual head `{}` snapshot `{}`",
+            request.expected_head_revision_id,
+            request.expected_snapshot_id,
+            state.head_revision_id,
+            state.head_snapshot_id
+        )
+        .into());
+    }
+    let package = load_project_package(Path::new(&request.project_dir))?;
+    if package.manifest.id != request.package_project_id {
+        return Err(anyhow!("agent context package project identity does not match").into());
+    }
+    if !package
+        .designs
+        .iter()
+        .any(|design| design.manifest.id == request.design_id)
+    {
+        return Err(anyhow!("agent context design is not in the selected package").into());
+    }
+    let expected_workspace =
+        design_package_paths(Path::new(&request.project_dir), &request.design_id)
+            .map_err(|error| anyhow!(error.to_string()))?
+            .workspace_database;
+    if service
+        .workspace_path(&request.project_id)
+        .map_err(anyhow::Error::msg)?
+        != expected_workspace
+    {
+        return Err(anyhow!("agent context design does not own the active revision scope").into());
+    }
+    drop(service);
+
+    let shelf = load_design_shelf(Path::new(&request.project_dir), &request.design_id)
+        .map_err(|error| anyhow!(error.to_string()))?;
+    let mut selected_shelf = Vec::new();
+    let mut seen = BTreeSet::new();
+    for item_id in &request.shelf_item_ids {
+        if !seen.insert(item_id) {
+            return Err(anyhow!("duplicate design reference `{item_id}` in agent context").into());
+        }
+        let item = shelf
+            .items
+            .get(item_id)
+            .ok_or_else(|| anyhow!("unknown current-design reference `{item_id}`"))?;
+        if !item.confirmation.confirmed {
+            return Err(anyhow!("design reference `{item_id}` is not confirmed").into());
+        }
+        selected_shelf.push(item.clone());
+    }
+    let mut interpretation_contexts = Vec::new();
+    let mut interpretation_diagnostics = Vec::new();
+    let mut inferred_assumption_ids = Vec::new();
+    let mut inferred_assumption_summaries = Vec::new();
+    for revision_id in &request.drawing_interpretation_revision_ids {
+        let interpretation = drawing_interpretation_agent_context(
+            Path::new(&request.project_dir),
+            &request.design_id,
+            revision_id,
+        )
+        .map_err(|error| anyhow!(error.to_string()))?;
+        for constraint in &interpretation.confirmed_constraints {
+            if !request
+                .shelf_item_ids
+                .iter()
+                .any(|item_id| item_id == &constraint.shelf_item_id)
+            {
+                return Err(anyhow!(
+                    "DrawingInterpretation constraint `{}` uses design reference `{}` that was not explicitly selected",
+                    constraint.observation_id,
+                    constraint.shelf_item_id
+                )
+                .into());
+            }
+        }
+        interpretation_diagnostics.extend(
+            interpretation
+                .unresolved_conflicts
+                .iter()
+                .map(|conflict| format!("Unresolved drawing conflict: {}", conflict.id)),
+        );
+        interpretation_diagnostics.extend(
+            interpretation
+                .unconfirmed_observation_ids
+                .iter()
+                .map(|id| format!("Unconfirmed drawing observation excluded: {id}")),
+        );
+        for inference in &interpretation.inferred_assumptions {
+            if inference.materially_conflicted {
+                return Err(anyhow!(
+                    "drawing inference `{}` is materially conflicted and cannot enter a proposal",
+                    inference.inference_id
+                )
+                .into());
+            }
+            inferred_assumption_ids.push(inference.inference_id.clone());
+            inferred_assumption_summaries.push(format!(
+                "Inferred drawing candidate {} has confidence {:.3}, requires confirmation, and is not a confirmed fact.",
+                inference.inference_id, inference.extraction.confidence
+            ));
+        }
+        interpretation_contexts.push(interpretation);
+    }
+
+    let (mut project, _) = load_project(Path::new(&request.project_dir))?;
+    let settings = validated_agent_settings_for_surface(&mut project, "pre_solve");
+    let fake_typed_proposal_test = std::env::var("FRAIA_FAKE_AI_RUNTIME").as_deref() == Ok("1")
+        && request.text.trim()
+            == "Use the confirmed six metre span and simple supports from this test request.";
+    let context = json!({
+        "contract": "fraia.conversation-agent.v1",
+        "requestMarker": if fake_typed_proposal_test { "FRAIA_FAKE_TYPED_PROPOSAL_REQUEST" } else { "" },
+        "projectId": request.project_id,
+        "designId": request.design_id,
+        "conversationId": request.conversation_id,
+        "acceptedHeadRevisionId": state.head_revision_id,
+        "acceptedSnapshotId": state.head_snapshot_id,
+        "acceptedSemanticModel": state.semantic_summary,
+        "confirmedFacts": state.project_facts,
+        "selectedDesignReferenceIds": request.shelf_item_ids,
+        "selectedConfirmedDesignReferences": selected_shelf,
+        "drawingInterpretationRevisionIds": request.drawing_interpretation_revision_ids,
+        "confirmedDrawingInterpretations": interpretation_contexts,
+        "inferredDrawingAssumptionIds": inferred_assumption_ids,
+        "inferredDrawingAssumptions": inferred_assumption_summaries,
+        "diagnostics": interpretation_diagnostics,
+        "allowedOperationKinds": ["add_node", "move_node", "add_member", "add_support", "set_member_role"],
+        "userText": request.text,
+    });
+    let proposal_model_context = conversation_service
+        .lock()
+        .map_err(|_| anyhow!("conversation service lock was poisoned"))?
+        .proposal_model_context(&request.project_id, &request.conversation_id)
+        .map_err(anyhow::Error::msg)?;
+    let mut context = context;
+    context["proposalModelContext"] = proposal_model_context;
+    let prompt = conversation_agent_prompt(&context)?;
+    conversation_service
+        .lock()
+        .map_err(|_| anyhow!("conversation service lock was poisoned"))?
+        .converse(fraia_app_api::ConversationMessageRequest {
+            project_id: request.project_id.clone(),
+            conversation_id: request.conversation_id.clone(),
+            message: request.text.trim().to_string(),
+        })
+        .map_err(anyhow::Error::msg)?;
+    let response_schema = pi_conversation_schema();
+    let deadline_at_unix_ms = conversation_agent_deadline_at_unix_ms()?;
+    let (response, envelope) = run_on_blocking_thread(|| {
+        let mut attempt = 0;
+        decode_and_validate_pi_conversation_response_with_one_correction(
+            &prompt,
+            &response_schema,
+            |attempt_prompt| {
+                let attempt_request_id = if attempt == 0 {
+                    request.turn_id.clone()
+                } else {
+                    format!("{}:schema-correction", request.turn_id)
+                };
+                attempt += 1;
+                run_pi_turn_envelope_with_deadline_blocking(
+                    &attempt_request_id,
+                    Some(request.design_id.as_str()),
+                    &settings,
+                    attempt_prompt,
+                    &response_schema,
+                    Some(deadline_at_unix_ms),
+                )
+            },
+            |candidate| {
+                if let Some(proposal) = &candidate.proposal {
+                    conversation_service
+                        .lock()
+                        .map_err(|_| anyhow!("conversation service lock was poisoned"))?
+                        .validate_proposal_operations(
+                            &request.project_id,
+                            &request.conversation_id,
+                            &proposal.operations,
+                        )
+                        .map_err(anyhow::Error::msg)?;
+                }
+                Ok(())
+            },
+        )
+    })?;
+    if response.response_id.trim().is_empty() || response.text.trim().is_empty() {
+        return Err(
+            anyhow!("agent response requires a response id and conversational text").into(),
+        );
+    }
+
+    let proposal_response = if let Some(proposal) = response.proposal {
+        validate_agent_proposal_bindings(
+            &proposal,
+            &request.expected_head_revision_id,
+            &request.expected_snapshot_id,
+            &request.shelf_item_ids,
+            &request.drawing_interpretation_revision_ids,
+            &inferred_assumption_ids,
+        )?;
+        validate_material_inference_disclosure(&proposal, &inferred_assumption_summaries)?;
+        let proposal_response = ConversationAgentProposalResponse {
+            proposal_id: proposal.proposal_id.clone(),
+            proposed_revision_id: proposal.proposed_revision_id.clone(),
+            parent_revision_id: proposal.parent_revision_id.clone(),
+            status: "pending".into(),
+            assumptions: proposal.assumptions.clone(),
+            evidence_limits: proposal.evidence_limits.clone(),
+            operations: proposal.operations.clone(),
+        };
+        conversation_service
+            .lock()
+            .map_err(|_| anyhow!("conversation service lock was poisoned"))?
+            .propose(ConversationProposalRequest {
+                project_id: request.project_id.clone(),
+                conversation_id: request.conversation_id.clone(),
+                proposal_id: proposal.proposal_id,
+                proposed_revision_id: proposal.proposed_revision_id,
+                parent_revision_id: proposal.parent_revision_id,
+                provider: envelope.provider_id.clone(),
+                model: envelope.model_id.clone(),
+                turn_id: request.turn_id.clone(),
+                reasoning_effort: Some(envelope.reasoning_effort.clone()),
+                catalogue_refreshed_at: envelope.catalogue_refreshed_at.clone(),
+                response_id: Some(response.response_id.clone()),
+                response_text: Some(response.text.clone()),
+                response_questions: response.questions.clone(),
+                source_context: Some(ConversationProposalSourceContext {
+                    design_id: request.design_id.clone(),
+                    expected_snapshot_id: proposal.expected_snapshot_id,
+                    shelf_item_ids: proposal.shelf_item_ids,
+                    assumptions: proposal.assumptions,
+                    evidence_limits: proposal.evidence_limits,
+                    drawing_interpretation_revision_ids: proposal
+                        .drawing_interpretation_revision_ids,
+                    drawing_interpretation_inference_ids: proposal
+                        .drawing_interpretation_inference_ids,
+                }),
+                operations: proposal.operations,
+                operation: None,
+            })
+            .map_err(anyhow::Error::msg)?;
+        Some(proposal_response)
+    } else {
+        None
+    };
+
+    let result = ConversationAgentRespondResponse {
+        response_id: response.response_id,
+        text: response.text,
+        questions: response.questions,
+        proposal: proposal_response,
+        provider: envelope.provider_id,
+        model: envelope.model_id,
+        reasoning_effort: envelope.reasoning_effort,
+        catalogue_refreshed_at: envelope.catalogue_refreshed_at,
+        turn_id: request.turn_id,
+    };
+    conversation_service
+        .lock()
+        .map_err(|_| anyhow!("conversation service lock was poisoned"))?
+        .persist_agent_response(
+            &request.project_id,
+            &request.conversation_id,
+            result.clone(),
+        )
+        .map_err(anyhow::Error::msg)?;
+    Ok(Json(result))
+}
+
+fn conversation_agent_prompt(context: &Value) -> Result<String> {
+    let context = compact_conversation_agent_context(context);
+    Ok(format!(
+        "{CONVERSATION_AGENT_INSTRUCTION}\n{}",
+        serde_json::to_string(&context)?
+    ))
+}
+
+fn compact_conversation_agent_context(context: &Value) -> Value {
+    let mut compact = context.clone();
+    let Some(object) = compact.as_object_mut() else {
+        return compact;
+    };
+
+    // These values identify app storage and transport. The exact design identity,
+    // revision, snapshot, evidence bindings, and authored model remain in context.
+    object.remove("projectId");
+    object.remove("conversationId");
+    // The response schema is the single authority for allowed operations.
+    object.remove("allowedOperationKinds");
+
+    if let Some(references) = object
+        .get_mut("selectedConfirmedDesignReferences")
+        .and_then(Value::as_array_mut)
+    {
+        for reference in references {
+            if let Some(reference) = reference.as_object_mut() {
+                // Selection has already required confirmation. Creation audit data
+                // is persisted by Fraia but does not change the referenced evidence.
+                reference.remove("confirmation");
+                reference.remove("provenance");
+            }
+        }
+    }
+
+    if let Some(interpretations) = object
+        .get_mut("confirmedDrawingInterpretations")
+        .and_then(Value::as_array_mut)
+    {
+        for interpretation in interpretations {
+            if let Some(interpretation) = interpretation.as_object_mut() {
+                // The enclosing context already carries the exact design identity.
+                interpretation.remove("projectId");
+                interpretation.remove("designId");
+            }
+        }
+    }
+
+    object.retain(|key, value| match value {
+        Value::Array(_)
+            if matches!(
+                key.as_str(),
+                "selectedDesignReferenceIds"
+                    | "drawingInterpretationRevisionIds"
+                    | "inferredDrawingAssumptionIds"
+            ) =>
+        {
+            true
+        }
+        Value::Array(values) => !values.is_empty(),
+        Value::Object(values) => !values.is_empty(),
+        Value::String(value) => !value.is_empty(),
+        _ => true,
+    });
+    compact
+}
+
+fn validate_material_inference_disclosure(
+    proposal: &PiConversationProposal,
+    inferred_assumption_summaries: &[String],
+) -> Result<(), ApiError> {
+    let has_confirmation_limit = proposal.evidence_limits.iter().any(|limit| {
+        limit.contains("not a confirmed fact") || limit.contains("requires confirmation")
+    });
+    if inferred_assumption_summaries
+        .iter()
+        .any(|material_assumption| !proposal.assumptions.contains(material_assumption))
+        || (!inferred_assumption_summaries.is_empty() && !has_confirmation_limit)
+    {
+        return Err(anyhow!(
+            "agent proposal must list every material drawing inference as an assumption and evidence limit"
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn validate_agent_proposal_bindings(
+    proposal: &PiConversationProposal,
+    expected_head_revision_id: &fraia_revision::RevisionId,
+    expected_snapshot_id: &fraia_revision::SnapshotId,
+    selected_design_reference_ids: &[String],
+    drawing_interpretation_revision_ids: &[String],
+    drawing_interpretation_inference_ids: &[String],
+) -> Result<(), ApiError> {
+    if &proposal.parent_revision_id != expected_head_revision_id
+        || &proposal.expected_snapshot_id != expected_snapshot_id
+        || proposal.shelf_item_ids != selected_design_reference_ids
+        || proposal.drawing_interpretation_revision_ids != drawing_interpretation_revision_ids
+        || proposal.drawing_interpretation_inference_ids != drawing_interpretation_inference_ids
+    {
+        return Err(anyhow!(
+            "agent proposal bindings do not match the exact supplied context: head matched={}, snapshot matched={}, design references expected={:?} received={:?}, drawing interpretations expected={:?} received={:?}",
+            &proposal.parent_revision_id == expected_head_revision_id,
+            &proposal.expected_snapshot_id == expected_snapshot_id,
+            selected_design_reference_ids,
+            proposal.shelf_item_ids,
+            drawing_interpretation_revision_ids,
+            proposal.drawing_interpretation_revision_ids,
+        )
+        .into());
+    }
+    Ok(())
+}
+
 async fn agent_session_cancel_handler(
     Json(request): Json<AgentSessionCancelRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let cancelled = cancel_pi_turn(&request.request_id).unwrap_or(false);
+    let correction_request_id = format!("{}:schema-correction", request.request_id);
+    let cancelled = cancel_pi_turn(&request.request_id).unwrap_or(false)
+        | cancel_pi_turn(&correction_request_id).unwrap_or(false);
     Ok(Json(json!({
         "status": if cancelled { "cancelled" } else { "not_found" },
         "requestId": request.request_id,
     })))
 }
 
-async fn agent_apply_review_handler(
-    Json(request): Json<AgentApplyReviewRequest>,
-) -> Result<Json<WorkbenchOperationResponse>, ApiError> {
-    let dir = PathBuf::from(&request.project_dir);
-    let (mut project, _) = load_project(&dir)
-        .with_context(|| format!("failed to load project from {}", dir.display()))?;
-
-    let mut draft = planning_draft(&project);
-    let mut applied = Vec::new();
-    let mut diagnostics = Vec::new();
-    let mut draft_changed = false;
-    let mut materialize_after_draft_change = false;
-    let mut structural_changed = false;
-    for action in &request.proposed_actions {
-        let result = match action.action_kind.as_str() {
-            "add_load" | "add_support" => {
-                let model = project
-                    .structural_model
-                    .as_mut()
-                    .ok_or_else(|| anyhow!("no authored structural model is available"))?;
-                apply_agent_action_to_structural_model(model, action).map(|summary| {
-                    structural_changed = true;
-                    summary
-                })
-            }
-            _ => apply_agent_action_to_draft(&project, &mut draft, action).map(|summary| {
-                draft_changed = true;
-                if !action.field.starts_with("coordinationGroup.")
-                    && action.field != "coordination.designOptionIntents"
-                {
-                    materialize_after_draft_change = true;
-                }
-                summary
-            }),
-        };
-        match result {
-            Ok(summary) => applied.push(summary),
-            Err(error) => diagnostics.push(WorkbenchDiagnostic {
-                severity: "error".into(),
-                code: "agent.apply_action_failed".into(),
-                message: "Could not apply one agent review action.".into(),
-                detail: Some(format!("{error:#}")),
-            }),
-        }
-    }
-
-    if diagnostics.is_empty() {
-        let run_summary = if draft_changed {
-            apply_planning_draft(&mut project, draft);
-            if materialize_after_draft_change {
-                Some(materialize_current_planning(&mut project)?.run_summary)
-            } else {
-                project.updated_at = Some(fraia_core::utils::iso_now());
-                Some(AnalysisRunSummary {
-                    status: "completed".into(),
-                    analysis_kind: "coordination".into(),
-                    message: "Updated coordination preferences.".into(),
-                    run_id: None,
-                })
-            }
-        } else if structural_changed {
-            project.updated_at = Some(fraia_core::utils::iso_now());
-            Some(AnalysisRunSummary {
-                status: "completed".into(),
-                analysis_kind: "review_apply".into(),
-                message: "Applied agent review changes to the structural model.".into(),
-                run_id: None,
-            })
-        } else {
-            None
-        };
-        persist_project_and_markdown(&dir, &project)?;
-        let mut state = build_workbench_state(&dir, &project)?;
-        if let Some(run_summary) = run_summary {
-            state.latest_run_summary = Some(run_summary);
-        }
-        Ok(Json(WorkbenchOperationResponse {
-            message: if applied.is_empty() {
-                "No agent review changes were applied.".into()
-            } else {
-                format!("Applied agent review change: {}", applied.join("; "))
-            },
-            state,
-        }))
-    } else {
-        let mut state = build_workbench_state(&dir, &project)?;
-        for diagnostic in diagnostics {
-            merge_diagnostic(&mut state, diagnostic);
-        }
-        Ok(Json(WorkbenchOperationResponse {
-            message: "Agent review change was not applied.".into(),
-            state,
-        }))
-    }
-}
-
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg(test)]
+#[allow(dead_code)]
 struct BaseModelEditRequest {
     project_dir: String,
     operations: Vec<BaseModelEditOperation>,
@@ -1504,39 +3357,7 @@ enum BaseModelEditOperation {
     },
 }
 
-async fn base_model_edit_handler(
-    Json(request): Json<BaseModelEditRequest>,
-) -> Result<Json<WorkbenchOperationResponse>, ApiError> {
-    let dir = PathBuf::from(&request.project_dir);
-    let (mut project, _) = load_project(&dir)
-        .with_context(|| format!("failed to load project from {}", dir.display()))?;
-    let mut model = project
-        .structural_model
-        .take()
-        .unwrap_or_else(StructuralModel::empty);
-    let mut applied = Vec::new();
-
-    for operation in request.operations {
-        applied.push(apply_base_model_edit_operation(&mut model, operation)?);
-    }
-
-    project.structural_model = Some(model);
-    refresh_design_option_batch_freshness(&mut project);
-    project.updated_at = Some(fraia_core::utils::iso_now());
-    persist_project_and_markdown(&dir, &project)?;
-    let mut state = build_workbench_state(&dir, &project)?;
-    state.latest_run_summary = Some(AnalysisRunSummary {
-        status: "completed".into(),
-        analysis_kind: "base_model_edit".into(),
-        message: format!("Applied base model edit: {}", applied.join("; ")),
-        run_id: None,
-    });
-    Ok(Json(WorkbenchOperationResponse {
-        message: format!("Applied base model edit: {}", applied.join("; ")),
-        state,
-    }))
-}
-
+#[allow(dead_code)]
 fn apply_base_model_edit_operation(
     model: &mut StructuralModel,
     operation: BaseModelEditOperation,
@@ -2338,233 +4159,6 @@ fn split_member(
     Ok(format!("split member {id} into {id} and {second_id}"))
 }
 
-async fn seed_frame_demo_handler(
-    Json(request): Json<ProjectPathRequest>,
-) -> Result<Json<WorkbenchOperationResponse>, ApiError> {
-    let dir = PathBuf::from(request.project_dir);
-    let (mut project, _) = load_project(&dir)
-        .with_context(|| format!("failed to load project from {}", dir.display()))?;
-    let graph = portal_frame_builder_graph(
-        "builder.frame.authored",
-        "clear_span",
-        "310UB",
-        "360UB",
-        project.requirements.span_m,
-        project.requirements.height_m,
-        project.requirements.gravity_load_kn_per_m,
-        project.requirements.lateral_load_kn,
-        None,
-        None,
-    );
-    let structural = materialize_structural_model_from_builder_graph(&graph)
-        .context("failed to materialise portal frame demo from project requirements")?;
-    project.intent.building_type = "portal_frame".into();
-    project.builder_graph = Some(graph);
-    project.legacy_builder_instance = None;
-    project.structural_model = Some(structural);
-    project.updated_at = Some(fraia_core::utils::iso_now());
-    persist_project_and_markdown(&dir, &project)?;
-    let mut state = build_workbench_state(&dir, &project)?;
-    state.latest_run_summary = Some(AnalysisRunSummary {
-        status: "completed".into(),
-        analysis_kind: "materialise".into(),
-        message: "Seeded a deterministic portal frame model.".into(),
-        run_id: None,
-    });
-    Ok(Json(WorkbenchOperationResponse {
-        message: "Seeded a deterministic portal-frame demo from current project requirements."
-            .into(),
-        state,
-    }))
-}
-
-async fn seed_frame_review_demo_handler(
-    Json(request): Json<ProjectPathRequest>,
-) -> Result<Json<WorkbenchOperationResponse>, ApiError> {
-    let dir = PathBuf::from(request.project_dir);
-    let (mut project, _) = load_project(&dir)
-        .with_context(|| format!("failed to load project from {}", dir.display()))?;
-    let span_m = if project.requirements.span_m > 1.0 {
-        project.requirements.span_m
-    } else {
-        20.0
-    };
-    let height_m = if project.requirements.height_m > 1.0 {
-        project.requirements.height_m
-    } else {
-        6.0
-    };
-    let structural = StructuralModel {
-        dimension: "2d".into(),
-        nodes: vec![
-            StructuralNode {
-                id: "builder.frame.review::n1".into(),
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-            },
-            StructuralNode {
-                id: "builder.frame.review::n2".into(),
-                x: 0.0,
-                y: height_m,
-                z: 0.0,
-            },
-            StructuralNode {
-                id: "builder.frame.review::n3".into(),
-                x: span_m,
-                y: height_m,
-                z: 0.0,
-            },
-            StructuralNode {
-                id: "builder.frame.review::n4".into(),
-                x: span_m,
-                y: 0.0,
-                z: 0.0,
-            },
-        ],
-        members: vec![
-            StructuralMember {
-                id: "builder.frame.review::e1".into(),
-                start_node: "builder.frame.review::n1".into(),
-                end_node: "builder.frame.review::n2".into(),
-                role: "member".into(),
-                semantic_tags: Vec::new(),
-                section_id: "unassigned".into(),
-                material_id: "unassigned".into(),
-            },
-            StructuralMember {
-                id: "builder.frame.review::e2".into(),
-                start_node: "builder.frame.review::n2".into(),
-                end_node: "builder.frame.review::n3".into(),
-                role: "member".into(),
-                semantic_tags: Vec::new(),
-                section_id: "unassigned".into(),
-                material_id: "unassigned".into(),
-            },
-            StructuralMember {
-                id: "builder.frame.review::e3".into(),
-                start_node: "builder.frame.review::n4".into(),
-                end_node: "builder.frame.review::n3".into(),
-                role: "member".into(),
-                semantic_tags: Vec::new(),
-                section_id: "unassigned".into(),
-                material_id: "unassigned".into(),
-            },
-        ],
-        plates: Vec::new(),
-        supports: Vec::new(),
-        loads: Vec::new(),
-        releases: Vec::new(),
-        load_cases: Vec::new(),
-        builder_node_materializations: Vec::new(),
-    };
-    project.intent.building_type = "unspecified".into();
-    project.requirements.span_m = span_m;
-    project.requirements.height_m = height_m;
-    project.requirements.gravity_load_kn_per_m = 0.0;
-    project.requirements.lateral_load_kn = 0.0;
-    let mut draft = planning_draft(&project);
-    draft.project_intent.building_type = "unspecified".into();
-    draft.system_brief.system_family_hint = "unknown".into();
-    draft.system_brief.structural_form_hint = "Raw CAD-like frame geometry".into();
-    draft.system_brief.notes =
-        "Development review model: raw connected line geometry only. Roles, material, supports, and loads are intentionally unresolved."
-            .into();
-    draft.geometry_and_loads.span_m = span_m;
-    draft.geometry_and_loads.height_m = height_m;
-    draft.geometry_and_loads.gravity_line_load_kn_per_m = 0.0;
-    draft.geometry_and_loads.lateral_load_kn = 0.0;
-    project.planning_draft = Some(draft);
-    project.builder_graph = None;
-    project.legacy_builder_instance = None;
-    project.structural_model = Some(structural);
-    project.agent_state = AgentState::default();
-    project.base_model_brief = None;
-    project.updated_at = Some(fraia_core::utils::iso_now());
-    persist_project_and_markdown(&dir, &project)?;
-    let mut state = build_workbench_state(&dir, &project)?;
-    state.latest_run_summary = Some(AnalysisRunSummary {
-        status: "not_run".into(),
-        analysis_kind: "review_seed".into(),
-        message:
-            "Seeded raw frame geometry only. Roles, supports, loads, and material are intentionally unresolved."
-                .into(),
-        run_id: None,
-    });
-    Ok(Json(WorkbenchOperationResponse {
-        message: "Seeded raw review geometry without roles, supports, loads, or material.".into(),
-        state,
-    }))
-}
-
-async fn seed_beam_demo_handler(
-    Json(request): Json<ProjectPathRequest>,
-) -> Result<Json<WorkbenchOperationResponse>, ApiError> {
-    let dir = PathBuf::from(request.project_dir);
-    let (mut project, _) = load_project(&dir)
-        .with_context(|| format!("failed to load project from {}", dir.display()))?;
-    seed_simply_supported_beam_in_project(&mut project, Some("builder.beam.authored"))
-        .context("failed to seed simply supported beam from project requirements")?;
-    persist_project_and_markdown(&dir, &project)?;
-    let mut state = build_workbench_state(&dir, &project)?;
-    state.latest_run_summary = Some(AnalysisRunSummary {
-        status: "completed".into(),
-        analysis_kind: "materialise".into(),
-        message: "Seeded a deterministic simply supported beam model.".into(),
-        run_id: None,
-    });
-    Ok(Json(WorkbenchOperationResponse {
-        message: "Seeded a deterministic simply supported beam from current project requirements."
-            .into(),
-        state,
-    }))
-}
-
-async fn beam_size_handler(
-    Json(request): Json<ProjectPathRequest>,
-) -> Result<Json<WorkbenchOperationResponse>, ApiError> {
-    let dir = PathBuf::from(request.project_dir);
-    let (mut project, _) = load_project(&dir)
-        .with_context(|| format!("failed to load project from {}", dir.display()))?;
-    let run_dir = persist_beam_sizing_run(&dir, &mut project)?;
-    let state = build_workbench_state(&dir, &project)?;
-    Ok(Json(WorkbenchOperationResponse {
-        message: format!("Saved beam sizing artefacts to {}", run_dir.display()),
-        state,
-    }))
-}
-
-async fn validate_handler(
-    Json(request): Json<ProjectPathRequest>,
-) -> Result<Json<WorkbenchOperationResponse>, ApiError> {
-    let dir = PathBuf::from(request.project_dir);
-    let (project, _) = load_project(&dir)
-        .with_context(|| format!("failed to load project from {}", dir.display()))?;
-    let run_dir = persist_validation_run(&dir, &project)?;
-    let state = build_workbench_state(&dir, &project)?;
-    Ok(Json(WorkbenchOperationResponse {
-        message: format!("Saved validation artefacts to {}", run_dir.display()),
-        state,
-    }))
-}
-
-async fn frame_run_calculix_handler(
-    Json(request): Json<ProjectPathRequest>,
-) -> Result<Json<WorkbenchOperationResponse>, ApiError> {
-    let dir = PathBuf::from(request.project_dir);
-    let (project, _) = load_project(&dir)
-        .with_context(|| format!("failed to load project from {}", dir.display()))?;
-    let run_dir = persist_frame_calculix_run(&dir, &project)?;
-    let state = build_workbench_state(&dir, &project)?;
-    Ok(Json(WorkbenchOperationResponse {
-        message: format!(
-            "Saved frame CalculiX run artefacts to {}",
-            run_dir.display()
-        ),
-        state,
-    }))
-}
-
 #[derive(Debug, Default, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BeamPlanningSystemParameters {
@@ -2592,12 +4186,14 @@ enum SupportedFamily {
     Unsupported(String),
 }
 
+#[cfg(test)]
 struct MaterializeOutcome {
     can_analyse: bool,
     message: String,
     run_summary: AnalysisRunSummary,
 }
 
+#[cfg(test)]
 struct AnalysisOutcome {
     message: String,
     run_summary: AnalysisRunSummary,
@@ -4705,13 +6301,52 @@ fn pi_session_schema() -> Value {
     schema
 }
 
+fn pi_conversation_schema() -> Value {
+    let operation = json!({
+        "oneOf": [
+            {"type":"object","properties":{"kind":{"const":"add_node"},"id":{"type":"string"},"x":{"type":"number"},"y":{"type":"number"},"z":{"type":"number"}},"required":["kind","id","x","y","z"],"additionalProperties":false},
+            {"type":"object","properties":{"kind":{"const":"move_node"},"nodeId":{"type":"string"},"x":{"type":"number"},"y":{"type":"number"},"z":{"type":"number"}},"required":["kind","nodeId","x","y","z"],"additionalProperties":false},
+            {"type":"object","properties":{"kind":{"const":"add_member"},"id":{"type":"string"},"startNode":{"type":"string"},"endNode":{"type":"string"},"role":{"type":"string"},"sectionId":{"type":"string"},"materialId":{"type":"string"}},"required":["kind","id","startNode","endNode","role","sectionId","materialId"],"additionalProperties":false},
+            {"type":"object","properties":{"kind":{"const":"add_support"},"id":{"type":"string"},"targetNode":{"type":"string"},"ux":{"type":"boolean"},"uy":{"type":"boolean"},"uz":{"type":"boolean"},"rx":{"type":"boolean"},"ry":{"type":"boolean"},"rz":{"type":"boolean"}},"required":["kind","id","targetNode","ux","uy","uz","rx","ry","rz"],"additionalProperties":false},
+            {"type":"object","properties":{"kind":{"const":"set_member_role"},"memberId":{"type":"string"},"role":{"type":"string"}},"required":["kind","memberId","role"],"additionalProperties":false}
+        ]
+    });
+    json!({
+        "type":"object",
+        "properties":{
+            "responseId":{"type":"string"},
+            "text":{"type":"string"},
+            "questions":{"type":"array","items":{"type":"string"}},
+            "proposal":{
+                "type":["object","null"],
+                "properties":{
+                    "proposalId":{"type":"string"},
+                    "proposedRevisionId":{"type":"string"},
+                    "parentRevisionId":{"type":"string"},
+                    "expectedSnapshotId":{"type":"string"},
+                    "shelfItemIds":{"type":"array","items":{"type":"string"}},
+                    "drawingInterpretationRevisionIds":{"type":"array","items":{"type":"string"}},
+                    "drawingInterpretationInferenceIds":{"type":"array","items":{"type":"string"}},
+                    "assumptions":{"type":"array","items":{"type":"string"}},
+                    "evidenceLimits":{"type":"array","items":{"type":"string"}},
+                    "operations":{"type":"array","minItems":1,"items":operation}
+                },
+                "required":["proposalId","proposedRevisionId","parentRevisionId","expectedSnapshotId","shelfItemIds","drawingInterpretationRevisionIds","drawingInterpretationInferenceIds","assumptions","evidenceLimits","operations"],
+                "additionalProperties":false
+            }
+        },
+        "required":["responseId","text","questions","proposal"],
+        "additionalProperties":false
+    })
+}
+
 fn pi_review_schema() -> Value {
     let schema = json!({
         "type": "object",
         "properties": {
             "agentMode": { "type": "string" },
             "model": { "type": "string" },
-            "reasoningEffort": { "type": "string", "enum": ["low"] },
+            "reasoningEffort": { "type": "string", "enum": ["high"] },
             "status": { "type": "string", "enum": ["needs_more_information", "ready_to_apply"] },
             "message": { "type": "string" },
             "followUp": { "type": ["string", "null"] },
@@ -5369,6 +7004,7 @@ fn normalize_agent_status(status: &str) -> String {
     }
 }
 
+#[cfg(test)]
 fn apply_agent_action_to_structural_model(
     model: &mut StructuralModel,
     action: &AgentProposedAction,
@@ -5383,6 +7019,7 @@ fn apply_agent_action_to_structural_model(
     }
 }
 
+#[cfg(test)]
 fn add_support_from_agent_action(
     model: &mut StructuralModel,
     action: &AgentProposedAction,
@@ -5463,6 +7100,7 @@ fn add_support_from_agent_action(
     ))
 }
 
+#[cfg(test)]
 fn add_load_from_agent_action(
     model: &mut StructuralModel,
     action: &AgentProposedAction,
@@ -5551,6 +7189,7 @@ fn add_load_from_agent_action(
     ))
 }
 
+#[cfg(test)]
 fn canonical_load_magnitude(
     magnitude: &Value,
     kind: LoadKind,
@@ -5599,6 +7238,7 @@ fn canonical_load_magnitude(
     ))
 }
 
+#[cfg(test)]
 fn target_member_ids_for_action(
     model: &StructuralModel,
     action: &AgentProposedAction,
@@ -5935,6 +7575,7 @@ fn apply_design_option_replacement_to_draft(
     ))
 }
 
+#[cfg(test)]
 fn unique_support_id(model: &StructuralModel, base: &str) -> String {
     let cleaned: String = base
         .chars()
@@ -6707,6 +8348,7 @@ Updated: {}\n\n\
     )
 }
 
+#[cfg(test)]
 fn materialize_current_planning(project: &mut ProjectFile) -> Result<MaterializeOutcome> {
     let draft = planning_draft(project);
     let readiness = evaluate_analysis_readiness(&draft);
@@ -6841,6 +8483,7 @@ fn materialize_current_planning(project: &mut ProjectFile) -> Result<Materialize
     }
 }
 
+#[cfg(test)]
 fn dispatch_analysis(project_dir: &Path, project: &mut ProjectFile) -> Result<AnalysisOutcome> {
     let draft = planning_draft(project);
     match supported_family(&draft) {
@@ -7744,6 +9387,13 @@ fn build_workbench_state(
     project_dir: &Path,
     project: &ProjectFile,
 ) -> Result<WorkbenchProjectState> {
+    let location = project_location(project_dir);
+    let package = load_project_package(&location.root).ok();
+    let document_id = package
+        .as_ref()
+        .and_then(|package| selected_package_design(package, location.design_id.as_ref()).ok())
+        .map(|design| design.manifest.id.to_string())
+        .unwrap_or_else(|| format!("fraia-document:{}", project.created_at));
     let structural_model = materialize_project_structural_model(project);
     let draft = planning_draft(project);
     let mut readiness = evaluate_analysis_readiness(&draft);
@@ -7809,7 +9459,7 @@ fn build_workbench_state(
     Ok(WorkbenchProjectState {
         overview: WorkbenchProjectOverview {
             project_dir: project_dir.display().to_string(),
-            document_id: format!("fraia-document:{}", project.created_at),
+            document_id,
             name: project.name.clone(),
             building_type: project.intent.building_type.clone(),
             design_stage: project.intent.design_stage.clone(),
@@ -10596,6 +12246,1864 @@ mod tests {
     use super::*;
 
     #[test]
+    fn production_router_has_no_direct_base_model_edit_authority() {
+        let source = include_str!("main.rs");
+        assert!(!source.contains(&["/projects/base-model", "/edit"].concat()));
+        assert!(!source.contains(&["async fn base_model", "_edit_handler"].concat()));
+        for retired_route in [
+            ["/projects/seed-frame", "-demo"].concat(),
+            ["/projects/seed-frame-review", "-demo"].concat(),
+            ["/projects/seed-beam", "-demo"].concat(),
+            ["/agent/apply", "-review"].concat(),
+        ] {
+            assert!(!source.contains(&format!(".route(\"{retired_route}\"")));
+        }
+        for handler in registered_post_handlers(source) {
+            let body = function_source(source, &handler);
+            for forbidden in [
+                ".structural_model =",
+                ".structural_model.as_mut()",
+                "materialize_current_planning(",
+                "apply_agent_action_to_structural_model(",
+                "persist_beam_sizing_run(",
+                "persist_design_option_analysis_run(",
+                "persist_validation_run(",
+                "persist_frame_calculix_run(",
+            ] {
+                assert!(
+                    !body.contains(forbidden),
+                    "registered handler {handler} retains direct authored-model authority through {forbidden}"
+                );
+            }
+        }
+    }
+
+    fn registered_post_handlers(source: &str) -> Vec<String> {
+        source
+            .split("post(")
+            .skip(1)
+            .filter_map(|tail| {
+                let name = tail.split(')').next()?.trim();
+                name.ends_with("_handler").then(|| name.to_owned())
+            })
+            .collect()
+    }
+
+    fn function_source<'a>(source: &'a str, name: &str) -> &'a str {
+        let start = source
+            .find(&format!("fn {name}"))
+            .unwrap_or_else(|| panic!("registered handler {name} has no function"));
+        let body_start = source[start..].find('{').unwrap() + start;
+        let mut depth = 0usize;
+        for (offset, byte) in source[body_start..].bytes().enumerate() {
+            match byte {
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return &source[start..=body_start + offset];
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!("registered handler {name} has no closing brace")
+    }
+
+    #[test]
+    fn pi_turn_scope_serializes_as_an_explicit_design_identity() {
+        let schema = json!({"type":"object"});
+        let request = PiTurnRequest {
+            request_id: "turn-1",
+            scope_id: Some("design-2"),
+            provider_id: FRAIA_AI_PROVIDER_ID,
+            model_id: FRAIA_AI_MODEL_ID,
+            reasoning_effort: "high",
+            deadline_at_unix_ms: Some(1_800_000_000_000),
+            prompt: "prompt",
+            response_schema: &schema,
+        };
+        let value = serde_json::to_value(request).unwrap();
+        assert_eq!(value["scopeId"], "design-2");
+        assert_eq!(value["requestId"], "turn-1");
+        assert_eq!(value["deadlineAtUnixMs"], 1_800_000_000_000_u64);
+    }
+
+    #[test]
+    fn fake_agent_proposal_echoes_exact_e2e_design_reference_bindings() {
+        let mut proposal = PiConversationProposal {
+            proposal_id: "fake-proposal-typed-1".into(),
+            proposed_revision_id: fraia_revision::RevisionId::from("fake-revision-typed-1"),
+            parent_revision_id: fraia_revision::RevisionId::from("exact-head"),
+            expected_snapshot_id: fraia_revision::SnapshotId::from("exact-snapshot"),
+            shelf_item_ids: vec!["plan-page-1".into()],
+            drawing_interpretation_revision_ids: vec!["interpretation-1".into()],
+            drawing_interpretation_inference_ids: vec![
+                "interpretation-1:inference:observation-1".into(),
+            ],
+            assumptions: vec!["The explicit test span is six metres.".into()],
+            evidence_limits: vec!["No analysis results are available.".into()],
+            operations: vec![fraia_app_api::ConversationProposalOperation::AddNode {
+                id: "test-left".into(),
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            }],
+        };
+        let selected = vec!["plan-page-1".into()];
+        let interpretations = vec!["interpretation-1".into()];
+        validate_agent_proposal_bindings(
+            &proposal,
+            &fraia_revision::RevisionId::from("exact-head"),
+            &fraia_revision::SnapshotId::from("exact-snapshot"),
+            &selected,
+            &interpretations,
+            &["interpretation-1:inference:observation-1".into()],
+        )
+        .unwrap();
+        let inferred_summary = "Inferred drawing candidate interpretation-1:inference:observation-1 has confidence 0.900, requires confirmation, and is not a confirmed fact.".to_string();
+        assert!(
+            validate_material_inference_disclosure(&proposal, &[inferred_summary.clone()]).is_err()
+        );
+        proposal.assumptions.push(inferred_summary);
+        proposal.evidence_limits.push(
+            "Every inferred drawing candidate requires confirmation and is not a confirmed fact."
+                .into(),
+        );
+        validate_material_inference_disclosure(&proposal, &proposal.assumptions[1..]).unwrap();
+
+        assert!(
+            validate_agent_proposal_bindings(
+                &proposal,
+                &fraia_revision::RevisionId::from("exact-head"),
+                &fraia_revision::SnapshotId::from("exact-snapshot"),
+                &[],
+                &interpretations,
+                &["interpretation-1:inference:observation-1".into()],
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn conversation_agent_endpoint_prompt_and_proposal_keep_exact_non_empty_bindings() {
+        let references = vec![
+            "dxf-selection-1".to_string(),
+            "ifc-selection-1".to_string(),
+            "mesh-view-1".to_string(),
+        ];
+        let interpretations = vec!["drawing-interpretation-1".to_string()];
+        let inferences = vec!["drawing-interpretation-1:inference:grid-a".to_string()];
+        let context = json!({
+            "acceptedHeadRevisionId": "exact-head",
+            "acceptedSemanticModel": {"nodes": [], "members": []},
+            "acceptedSnapshotId": "exact-snapshot",
+            "confirmedDrawingInterpretations": [{"revisionId": "drawing-interpretation-1", "confirmedConstraints": []}],
+            "confirmedFacts": {"buildingType": "house"},
+            "contract": "fraia.conversation-agent.v1",
+            "drawingInterpretationRevisionIds": interpretations,
+            "inferredDrawingAssumptionIds": inferences,
+            "requestMarker": "FRAIA_FAKE_TYPED_PROPOSAL_REQUEST",
+            "selectedConfirmedDesignReferences": [{"id": "dxf-selection-1"}],
+            "selectedDesignReferenceIds": references,
+        });
+        let prompt = conversation_agent_prompt(&context).unwrap();
+        let projected: Value = serde_json::from_str(prompt.split_once('\n').unwrap().1).unwrap();
+        assert_eq!(
+            projected["selectedDesignReferenceIds"]
+                .as_array()
+                .unwrap()
+                .len(),
+            3
+        );
+        assert_eq!(
+            projected["drawingInterpretationRevisionIds"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            projected["inferredDrawingAssumptionIds"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+
+        let proposal: PiConversationProposal = serde_json::from_value(json!({
+            "proposalId": "fake-proposal-typed-1",
+            "proposedRevisionId": "fake-revision-typed-1",
+            "parentRevisionId": "exact-head",
+            "expectedSnapshotId": "exact-snapshot",
+            "shelfItemIds": projected["selectedDesignReferenceIds"],
+            "drawingInterpretationRevisionIds": projected["drawingInterpretationRevisionIds"],
+            "drawingInterpretationInferenceIds": projected["inferredDrawingAssumptionIds"],
+            "assumptions": ["The inferred candidate requires confirmation."],
+            "evidenceLimits": ["The inferred candidate is not a confirmed fact."],
+            "operations": [{"kind":"add_node","id":"left","x":0.0,"y":0.0,"z":0.0}]
+        }))
+        .unwrap();
+        validate_agent_proposal_bindings(
+            &proposal,
+            &fraia_revision::RevisionId::from("exact-head"),
+            &fraia_revision::SnapshotId::from("exact-snapshot"),
+            &references,
+            &interpretations,
+            &inferences,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn compact_conversation_prompt_preserves_exact_evidence_and_bindings() {
+        let references = ["dxf-selection-1", "ifc-selection-1", "mesh-view-1"];
+        let interpretation_id = "drawing-interpretation-1";
+        let inference_id = "drawing-interpretation-1:inference:grid-a";
+        let reference = |id: &str, kind: &str| {
+            json!({
+                "id": id,
+                "label": format!("Selected {kind} reference"),
+                "annotations": [{"id":"note-1","annotation_kind":"circle","points":[[10.0,20.0],[30.0,40.0]],"text":"Use this grid"}],
+                "confirmation": {"confirmed":true,"confirmed_by":"engineer","confirmed_at":"2026-08-14T00:00:00Z"},
+                "provenance": {"created_at":"2026-08-14T00:00:00Z","created_by":"engineer","method":"selection","derivative_id":"derivative-1"},
+                "drawing_context": {"view_role":"plan","orientation":{"forward":[0.0,0.0,-1.0],"up":[0.0,1.0,0.0]}},
+                "kind": kind,
+                "source": {"source_id":format!("source-{id}"),"source_sha256":format!("sha256-{id}")},
+                "object_ids": [format!("object-{id}")],
+                "transform": {"translation":[0.0,0.0,0.0],"rotation_degrees":[0.0,0.0,0.0],"scale":[1.0,1.0,1.0]},
+                "orientation": {"forward":[0.0,0.0,-1.0],"up":[0.0,1.0,0.0]},
+                "scale": 1.0
+            })
+        };
+        let context = json!({
+            "contract": "fraia.conversation-agent.v1",
+            "requestMarker": "",
+            "projectId": "package-project",
+            "designId": "design-main",
+            "conversationId": "overall",
+            "acceptedHeadRevisionId": "revision-exact",
+            "acceptedSnapshotId": "snapshot-exact",
+            "acceptedSemanticModel": {"dimension":"3d","counts":{"nodes":0,"members":0,"plates":0,"supports":0,"loads":0,"releases":0},"members":[],"supports":[],"validation":{"status":"valid","diagnostics":[]}},
+            "confirmedFacts": {"buildingType":"house","objective":"Steel framing for the whole house"},
+            "selectedDesignReferenceIds": references,
+            "selectedConfirmedDesignReferences": [
+                reference(references[0], "cad_selection"),
+                reference(references[1], "ifc_selection"),
+                reference(references[2], "saved3d_view")
+            ],
+            "drawingInterpretationRevisionIds": [interpretation_id],
+            "confirmedDrawingInterpretations": [{
+                "projectId":"package-project",
+                "designId":"design-main",
+                "revisionId":interpretation_id,
+                "confirmedConstraints":[{"observationId":"grid-a","shelfItemId":references[0],"sourceId":"source-dxf","sourceSha256":"sha256-dxf","sourceLocator":{"kind":"dxf_entity","entityId":"grid-a"},"sourceGeometry":{"kind":"line","start":[0.0,0.0],"end":[6.0,0.0]},"designGeometry":{"kind":"line","start":[0.0,0.0,0.0],"end":[6.0,0.0,0.0]},"feature":{"kind":"grid_line","label":"A"}}],
+                "inferredAssumptions":[{"inferenceId":inference_id,"interpretationRevisionId":interpretation_id,"observationId":"grid-a","shelfItemId":references[0],"sourceId":"source-dxf","sourceSha256":"sha256-dxf","sourceLocator":{"kind":"dxf_entity","entityId":"grid-a"},"extraction":{"method":"dxf","confidence":0.91,"uncertainty":"Scale needs review"},"feature":{"kind":"grid_line","label":"A"},"materiallyConflicted":false,"requiresConfirmation":true}],
+                "unresolvedConflicts":[],
+                "unconfirmedObservationIds":[]
+            }],
+            "inferredDrawingAssumptionIds": [inference_id],
+            "inferredDrawingAssumptions": [format!("Inferred drawing candidate {inference_id} has confidence 0.910, requires confirmation, and is not a confirmed fact.")],
+            "diagnostics": [],
+            "allowedOperationKinds": ["add_node","move_node","add_member","add_support","set_member_role"],
+            "userText": "Use the confirmed references to propose the initial framing line.",
+            "proposalModelContext": {"currentNodeIds":[],"currentMemberIds":[],"allowedSectionIds":["200UB","250UB","310UB","360UB","410UB","460UB"],"allowedMaterialIds":["steel"]}
+        });
+        let legacy_prompt = format!(
+            "{CONVERSATION_AGENT_INSTRUCTION}\n{}",
+            serde_json::to_string_pretty(&context).unwrap()
+        );
+        let compact_prompt = conversation_agent_prompt(&context).unwrap();
+        let projected: Value =
+            serde_json::from_str(compact_prompt.split_once('\n').unwrap().1).unwrap();
+
+        assert_eq!(projected["designId"], "design-main");
+        assert_eq!(projected["acceptedHeadRevisionId"], "revision-exact");
+        assert_eq!(projected["acceptedSnapshotId"], "snapshot-exact");
+        assert_eq!(projected["selectedDesignReferenceIds"], json!(references));
+        assert_eq!(
+            projected["drawingInterpretationRevisionIds"],
+            json!([interpretation_id])
+        );
+        assert_eq!(
+            projected["inferredDrawingAssumptionIds"],
+            json!([inference_id])
+        );
+        assert_eq!(
+            projected["selectedConfirmedDesignReferences"][0]["annotations"],
+            context["selectedConfirmedDesignReferences"][0]["annotations"]
+        );
+        assert_eq!(
+            projected["selectedConfirmedDesignReferences"][0]["source"],
+            context["selectedConfirmedDesignReferences"][0]["source"]
+        );
+        assert_eq!(
+            projected["confirmedDrawingInterpretations"][0]["confirmedConstraints"],
+            context["confirmedDrawingInterpretations"][0]["confirmedConstraints"]
+        );
+        assert_eq!(
+            projected["confirmedDrawingInterpretations"][0]["inferredAssumptions"],
+            context["confirmedDrawingInterpretations"][0]["inferredAssumptions"]
+        );
+        assert!(projected.get("projectId").is_none());
+        assert!(projected.get("conversationId").is_none());
+        assert!(projected.get("allowedOperationKinds").is_none());
+        assert!(
+            projected["selectedConfirmedDesignReferences"][0]
+                .get("confirmation")
+                .is_none()
+        );
+        assert!(
+            projected["selectedConfirmedDesignReferences"][0]
+                .get("provenance")
+                .is_none()
+        );
+        assert!(compact_prompt.len() < legacy_prompt.len());
+
+        let blank = json!({
+            "contract":"fraia.conversation-agent.v1",
+            "designId":"design-blank",
+            "acceptedHeadRevisionId":"design-blank:root",
+            "acceptedSnapshotId":"snapshot-root",
+            "acceptedSemanticModel":{"dimension":"empty","counts":{"nodes":0,"members":0,"plates":0,"supports":0,"loads":0,"releases":0}},
+            "confirmedFacts":{},
+            "selectedDesignReferenceIds":[],
+            "selectedConfirmedDesignReferences":[],
+            "drawingInterpretationRevisionIds":[],
+            "confirmedDrawingInterpretations":[],
+            "inferredDrawingAssumptionIds":[],
+            "inferredDrawingAssumptions":[],
+            "diagnostics":[],
+            "allowedOperationKinds":["add_node","move_node","add_member","add_support","set_member_role"],
+            "userText":"Create a simple six metre beam with simple supports.",
+            "proposalModelContext":{"currentNodeIds":[],"currentMemberIds":[],"allowedSectionIds":["200UB","250UB","310UB","360UB","410UB","460UB"],"allowedMaterialIds":["steel"]}
+        });
+        let blank_legacy = format!(
+            "{CONVERSATION_AGENT_INSTRUCTION}\n{}",
+            serde_json::to_string_pretty(&blank).unwrap()
+        );
+        let blank_compact = conversation_agent_prompt(&blank).unwrap();
+        let schema_bytes = serde_json::to_vec(&pi_conversation_schema()).unwrap().len();
+        eprintln!(
+            "conversation prompt bytes realistic legacy={} compact={}; blank legacy={} compact={}; response_schema={}",
+            legacy_prompt.len(),
+            compact_prompt.len(),
+            blank_legacy.len(),
+            blank_compact.len(),
+            schema_bytes
+        );
+    }
+
+    #[test]
+    fn reviewed_pi_schema_decodes_the_exact_fake_typed_wire_response() {
+        let response: PiConversationResponse = serde_json::from_value(json!({
+            "responseId": "fake-response-typed-1",
+            "text": "Review this typed proposal.",
+            "questions": [],
+            "proposal": {
+                "proposalId": "fake-proposal-typed-1",
+                "proposedRevisionId": "fake-revision-typed-1",
+                "parentRevisionId": "design-main:root",
+                "expectedSnapshotId": "snapshot-non-root",
+                "shelfItemIds": ["confirmed-plan"],
+                "drawingInterpretationRevisionIds": [],
+                "drawingInterpretationInferenceIds": [],
+                "assumptions": ["The span is six metres."],
+                "evidenceLimits": ["No analysis results are available."],
+                "operations": [
+                    {"kind":"add_node","id":"test-left","x":0.0,"y":0.0,"z":0.0},
+                    {"kind":"add_node","id":"test-right","x":6.0,"y":0.0,"z":0.0},
+                    {"kind":"add_member","id":"test-beam","startNode":"test-left","endNode":"test-right","role":"beam","sectionId":"250UB","materialId":"steel"},
+                    {"kind":"add_support","id":"test-left-support","targetNode":"test-left","ux":true,"uy":true,"uz":true,"rx":false,"ry":false,"rz":false}
+                ]
+            }
+        }))
+        .unwrap();
+        let proposal = response.proposal.unwrap();
+        assert!(matches!(
+            &proposal.operations[2],
+            fraia_app_api::ConversationProposalOperation::AddMember { start_node, end_node, .. }
+                if start_node == "test-left" && end_node == "test-right"
+        ));
+        assert!(matches!(
+            &proposal.operations[3],
+            fraia_app_api::ConversationProposalOperation::AddSupport { target_node, .. }
+                if target_node == "test-left"
+        ));
+    }
+
+    #[test]
+    fn reviewed_pi_schema_requires_canonical_support_target_node() {
+        let schema = pi_conversation_schema();
+        let support =
+            &schema["properties"]["proposal"]["properties"]["operations"]["items"]["oneOf"][3];
+        assert_eq!(support["properties"]["targetNode"]["type"], "string");
+        assert!(support["properties"].get("nodeId").is_none());
+        assert!(
+            support["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|field| field == "targetNode")
+        );
+    }
+
+    #[test]
+    fn correction_prompt_is_bounded_to_schema_error_and_structured_output() {
+        let schema = pi_conversation_schema();
+        let rejected = json!({"proposal":{"operations":[{"kind":"add_support","nodeId":"n1"}]}});
+        let prompt = structured_response_correction_prompt(
+            "Original exact Fraia context",
+            &schema,
+            &rejected,
+            "missing field `targetNode`",
+        )
+        .unwrap();
+        assert!(prompt.contains("before any design mutation"));
+        assert!(prompt.contains("missing field `targetNode`"));
+        assert!(prompt.contains("\"targetNode\""));
+        assert!(prompt.contains("\"nodeId\":\"n1\""));
+        assert!(prompt.contains("Original exact Fraia context"));
+    }
+
+    #[test]
+    fn malformed_conversation_response_is_corrected_once_before_decode() {
+        let schema = pi_conversation_schema();
+        let malformed = json!({
+            "responseId": "response-malformed",
+            "text": "Review this proposal.",
+            "proposal": {
+                "proposalId": "proposal-1",
+                "proposedRevisionId": "revision-1",
+                "parentRevisionId": "head-1",
+                "expectedSnapshotId": "snapshot-1",
+                "operations": [{
+                    "kind": "add_support",
+                    "id": "support-1",
+                    "nodeId": "node-1",
+                    "ux": true,
+                    "uy": true,
+                    "uz": true,
+                    "rx": false,
+                    "ry": false,
+                    "rz": false
+                }]
+            }
+        });
+        let corrected = json!({
+            "responseId": "response-corrected",
+            "text": "Review this corrected proposal.",
+            "proposal": {
+                "proposalId": "proposal-1",
+                "proposedRevisionId": "revision-1",
+                "parentRevisionId": "head-1",
+                "expectedSnapshotId": "snapshot-1",
+                "operations": [{
+                    "kind": "add_support",
+                    "id": "support-1",
+                    "targetNode": "node-1",
+                    "ux": true,
+                    "uy": true,
+                    "uz": true,
+                    "rx": false,
+                    "ry": false,
+                    "rz": false
+                }]
+            }
+        });
+        let mut envelopes = std::collections::VecDeque::from([
+            test_pi_turn_response(malformed),
+            test_pi_turn_response(corrected),
+        ]);
+        let mut prompts = Vec::new();
+        let (response, _) = decode_pi_conversation_response_with_one_correction(
+            "Original exact context",
+            &schema,
+            |prompt| {
+                prompts.push(prompt.to_owned());
+                envelopes
+                    .pop_front()
+                    .ok_or_else(|| anyhow!("unexpected third turn"))
+            },
+        )
+        .unwrap();
+
+        assert_eq!(prompts.len(), 2);
+        assert_eq!(prompts[0], "Original exact context");
+        assert!(prompts[1].contains("missing field `targetNode`"));
+        assert!(prompts[1].contains("\"targetNode\""));
+        assert!(matches!(
+            &response.proposal.unwrap().operations[0],
+            fraia_app_api::ConversationProposalOperation::AddSupport { target_node, .. }
+                if target_node == "node-1"
+        ));
+    }
+
+    #[test]
+    fn malformed_conversation_response_stops_after_one_correction() {
+        let schema = pi_conversation_schema();
+        let malformed = json!({
+            "responseId": "response-malformed",
+            "text": "Review this proposal.",
+            "proposal": {
+                "proposalId": "proposal-1",
+                "proposedRevisionId": "revision-1",
+                "parentRevisionId": "head-1",
+                "expectedSnapshotId": "snapshot-1",
+                "operations": [{"kind":"add_support","id":"support-1","nodeId":"node-1"}]
+            }
+        });
+        let mut calls = 0;
+        let error = decode_pi_conversation_response_with_one_correction(
+            "Original exact context",
+            &schema,
+            |_| {
+                calls += 1;
+                Ok(test_pi_turn_response(malformed.clone()))
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(calls, 2);
+        assert!(
+            error
+                .to_string()
+                .contains("after one schema-correction attempt")
+        );
+        assert!(error.to_string().contains("first error"));
+    }
+
+    #[test]
+    fn invalid_section_reference_is_corrected_once_before_proposal_persistence() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut service = conversation_transport::ConversationService::default();
+        let root = service
+            .create(fraia_app_api::ConversationCreateRequest {
+                project_id: fraia_revision::ProjectId::from("section-correction"),
+                project_dir: directory.path().display().to_string(),
+                conversation_id: fraia_revision::ConversationId::from("overall"),
+                purpose: "Overall framing".into(),
+                project_facts: Default::default(),
+            })
+            .unwrap();
+        let response = |section_id: &str| {
+            test_pi_turn_response(json!({
+                "responseId": "section-response",
+                "text": "Review the supported beam.",
+                "proposal": {
+                    "proposalId": "section-proposal",
+                    "proposedRevisionId": "section-revision",
+                    "parentRevisionId": root.head_revision_id,
+                    "expectedSnapshotId": root.head_snapshot_id,
+                    "operations": [
+                        {"kind":"add_node","id":"left","x":0.0,"y":0.0,"z":0.0},
+                        {"kind":"add_node","id":"right","x":6.0,"y":0.0,"z":0.0},
+                        {"kind":"add_member","id":"beam","startNode":"left","endNode":"right","role":"beam","sectionId":section_id,"materialId":"steel"}
+                    ]
+                }
+            }))
+        };
+        let mut envelopes =
+            std::collections::VecDeque::from([response("section-unspecified"), response("250UB")]);
+        let mut prompts = Vec::new();
+        let (corrected, _) = decode_and_validate_pi_conversation_response_with_one_correction(
+            "Exact model context includes allowedSectionIds [\"250UB\"]",
+            &pi_conversation_schema(),
+            |prompt| {
+                prompts.push(prompt.to_owned());
+                envelopes
+                    .pop_front()
+                    .ok_or_else(|| anyhow!("unexpected third turn"))
+            },
+            |candidate| {
+                service
+                    .validate_proposal_operations(
+                        &fraia_revision::ProjectId::from("section-correction"),
+                        &fraia_revision::ConversationId::from("overall"),
+                        &candidate.proposal.as_ref().unwrap().operations,
+                    )
+                    .map_err(anyhow::Error::msg)
+            },
+        )
+        .unwrap();
+
+        assert_eq!(prompts.len(), 2);
+        assert!(prompts[1].contains("unknown section `section-unspecified`"));
+        assert!(prompts[1].contains("allowedSectionIds [\"250UB\"]"));
+        assert!(matches!(
+            &corrected.proposal.unwrap().operations[2],
+            fraia_app_api::ConversationProposalOperation::AddMember { section_id, .. }
+                if section_id == "250UB"
+        ));
+        assert!(
+            service
+                .proposal_model_context(
+                    &fraia_revision::ProjectId::from("section-correction"),
+                    &fraia_revision::ConversationId::from("overall")
+                )
+                .unwrap()["currentMemberIds"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    fn test_pi_turn_response(output: Value) -> PiTurnResponse {
+        PiTurnResponse {
+            output,
+            provider_id: "openai-codex".into(),
+            model_id: "gpt-5.6-luna".into(),
+            reasoning_effort: "high".into(),
+            catalogue_refreshed_at: Some("2026-08-14T00:00:00Z".into()),
+        }
+    }
+
+    fn test_pdf_shelf_item(source: &fraia_core::SourceRecord) -> fraia_core::ShelfItem {
+        fraia_core::ShelfItem {
+            id: "plan-page-1".into(),
+            label: "Level 1 plan".into(),
+            annotations: Vec::new(),
+            confirmation: fraia_core::ShelfConfirmation {
+                confirmed: true,
+                confirmed_by: Some("user".into()),
+                confirmed_at: Some("fixture".into()),
+            },
+            provenance: fraia_core::ShelfProvenance {
+                created_at: "fixture".into(),
+                created_by: "user".into(),
+                method: "pdf_page".into(),
+                derivative_id: None,
+            },
+            drawing_context: None,
+            content: fraia_core::ShelfItemContent::PdfPage {
+                source: fraia_core::ShelfSourceRef {
+                    source_id: source.id.clone(),
+                    source_sha256: source.sha256.clone(),
+                },
+                page_number: 1,
+                layout: fraia_core::ShelfLayout {
+                    media_box: fraia_core::ShelfRect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 841.0,
+                        height: 595.0,
+                        coordinate_space: "pdf_points".into(),
+                    },
+                    crop_box: None,
+                    rotation_degrees: 0,
+                    user_unit: 1.0,
+                },
+            },
+        }
+    }
+
+    fn one_page_pdf_fixture() -> Vec<u8> {
+        let objects = [
+            "<</Type/Catalog/Pages 2 0 R>>",
+            "<</Type/Pages/Kids[3 0 R]/Count 1/MediaBox[10 20 610 420]>>",
+            "<</Type/Page/Parent 2 0 R/Rotate 90/Contents 4 0 R>>",
+            "<</Length 0>>stream\n\nendstream",
+        ];
+        let mut bytes = b"%PDF-1.4\n".to_vec();
+        let mut offsets = vec![0usize];
+        for (index, object) in objects.iter().enumerate() {
+            offsets.push(bytes.len());
+            bytes.extend_from_slice(format!("{} 0 obj\n{object}\nendobj\n", index + 1).as_bytes());
+        }
+        let xref = bytes.len();
+        bytes.extend_from_slice(
+            format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes(),
+        );
+        for offset in offsets.into_iter().skip(1) {
+            bytes.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        }
+        bytes.extend_from_slice(
+            format!(
+                "trailer<</Root 1 0 R/Size {}>>\nstartxref\n{xref}\n%%EOF\n",
+                objects.len() + 1
+            )
+            .as_bytes(),
+        );
+        bytes
+    }
+
+    fn dxf_plan_fixture() -> Vec<u8> {
+        b"0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1027\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n0\nLAYER\n2\nSTEEL\n70\n0\n62\n7\n0\nENDTAB\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n0\nLINE\n5\n1A\n8\nSTEEL\n410\nModel\n10\n0\n20\n0\n30\n0\n11\n6000\n21\n0\n31\n0\n0\nENDSEC\n0\nEOF\n"
+            .to_vec()
+    }
+
+    fn ifc_reference_fixture() -> Vec<u8> {
+        b"ISO-10303-21;HEADER;FILE_SCHEMA(('IFC4'));ENDSEC;DATA;#1=IFCCARTESIANPOINT((0.,0.,3000.));#2=IFCAXIS2PLACEMENT3D(#1,$,$);#3=IFCLOCALPLACEMENT($,#2);#10=IFCBUILDINGSTOREY('STOREY2',$,'Level 2',$,$,#3,$,$,.ELEMENT.,3000.);#20=IFCBEAM('BEAM1',$,'Architect beam',$,$,#3,#99,$,$);#30=IFCRELCONTAINEDINSPATIALSTRUCTURE('REL1',$,$,$,(#20),#10);#40=IFCSIUNIT(*,.LENGTHUNIT.,.MILLI.,.METRE.);ENDSEC;END-ISO-10303-21;".to_vec()
+    }
+
+    #[tokio::test]
+    async fn source_selection_is_project_bound_single_use_and_endpoints_survive_restart() {
+        let directory = tempfile::tempdir().expect("temporary root");
+        let project_dir = directory.path().join("source-project");
+        let other_project = directory.path().join("other-project");
+        create_named_project_package(&project_dir, "Sources").expect("create source project");
+        create_named_project_package(&other_project, "Other").expect("create other project");
+        let input = directory.path().join("plan.pdf");
+        fs::write(&input, b"%PDF-1.7\nfixture\n%%EOF\n").expect("write PDF fixture");
+        let registry = Arc::new(SourceSelectionRegistry::default());
+
+        let issued = source_selection_issue_handler(
+            Extension(registry.clone()),
+            Json(SourceSelectionIssueRequest {
+                project_dir: project_dir.display().to_string(),
+                selected_path: input.display().to_string(),
+            }),
+        )
+        .await
+        .expect("issue selection")
+        .0;
+        let wrong_project = source_import_handler(
+            Extension(registry.clone()),
+            Json(SourceImportRequest {
+                project_dir: other_project.display().to_string(),
+                selection_token: issued.selection_token,
+                display_alias: None,
+                expected_media_type: None,
+            }),
+        )
+        .await
+        .expect_err("reject project token confusion");
+        assert_eq!(wrong_project.status, StatusCode::BAD_REQUEST);
+
+        let issued = source_selection_issue_handler(
+            Extension(registry.clone()),
+            Json(SourceSelectionIssueRequest {
+                project_dir: project_dir.display().to_string(),
+                selected_path: input.display().to_string(),
+            }),
+        )
+        .await
+        .expect("issue second selection")
+        .0;
+        let import_request = SourceImportRequest {
+            project_dir: project_dir.display().to_string(),
+            selection_token: issued.selection_token.clone(),
+            display_alias: Some("architect-plan.pdf".into()),
+            expected_media_type: Some(fraia_core::SourceMediaType::Pdf),
+        };
+        let imported =
+            source_import_handler(Extension(registry.clone()), Json(import_request.clone()))
+                .await
+                .expect("import selected source")
+                .0;
+        let reused = source_import_handler(Extension(registry), Json(import_request))
+            .await
+            .expect_err("reject reused selection token");
+        assert_eq!(reused.status, StatusCode::BAD_REQUEST);
+
+        let listed = source_list_handler(Json(SourceListRequest {
+            project_dir: project_dir.display().to_string(),
+        }))
+        .await
+        .expect("list imported sources")
+        .0;
+        assert_eq!(listed.sources, vec![imported.record.clone()]);
+        let inspected = source_inspect_handler(Json(SourceInspectRequest {
+            project_dir: project_dir.display().to_string(),
+            source_id: imported.record.id.clone(),
+        }))
+        .await
+        .expect("inspect imported source")
+        .0;
+        assert_eq!(inspected.source, imported.record);
+
+        drop(SourceSelectionRegistry::default());
+        assert_eq!(
+            source_list_handler(Json(SourceListRequest {
+                project_dir: project_dir.display().to_string(),
+            }))
+            .await
+            .expect("list after app registry restart")
+            .0
+            .sources
+            .len(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn source_removal_enumerates_live_shelf_references_before_deleting() {
+        let directory = tempfile::tempdir().expect("temporary root");
+        let project_dir = directory.path().join("reference-project");
+        create_named_project_package(&project_dir, "References").expect("create project");
+        let design_id = load_project_package(&project_dir).expect("package").designs[0]
+            .manifest
+            .id
+            .clone();
+        let input = directory.path().join("plan.pdf");
+        fs::write(&input, b"%PDF-1.7\nfixture\n%%EOF\n").expect("write PDF fixture");
+        let imported = import_source(
+            &project_dir,
+            fraia_core::SourceImportRequest {
+                selected_path: input,
+                display_alias: None,
+                expected_media_type: None,
+            },
+        )
+        .expect("import source")
+        .record;
+        let _ = shelf_upsert_handler(Json(ShelfUpsertRequest {
+            project_dir: project_dir.display().to_string(),
+            design_id: design_id.clone(),
+            item: test_pdf_shelf_item(&imported),
+        }))
+        .await
+        .expect("add shelf item");
+
+        let refused = source_remove_handler(Json(SourceRemoveRequest {
+            project_dir: project_dir.display().to_string(),
+            source_id: imported.id.clone(),
+        }))
+        .await
+        .expect_err("refuse referenced source removal");
+        assert_eq!(refused.status, StatusCode::CONFLICT);
+        assert!(inspect_source(&project_dir, &imported.id).is_ok());
+
+        let _ = shelf_remove_handler(Json(ShelfRemoveRequest {
+            project_dir: project_dir.display().to_string(),
+            design_id,
+            item_id: "plan-page-1".into(),
+        }))
+        .await
+        .expect("remove shelf reference");
+        let _ = source_remove_handler(Json(SourceRemoveRequest {
+            project_dir: project_dir.display().to_string(),
+            source_id: imported.id.clone(),
+        }))
+        .await
+        .expect("remove unreferenced source");
+        assert!(matches!(
+            inspect_source(&project_dir, &imported.id),
+            Err(fraia_core::SourceLibraryError::SourceNotFound(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn interpretation_endpoints_persist_exact_design_lineage_across_restart() {
+        let directory = tempfile::tempdir().expect("temporary root");
+        let project_dir = directory.path().join("interpretation-project");
+        let package =
+            create_named_project_package(&project_dir, "Interpretations").expect("create project");
+        let design_id = package.designs[0].manifest.id.clone();
+        let project_id = package.manifest.id;
+        let workspace = design_package_paths(&project_dir, &design_id)
+            .expect("design paths")
+            .workspace_database;
+        let repository = SqliteRevisionRepository::open(&workspace)
+            .expect("keep design revision database open during interpretation updates");
+        let input = directory.path().join("plan.pdf");
+        fs::write(&input, b"%PDF-1.7\nfixture\n%%EOF\n").expect("write source");
+        let source = import_source(
+            &project_dir,
+            fraia_core::SourceImportRequest {
+                selected_path: input,
+                display_alias: None,
+                expected_media_type: None,
+            },
+        )
+        .expect("import source")
+        .record;
+        let _ = shelf_upsert_handler(Json(ShelfUpsertRequest {
+            project_dir: project_dir.display().to_string(),
+            design_id: design_id.clone(),
+            item: test_pdf_shelf_item(&source),
+        }))
+        .await
+        .expect("add shelf item");
+
+        let observation = fraia_core::DrawingObservation {
+            id: "grid-a".into(),
+            shelf_item_id: "plan-page-1".into(),
+            source_id: source.id.clone(),
+            source_sha256: source.sha256.clone(),
+            source_locator: fraia_core::DrawingSourceLocator::PdfPage {
+                page_number: 1,
+                coordinate_space: "pdf_points".into(),
+            },
+            view_role: fraia_core::DrawingViewRole::Plan,
+            source_geometry: fraia_core::ObservationSourceGeometry::Polyline {
+                coordinates: vec![[0.0, 0.0], [0.0, 100.0]],
+                closed: false,
+            },
+            design_geometry: None,
+            extraction: fraia_core::ObservationExtraction {
+                method: fraia_core::InterpretationMethod::NativeVectorExtraction,
+                producer: "fixture".into(),
+                producer_version: "1".into(),
+                confidence: 0.8,
+                uncertainty: Vec::new(),
+            },
+            confirmation: fraia_core::ObservationConfirmation::Unconfirmed,
+            feature: fraia_core::ObservationFeature::Grid {
+                grid_label: "A".into(),
+            },
+        };
+        let created = interpretation_create_handler(Json(DrawingInterpretationCreateRequest {
+            project_dir: project_dir.display().to_string(),
+            design_id: design_id.clone(),
+            expected_parent_revision_id: None,
+            authority: fraia_core::InterpretationCreateAuthority::ParserAdapter,
+            revision: fraia_core::DrawingInterpretationRevision {
+                project_id: project_id.clone(),
+                design_id: design_id.clone(),
+                parent_revision_id: None,
+                created_at: "2026-08-13T02:00:00Z".into(),
+                method: fraia_core::InterpretationMethod::NativeVectorExtraction,
+                observations: BTreeMap::from([("grid-a".into(), observation)]),
+                correspondences: BTreeMap::new(),
+                alignment_transforms: BTreeMap::new(),
+                conflicts: BTreeMap::new(),
+            },
+        }))
+        .await
+        .expect("create interpretation")
+        .0;
+        let inference_id = format!("{}:inference:grid-a", created.revision_id);
+        let dependency_run = fraia_core::publish_design_run(
+            &project_dir,
+            fraia_core::PublishDesignRunRequest {
+                project_id: project_id.clone(),
+                design_id: design_id.clone(),
+                parent_run_id: None,
+                created_at: "2026-08-13T02:00:30Z".into(),
+                actor: fraia_core::DesignRunActor {
+                    actor_type: "appd_test".into(),
+                    actor_id: "interpretation-fixture".into(),
+                },
+                run_kind: "snapshot_analysis".into(),
+                authored_revision_id: "revision-interpretation-bound".into(),
+                authored_snapshot_id: "snapshot-interpretation-bound".into(),
+                resolved_snapshot_id: None,
+                request: serde_json::json!({
+                    "analysis": "frame2d",
+                    "interpretationDependencies": {
+                        "revisionIds": [created.revision_id.clone()],
+                        "inferenceIds": [inference_id.clone()]
+                    }
+                }),
+                settings: serde_json::json!({"version": 1}),
+                solver_identity: "fraia.frame2d.fixture.v1".into(),
+                runtime_identity: "fraia.runtime.fixture.v1".into(),
+                input_identity: None,
+                result_identity: None,
+                status: fraia_core::DesignRunStatus::Unsupported,
+                diagnostics: vec![fraia_core::DesignRunDiagnostic {
+                    severity: fraia_core::DesignRunDiagnosticSeverity::Warning,
+                    code: "solver.fixture".into(),
+                    message: "Fixture run records interpretation dependencies.".into(),
+                }],
+                metrics: None,
+                attachments: Vec::new(),
+            },
+        )
+        .expect("publish interpretation-bound run");
+        let current_status = design_run_status_handler(Json(DesignRunStatusRequest {
+            project_dir: project_dir.display().to_string(),
+            design_id: design_id.clone(),
+            inspected_snapshot_id: "snapshot-interpretation-bound".into(),
+            ancestor_snapshot_ids: Vec::new(),
+        }))
+        .await
+        .expect("status before interpretation correction")
+        .0;
+        assert_eq!(
+            current_status[0].staleness,
+            fraia_core::DesignRunStaleness::Current
+        );
+        assert!(current_status[0].staleness_reasons.is_empty());
+        let referenced_shelf = shelf_remove_handler(Json(ShelfRemoveRequest {
+            project_dir: project_dir.display().to_string(),
+            design_id: design_id.clone(),
+            item_id: "plan-page-1".into(),
+        }))
+        .await
+        .expect_err("keep exact Shelf provenance available");
+        assert_eq!(referenced_shelf.status, StatusCode::CONFLICT);
+        let confirmed = interpretation_confirm_handler(Json(DrawingInterpretationConfirmRequest {
+            project_dir: project_dir.display().to_string(),
+            design_id: design_id.clone(),
+            operation: fraia_core::ConfirmObservationsOperation {
+                expected_parent_revision_id: created.revision_id.clone(),
+                observation_ids: vec!["grid-a".into()],
+                confirmed_by: "engineer".into(),
+                confirmed_at: "2026-08-13T02:01:00Z".into(),
+                created_at: "2026-08-13T02:01:00Z".into(),
+            },
+        }))
+        .await
+        .expect("confirm interpretation")
+        .0;
+        let stale_status = design_run_status_handler(Json(DesignRunStatusRequest {
+            project_dir: project_dir.display().to_string(),
+            design_id: design_id.clone(),
+            inspected_snapshot_id: "snapshot-interpretation-bound".into(),
+            ancestor_snapshot_ids: Vec::new(),
+        }))
+        .await
+        .expect("status after interpretation correction")
+        .0;
+        assert_eq!(
+            stale_status[0].staleness,
+            fraia_core::DesignRunStaleness::StaleDependency
+        );
+        assert!(stale_status[0].staleness_reasons.iter().any(|reason| {
+            reason.code == "interpretation.revision_superseded"
+                && reason.interpretation_revision_id.as_deref()
+                    == Some(created.revision_id.as_str())
+                && reason.current_interpretation_revision_id.as_deref()
+                    == Some(confirmed.revision_id.as_str())
+        }));
+        assert!(stale_status[0].staleness_reasons.iter().any(|reason| {
+            reason.code == "interpretation.inference_no_longer_eligible"
+                && reason.inference_id.as_deref() == Some(inference_id.as_str())
+        }));
+        let listed = interpretation_list_handler(Json(DrawingInterpretationListRequest {
+            project_dir: project_dir.display().to_string(),
+            design_id: design_id.clone(),
+        }))
+        .await
+        .expect("list after restart boundary")
+        .0;
+        assert_eq!(listed.revisions.len(), 2);
+        assert_eq!(
+            listed.head_revision_id.as_deref(),
+            Some(confirmed.revision_id.as_str())
+        );
+        let inspected = interpretation_inspect_handler(Json(DrawingInterpretationInspectRequest {
+            project_dir: project_dir.display().to_string(),
+            design_id: design_id.clone(),
+            revision_id: created.revision_id.clone(),
+        }))
+        .await
+        .expect("inspect immutable parent")
+        .0;
+        assert_eq!(inspected.revision_id, created.revision_id);
+        assert!(matches!(
+            inspected.observations["grid-a"].confirmation,
+            fraia_core::ObservationConfirmation::Unconfirmed
+        ));
+        let online_backup = directory.path().join("open-workspace-backup.sqlite");
+        repository
+            .backup_to_path(&online_backup)
+            .expect("open design database remains usable after interpretation updates");
+        assert!(online_backup.is_file());
+        drop(repository);
+        let moved_project_dir = directory.path().join("moved-interpretation-project");
+        fs::rename(&project_dir, &moved_project_dir).expect("move project package");
+        let listed_runs = list_design_runs(&moved_project_dir, &design_id)
+            .expect("list immutable runs after project move");
+        assert_eq!(listed_runs.runs[0].run_id, dependency_run.run_id);
+        assert_eq!(
+            listed_runs.runs[0].interpretation_dependencies.revision_ids,
+            vec![created.revision_id.clone()]
+        );
+        let inspected_run =
+            inspect_design_run(&moved_project_dir, &design_id, &dependency_run.run_id)
+                .expect("inspect immutable run after project move");
+        let InspectedDesignRun::Canonical { manifest } = inspected_run else {
+            panic!("expected canonical run");
+        };
+        assert_eq!(
+            manifest.interpretation_dependencies.inference_ids,
+            vec![inference_id]
+        );
+        let moved_status = list_design_run_statuses(
+            &moved_project_dir,
+            &design_id,
+            "snapshot-interpretation-bound",
+            &[],
+        )
+        .expect("projected status survives restart and move");
+        assert_eq!(
+            moved_status[0].staleness,
+            fraia_core::DesignRunStaleness::StaleDependency
+        );
+    }
+
+    #[tokio::test]
+    async fn design_run_endpoints_read_the_canonical_index_after_restart() {
+        let directory = tempfile::tempdir().unwrap();
+        let project = directory.path().join("project");
+        let package = create_named_project_package(&project, "appd runs").unwrap();
+        let design_id = package.designs[0].manifest.id.clone();
+        let run = fraia_core::publish_design_run(
+            &project,
+            fraia_core::PublishDesignRunRequest {
+                project_id: package.manifest.id,
+                design_id: design_id.clone(),
+                parent_run_id: None,
+                created_at: "2026-08-13T04:01:00Z".into(),
+                actor: fraia_core::DesignRunActor {
+                    actor_type: "appd_test".into(),
+                    actor_id: "fixture".into(),
+                },
+                run_kind: "frame3d_analysis".into(),
+                authored_revision_id: "revision-1".into(),
+                authored_snapshot_id: "snapshot-1".into(),
+                resolved_snapshot_id: None,
+                request: serde_json::json!({"analysis":"frame3d"}),
+                settings: serde_json::json!({"version":1}),
+                solver_identity: "fraia.frame3d.unavailable.v1".into(),
+                runtime_identity: "fraia.runtime.v1".into(),
+                input_identity: None,
+                result_identity: None,
+                status: fraia_core::DesignRunStatus::Unsupported,
+                diagnostics: vec![fraia_core::DesignRunDiagnostic {
+                    severity: fraia_core::DesignRunDiagnosticSeverity::Warning,
+                    code: "solver.unsupported".into(),
+                    message: "No reviewed solver supports this request.".into(),
+                }],
+                metrics: None,
+                attachments: Vec::new(),
+            },
+        )
+        .unwrap();
+        let listed = design_run_list_handler(Json(DesignRunListRequest {
+            project_dir: project.display().to_string(),
+            design_id: design_id.clone(),
+        }))
+        .await
+        .unwrap()
+        .0;
+        assert_eq!(listed, list_design_runs(&project, &design_id).unwrap());
+        let inspected = design_run_inspect_handler(Json(DesignRunInspectRequest {
+            project_dir: project.display().to_string(),
+            design_id: design_id.clone(),
+            run_id: run.run_id.clone(),
+        }))
+        .await
+        .unwrap()
+        .0;
+        assert_eq!(
+            inspected,
+            inspect_design_run(&project, &design_id, &run.run_id).unwrap()
+        );
+        let statuses = design_run_status_handler(Json(DesignRunStatusRequest {
+            project_dir: project.display().to_string(),
+            design_id,
+            inspected_snapshot_id: "snapshot-2".into(),
+            ancestor_snapshot_ids: vec!["snapshot-1".into()],
+        }))
+        .await
+        .unwrap()
+        .0;
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(
+            statuses[0].staleness,
+            fraia_core::DesignRunStaleness::StaleDescendant
+        );
+        assert_eq!(statuses[0].run_id, run.run_id);
+    }
+
+    #[tokio::test]
+    async fn pdf_capabilities_are_truthful_and_index_endpoint_resumes_persisted_metadata() {
+        let capabilities = pdf_capabilities_handler().await.0;
+        assert!(capabilities.metadata_indexing_available);
+        assert!(!capabilities.packaged_renderer_available);
+        assert!(!capabilities.ocr_available);
+        assert!(capabilities.diagnostics.iter().any(
+            |diagnostic| diagnostic.code == fraia_core::PdfDiagnosticCode::RendererUnavailable
+        ));
+
+        let directory = tempfile::tempdir().expect("temporary root");
+        let project_dir = directory.path().join("pdf-project");
+        create_named_project_package(&project_dir, "PDF").expect("create project");
+        let input = directory.path().join("page.pdf");
+        fs::write(&input, one_page_pdf_fixture()).expect("write PDF");
+        let source = import_source(
+            &project_dir,
+            fraia_core::SourceImportRequest {
+                selected_path: input,
+                display_alias: None,
+                expected_media_type: Some(fraia_core::SourceMediaType::Pdf),
+            },
+        )
+        .expect("import PDF")
+        .record;
+        let request = PdfIndexRequest {
+            project_dir: project_dir.display().to_string(),
+            source_id: source.id.clone(),
+        };
+        let first = pdf_index_handler(Json(request.clone()))
+            .await
+            .expect("index PDF")
+            .0;
+        assert!(!first.resumed);
+        assert_eq!(first.index.source_sha256, source.sha256);
+        assert_eq!(
+            first.index.pages[0].media_box,
+            fraia_core::PdfBox {
+                x0: 10.0,
+                y0: 20.0,
+                x1: 610.0,
+                y1: 420.0
+            }
+        );
+        assert_eq!(first.index.pages[0].rotation_degrees, 90);
+        let resumed = pdf_index_handler(Json(request))
+            .await
+            .expect("resume PDF index")
+            .0;
+        assert!(resumed.resumed);
+        assert_eq!(resumed.index_derivative.id, first.index_derivative.id);
+
+        let inference = pdf_view_role_inference_handler(Json(PdfViewRoleInferenceRequest {
+            project_dir: project_dir.display().to_string(),
+            source_id: source.id,
+            page_number: 1,
+            crop: fraia_core::PdfBox {
+                x0: 10.0,
+                y0: 20.0,
+                x1: 610.0,
+                y1: 420.0,
+            },
+            margin_points: 36.0,
+        }))
+        .await
+        .expect("infer without fabricated OCR text")
+        .0;
+        assert!(inference.suggestions.is_empty());
+        assert_eq!(
+            inference.diagnostics[0].code,
+            fraia_core::PdfDiagnosticCode::OcrUnavailable
+        );
+    }
+
+    #[tokio::test]
+    async fn dxf_endpoints_resume_exact_index_and_prepare_only_unconfirmed_observations() {
+        let directory = tempfile::tempdir().expect("temporary root");
+        let project_dir = directory.path().join("dxf-project");
+        let package = create_named_project_package(&project_dir, "DXF").expect("create project");
+        let design_id = package.designs[0].manifest.id.clone();
+        let input = directory.path().join("plan.dxf");
+        fs::write(&input, dxf_plan_fixture()).expect("write DXF");
+        let source = import_source(
+            &project_dir,
+            fraia_core::SourceImportRequest {
+                selected_path: input,
+                display_alias: Some("structural-plan.dxf".into()),
+                expected_media_type: Some(fraia_core::SourceMediaType::Dxf),
+            },
+        )
+        .expect("import DXF")
+        .record;
+
+        let request = DxfIndexRequest {
+            project_dir: project_dir.display().to_string(),
+            source_id: source.id.clone(),
+        };
+        let first = dxf_index_handler(Json(request.clone()))
+            .await
+            .expect("index DXF")
+            .0;
+        assert!(!first.resumed);
+        assert_eq!(first.index.units.as_deref(), Some("mm"));
+        assert_eq!(first.index.entities["dxf:1A"].layout, "Model");
+        let resumed = dxf_index_handler(Json(request))
+            .await
+            .expect("resume DXF")
+            .0;
+        assert!(resumed.resumed);
+        assert_eq!(resumed.derivative.id, first.derivative.id);
+
+        let prepared = dxf_prepare_selection_handler(Json(DxfPrepareSelectionRequest {
+            project_dir: project_dir.display().to_string(),
+            design_id,
+            selection: fraia_core::DxfSelectionRequest {
+                shelf_item_id: "cad-plan".into(),
+                label: "Structural plan".into(),
+                source_id: source.id,
+                layout: "Model".into(),
+                entity_ids: vec!["dxf:1A".into()],
+                layer_names: Vec::new(),
+                block_names: Vec::new(),
+                view_role: Some(fraia_core::DrawingViewRole::Plan),
+                relation_to_design: Some(fraia_core::DxfViewRelation {
+                    confirmed: true,
+                    confirmed_by: "user-a".into(),
+                    confirmed_at: "2026-08-14T00:00:00Z".into(),
+                    transform: fraia_core::ShelfTransform {
+                        translation: [0.0; 3],
+                        rotation_degrees: [0.0; 3],
+                        scale: [1.0; 3],
+                    },
+                    orientation: fraia_core::ShelfOrientation {
+                        forward: [0.0, 0.0, -1.0],
+                        up: [0.0, 1.0, 0.0],
+                    },
+                    scale: 1.0,
+                }),
+                created_at: "2026-08-14T00:00:00Z".into(),
+                created_by: "user-a".into(),
+                interpretation_parent_revision_id: None,
+            },
+        }))
+        .await
+        .expect("prepare exact DXF selection")
+        .0;
+        assert_eq!(prepared.interpretation.observations.len(), 1);
+        let observation = &prepared.interpretation.observations["dxf-observation-dxf-1A"];
+        assert_eq!(
+            observation.confirmation,
+            fraia_core::ObservationConfirmation::Unconfirmed
+        );
+        assert!(observation.design_geometry.is_none());
+        assert!(matches!(
+            &observation.source_locator,
+            fraia_core::DrawingSourceLocator::CadEntities { entity_ids, .. }
+                if entity_ids == &["dxf:1A"]
+        ));
+    }
+
+    #[tokio::test]
+    async fn ifc_endpoints_resume_read_only_index_and_never_author_structural_geometry() {
+        let directory = tempfile::tempdir().expect("temporary root");
+        let project_dir = directory.path().join("ifc-project");
+        let package = create_named_project_package(&project_dir, "IFC").expect("create project");
+        let design_id = package.designs[0].manifest.id.clone();
+        let input = directory.path().join("building.ifc");
+        fs::write(&input, ifc_reference_fixture()).expect("write IFC");
+        let source = import_source(
+            &project_dir,
+            fraia_core::SourceImportRequest {
+                selected_path: input,
+                display_alias: Some("architect-model.ifc".into()),
+                expected_media_type: Some(fraia_core::SourceMediaType::IfcStep),
+            },
+        )
+        .expect("import IFC")
+        .record;
+        let request = IfcIndexRequest {
+            project_dir: project_dir.display().to_string(),
+            source_id: source.id.clone(),
+        };
+        let first = ifc_index_handler(Json(request.clone()))
+            .await
+            .expect("index IFC")
+            .0;
+        assert!(!first.resumed);
+        assert_eq!(first.index.objects["BEAM1"].storey_id, Some(10));
+        assert_eq!(
+            first.index.objects["BEAM1"].transform.translation,
+            [0.0, 0.0, 3000.0]
+        );
+        assert!(
+            ifc_index_handler(Json(request))
+                .await
+                .expect("resume IFC")
+                .0
+                .resumed
+        );
+        let prepared = ifc_prepare_selection_handler(Json(IfcPrepareSelectionRequest {
+            project_dir: project_dir.display().to_string(),
+            design_id,
+            selection: fraia_core::IfcSelectionRequest {
+                shelf_item_id: "ifc-level-two".into(),
+                label: "Level 2 reference".into(),
+                source_id: source.id,
+                view_id: "level-two".into(),
+                object_ids: Vec::new(),
+                storey_ids: vec![10],
+                grid_ids: Vec::new(),
+                class_names: Vec::new(),
+                created_at: "2026-08-14T00:00:00Z".into(),
+                created_by: "user-a".into(),
+                interpretation_parent_revision_id: None,
+            },
+        }))
+        .await
+        .expect("prepare IFC selection")
+        .0;
+        assert_eq!(prepared.interpretation.observations.len(), 1);
+        let observation = prepared
+            .interpretation
+            .observations
+            .values()
+            .next()
+            .unwrap();
+        assert_eq!(
+            observation.confirmation,
+            fraia_core::ObservationConfirmation::Unconfirmed
+        );
+        assert!(observation.design_geometry.is_none());
+        assert!(matches!(
+            observation.feature,
+            fraia_core::ObservationFeature::SemanticHint { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn mesh_endpoints_resume_and_require_calibration_before_saved_view_preparation() {
+        let directory = tempfile::tempdir().expect("temporary root");
+        let project_dir = directory.path().join("mesh-project");
+        let package = create_named_project_package(&project_dir, "Mesh").expect("create project");
+        let design_id = package.designs[0].manifest.id.clone();
+        let input = directory.path().join("reference.obj");
+        fs::write(
+            &input,
+            b"o Frame\ng Primary\nv 0 0 0\nv 1000 0 0\nv 0 1000 0\nf 1 2 3\n",
+        )
+        .expect("write OBJ");
+        let source = import_source(
+            &project_dir,
+            fraia_core::SourceImportRequest {
+                selected_path: input,
+                display_alias: Some("reference.obj".into()),
+                expected_media_type: Some(fraia_core::SourceMediaType::Obj),
+            },
+        )
+        .expect("import OBJ")
+        .record;
+        let request = MeshIndexRequest {
+            project_dir: project_dir.display().to_string(),
+            source_id: source.id.clone(),
+        };
+        let first = mesh_index_handler(Json(request.clone()))
+            .await
+            .expect("index OBJ")
+            .0;
+        assert!(!first.resumed);
+        assert!(first.index.units.is_none());
+        let content = mesh_content_handler(Json(MeshContentRequest {
+            project_dir: project_dir.display().to_string(),
+            source_id: source.id.clone(),
+        }))
+        .await
+        .expect("read verified managed mesh content");
+        assert_eq!(content.headers()["x-fraia-source-sha256"], source.sha256);
+        assert_eq!(
+            content.headers()["x-fraia-source-id"],
+            source.id.to_string()
+        );
+        let content_bytes = axum::body::to_bytes(content.into_body(), 1024 * 1024)
+            .await
+            .expect("collect managed content");
+        assert!(content_bytes.starts_with(b"o Frame"));
+        assert!(
+            mesh_index_handler(Json(request))
+                .await
+                .expect("resume OBJ index")
+                .0
+                .resumed
+        );
+        let view = fraia_core::MeshSavedViewRequest {
+            shelf_item_id: "saved-reference-view".into(),
+            label: "Reference view".into(),
+            source_id: source.id,
+            object_ids: vec!["obj:Frame:Primary".into()],
+            camera: fraia_core::ShelfCamera {
+                position: [2.0, 3.0, 4.0],
+                target: [0.0; 3],
+                up: [0.0, 1.0, 0.0],
+                projection: "perspective".into(),
+            },
+            transform: fraia_core::ShelfTransform {
+                translation: [0.0; 3],
+                rotation_degrees: [0.0; 3],
+                scale: [1.0; 3],
+            },
+            orientation: fraia_core::ShelfOrientation {
+                forward: [0.0, 0.0, -1.0],
+                up: [0.0, 1.0, 0.0],
+            },
+            scale: 1.0,
+            section_planes: vec![fraia_core::ShelfSectionPlane {
+                id: "section-a".into(),
+                normal: [1.0, 0.0, 0.0],
+                constant: -500.0,
+            }],
+            calibration: None,
+            created_at: "2026-08-14T00:00:00Z".into(),
+            created_by: "engineer".into(),
+        };
+        let rejected = mesh_prepare_saved_view_handler(Json(MeshPrepareSavedViewRequest {
+            project_dir: project_dir.display().to_string(),
+            design_id: design_id.clone(),
+            view: view.clone(),
+        }))
+        .await
+        .expect_err("unitless view must require calibration");
+        assert_eq!(rejected.status, StatusCode::BAD_REQUEST);
+        let prepared = mesh_prepare_saved_view_handler(Json(MeshPrepareSavedViewRequest {
+            project_dir: project_dir.display().to_string(),
+            design_id,
+            view: fraia_core::MeshSavedViewRequest {
+                calibration: Some(fraia_core::MeshCalibration {
+                    confirmed: true,
+                    confirmed_by: "engineer".into(),
+                    confirmed_at: "2026-08-14T00:00:00Z".into(),
+                    units: "mm".into(),
+                    units_to_metres: 0.001,
+                }),
+                ..view
+            },
+        }))
+        .await
+        .expect("prepare calibrated view")
+        .0;
+        assert_eq!(prepared.units_to_metres, 0.001);
+        assert_eq!(prepared.section_planes[0].id, "section-a");
+        assert!(prepared.shelf_item.confirmation.confirmed);
+    }
+
+    #[tokio::test]
+    async fn mesh_index_job_cancel_is_opaque_and_stops_before_publication() {
+        let directory = tempfile::tempdir().expect("temporary root");
+        let project_dir = directory.path().join("mesh-cancel-project");
+        create_named_project_package(&project_dir, "Mesh cancel").expect("create project");
+        let input = directory.path().join("large-reference.obj");
+        let mut obj = String::from("o Large\ng Primary\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
+        for index in 3..300_000 {
+            obj.push_str(&format!("v {index} 0 0\n"));
+        }
+        fs::write(&input, obj).expect("write large OBJ");
+        let source = import_source(
+            &project_dir,
+            fraia_core::SourceImportRequest {
+                selected_path: input,
+                display_alias: Some("large-reference.obj".into()),
+                expected_media_type: Some(fraia_core::SourceMediaType::Obj),
+            },
+        )
+        .expect("import large OBJ")
+        .record;
+        let registry = Arc::new(MeshIndexJobRegistry::default());
+        let started = mesh_job_start_handler(
+            Extension(registry.clone()),
+            Json(MeshIndexJobRequest {
+                project_dir: project_dir.display().to_string(),
+                source_id: source.id.clone(),
+            }),
+        )
+        .await
+        .expect("start mesh job")
+        .0;
+        assert_eq!(started.status, MeshIndexJobStatus::Running);
+        assert_eq!(started.job_id.len(), 48);
+        let cancelling = mesh_job_cancel_handler(
+            Extension(registry.clone()),
+            Json(MeshIndexJobIdRequest {
+                job_id: started.job_id.clone(),
+            }),
+        )
+        .await
+        .expect("request cancellation")
+        .0;
+        assert!(matches!(
+            cancelling.status,
+            MeshIndexJobStatus::Cancelling | MeshIndexJobStatus::Cancelled
+        ));
+        let mut final_response = cancelling;
+        for _ in 0..100 {
+            final_response = mesh_job_status_handler(
+                Extension(registry.clone()),
+                Json(MeshIndexJobIdRequest {
+                    job_id: started.job_id.clone(),
+                }),
+            )
+            .await
+            .expect("read job status")
+            .0;
+            if final_response.status == MeshIndexJobStatus::Cancelled {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert_eq!(final_response.status, MeshIndexJobStatus::Cancelled);
+        assert!(final_response.result.is_none());
+        assert!(
+            fraia_core::source_derivatives(&project_dir, &source.id)
+                .expect("list derivatives")
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn create_open_and_save_use_design_local_package_state() {
+        let directory = tempfile::tempdir().expect("temporary project parent");
+        let project_dir = directory.path().join("house-structure");
+        let conversation_service = Arc::new(std::sync::Mutex::new(
+            conversation_transport::ConversationService::default(),
+        ));
+        let _ = create_project_handler(Json(CreateProjectRequest {
+            project_dir: project_dir.display().to_string(),
+            name: Some("House Structure".into()),
+        }))
+        .await
+        .expect("create package through appd");
+
+        let mut package = load_project_package(&project_dir).expect("load created package");
+        assert_eq!(package.manifest.name, "House Structure");
+        assert_eq!(package.designs[0].manifest.name, "Design 1");
+        assert_eq!(package.designs[0].project.name, "House Structure");
+        let design_paths =
+            design_package_paths(&project_dir, &package.designs[0].manifest.id).expect("paths");
+        assert!(design_paths.project_state.is_file());
+
+        let (mut project, _) = load_project(&project_dir).expect("open package state");
+        project.name = "Renamed House".into();
+        project.requirements.span_m = 9.5;
+        save_project(&project_dir, &project).expect("save design-local state");
+        let _ = open_project_handler(
+            Extension(conversation_service),
+            Json(ProjectPathRequest {
+                project_dir: project_dir.display().to_string(),
+            }),
+        )
+        .await
+        .expect("reopen package through appd");
+
+        package = load_project_package(&project_dir).expect("reload saved package");
+        assert_eq!(package.manifest.name, "Renamed House");
+        assert_eq!(package.designs[0].project.requirements.span_m, 9.5);
+        assert!(design_paths.planning_file.is_file());
+    }
+
+    #[tokio::test]
+    async fn project_identity_uses_stable_package_ids_and_validated_names() {
+        let directory = tempfile::tempdir().expect("temporary project parent");
+        let project_dir = directory.path().join("identity-project");
+        let created = create_project_handler(Json(CreateProjectRequest {
+            project_dir: project_dir.display().to_string(),
+            name: Some("Untitled Project".into()),
+        }))
+        .await
+        .expect("create package through appd");
+        let original = package_identity(&project_dir, None).expect("load identity");
+        assert_eq!(original.project_name, "Untitled Project");
+        assert_eq!(original.design_name, "Design 1");
+        assert_eq!(created.0.state.overview.document_id, original.design_id);
+
+        let renamed = rename_project_identity_handler(Json(RenameProjectIdentityRequest {
+            project_dir: project_dir.display().to_string(),
+            project_id: original.project_id.clone(),
+            project_name: "House Structure".into(),
+            design_id: original.design_id.clone(),
+            design_name: "Gravity framing".into(),
+        }))
+        .await
+        .expect("rename package identity")
+        .0;
+        assert_eq!(renamed.project_id, original.project_id);
+        assert_eq!(renamed.design_id, original.design_id);
+        assert_eq!(renamed.project_name, "House Structure");
+        assert_eq!(renamed.design_name, "Gravity framing");
+
+        let package = load_project_package(&project_dir).expect("reload renamed package");
+        assert_eq!(package.manifest.name, "House Structure");
+        assert_eq!(package.manifest.designs[0].name, "Gravity framing");
+        assert_eq!(package.designs[0].manifest.name, "Gravity framing");
+        assert_eq!(package.designs[0].project.name, "House Structure");
+
+        let empty = rename_project_identity_handler(Json(RenameProjectIdentityRequest {
+            project_dir: project_dir.display().to_string(),
+            project_id: original.project_id,
+            project_name: " ".into(),
+            design_id: original.design_id,
+            design_name: "Gravity framing".into(),
+        }))
+        .await;
+        assert!(empty.is_err());
+    }
+
+    #[tokio::test]
+    async fn design_crud_keeps_ids_state_and_revision_databases_independent() {
+        let directory = tempfile::tempdir().expect("temporary project parent");
+        let project_dir = directory.path().join("multi-design-project");
+        let _ = create_project_handler(Json(CreateProjectRequest {
+            project_dir: project_dir.display().to_string(),
+            name: Some("House Structure".into()),
+        }))
+        .await
+        .expect("create package");
+        let first = package_identity(&project_dir, None).expect("first identity");
+
+        let created = create_design_handler(Json(CreateDesignRequest {
+            project_dir: project_dir.display().to_string(),
+            project_id: first.project_id.clone(),
+            design_name: "Lateral frame".into(),
+        }))
+        .await
+        .expect("create second design");
+        let second_id = created.0.state.overview.document_id.clone();
+        assert_ne!(first.design_id, second_id);
+
+        let duplicate = create_design_handler(Json(CreateDesignRequest {
+            project_dir: project_dir.display().to_string(),
+            project_id: first.project_id.clone(),
+            design_name: " lateral FRAME ".into(),
+        }))
+        .await;
+        assert!(duplicate.is_err());
+        let duplicate_rename =
+            rename_project_identity_handler(Json(RenameProjectIdentityRequest {
+                project_dir: project_dir.display().to_string(),
+                project_id: first.project_id.clone(),
+                project_name: "House Structure".into(),
+                design_id: first.design_id.clone(),
+                design_name: "Lateral frame".into(),
+            }))
+            .await;
+        assert!(duplicate_rename.is_err());
+
+        let second_dir = design_package_paths(&project_dir, &DesignId::new(&second_id))
+            .expect("second paths")
+            .design_dir;
+        let (mut second, _) = load_project(&second_dir).expect("load second design");
+        second.requirements.span_m = 42.0;
+        save_project(&second_dir, &second).expect("save second design");
+        let package = load_project_package(&project_dir).expect("reload package");
+        assert_ne!(package.designs[0].project.requirements.span_m, 42.0);
+        assert_eq!(package.designs[1].project.requirements.span_m, 42.0);
+
+        let service = Arc::new(std::sync::Mutex::new(
+            conversation_transport::ConversationService::default(),
+        ));
+        for (design_id, design_dir) in [
+            (
+                first.design_id.clone(),
+                design_package_paths(&project_dir, &DesignId::new(&first.design_id))
+                    .expect("first paths")
+                    .design_dir,
+            ),
+            (second_id.clone(), second_dir.clone()),
+        ] {
+            service
+                .lock()
+                .unwrap()
+                .create(fraia_app_api::ConversationCreateRequest {
+                    project_id: fraia_revision::ProjectId::from(design_id),
+                    project_dir: design_dir.display().to_string(),
+                    conversation_id: fraia_revision::ConversationId::from("overall-framing"),
+                    purpose: "Overall framing".into(),
+                    project_facts: Default::default(),
+                })
+                .expect("create design conversation");
+        }
+        let first_workspace = design_package_paths(&project_dir, &DesignId::new(&first.design_id))
+            .expect("first paths")
+            .workspace_database;
+        let second_workspace = design_package_paths(&project_dir, &DesignId::new(&second_id))
+            .expect("second paths")
+            .workspace_database;
+        assert!(first_workspace.is_file());
+        assert!(second_workspace.is_file());
+        assert_ne!(first_workspace, second_workspace);
+
+        let _ = delete_design_handler(
+            Extension(service),
+            Json(DesignIdentityRequest {
+                project_dir: project_dir.display().to_string(),
+                project_id: first.project_id,
+                design_id: second_id.clone(),
+            }),
+        )
+        .await
+        .expect("delete second design");
+        assert!(!second_dir.exists());
+        assert_eq!(
+            load_project_package(&project_dir)
+                .expect("reload after delete")
+                .designs
+                .len(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn opening_a_legacy_project_migrates_once_and_preserves_mutable_state() {
+        let directory = tempfile::tempdir().expect("temporary project parent");
+        let project_dir = directory.path().join("legacy-project");
+        let conversation_service = Arc::new(std::sync::Mutex::new(
+            conversation_transport::ConversationService::default(),
+        ));
+        let (mut legacy, _) = create_project(&project_dir, "Legacy House").expect("legacy input");
+        legacy.requirements.height_m = 4.25;
+        save_legacy_project(&project_dir, &legacy).expect("save legacy input");
+
+        let _ = open_project_handler(
+            Extension(conversation_service.clone()),
+            Json(ProjectPathRequest {
+                project_dir: project_dir.display().to_string(),
+            }),
+        )
+        .await
+        .expect("open and migrate legacy input");
+        let first = load_project_package(&project_dir).expect("migrated package");
+        assert_eq!(first.designs[0].project.requirements.height_m, 4.25);
+        assert!(first.designs[0].legacy_project.is_some());
+
+        let _ = open_project_handler(
+            Extension(conversation_service),
+            Json(ProjectPathRequest {
+                project_dir: project_dir.display().to_string(),
+            }),
+        )
+        .await
+        .expect("idempotent package reopen");
+        let second = load_project_package(&project_dir).expect("reopened package");
+        assert_eq!(second.manifest.id, first.manifest.id);
+        assert_eq!(second.designs[0].manifest.id, first.designs[0].manifest.id);
+    }
+
+    #[tokio::test]
+    async fn legacy_open_unloads_active_workspace_then_rehydrates_design_database() {
+        let directory = tempfile::tempdir().expect("temporary project parent");
+        let project_dir = directory.path().join("active-legacy-project");
+        create_project(&project_dir, "Active legacy").expect("legacy input");
+        let conversation_service = Arc::new(std::sync::Mutex::new(
+            conversation_transport::ConversationService::default(),
+        ));
+        let request = fraia_app_api::ConversationCreateRequest {
+            project_id: fraia_revision::ProjectId::from("active-project"),
+            project_dir: project_dir.display().to_string(),
+            conversation_id: fraia_revision::ConversationId::from("overall"),
+            purpose: "Overall design".into(),
+            project_facts: Default::default(),
+        };
+        conversation_service
+            .lock()
+            .unwrap()
+            .create(request.clone())
+            .expect("open legacy workspace");
+
+        let _ = open_project_handler(
+            Extension(conversation_service.clone()),
+            Json(ProjectPathRequest {
+                project_dir: project_dir.display().to_string(),
+            }),
+        )
+        .await
+        .expect("migrate while service has loaded legacy workspace");
+        assert_eq!(
+            conversation_service
+                .lock()
+                .unwrap()
+                .unload_workspace_path(&legacy_workspace_path(&project_dir)),
+            0,
+            "open must already have unloaded the store that held the legacy database"
+        );
+        let restored = conversation_service
+            .lock()
+            .unwrap()
+            .create(request)
+            .expect("rehydrate design-local workspace");
+        assert_eq!(
+            restored.head_revision_id,
+            fraia_revision::RevisionId::from("active-project:root")
+        );
+        let package = load_project_package(&project_dir).expect("migrated package");
+        let paths = design_package_paths(&project_dir, &package.designs[0].manifest.id)
+            .expect("design paths");
+        assert!(paths.workspace_database.is_file());
+    }
+
+    #[test]
     fn appd_authentication_comparison_rejects_missing_wrong_and_truncated_tokens() {
         let token = b"0123456789abcdef0123456789abcdef";
         assert!(constant_time_equal(token, token));
@@ -10621,7 +14129,7 @@ mod tests {
     }
 
     #[test]
-    fn agent_model_settings_default_to_chatgpt_luna_low() {
+    fn agent_model_settings_default_to_chatgpt_luna_high() {
         let settings = AgentModelSettings::default();
         assert_eq!(settings.provider_id, FRAIA_AI_PROVIDER_ID);
         assert_eq!(settings.model, FRAIA_AI_MODEL_ID);
@@ -10652,7 +14160,7 @@ mod tests {
     }
 
     #[test]
-    fn ensure_agent_settings_migrates_every_surface_to_chatgpt_luna_low() {
+    fn ensure_agent_settings_migrates_every_surface_to_chatgpt_luna_high() {
         let project_dir = std::env::temp_dir().join(format!(
             "fraia-agent-settings-inherit-test-{}",
             fraia_core::utils::iso_now().replace([':', '-'], "")

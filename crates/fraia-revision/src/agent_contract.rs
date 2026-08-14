@@ -31,11 +31,32 @@ pub struct ProjectFact {
 /// Provider/model/turn lineage carried with an agent proposal. It is distinct
 /// from structural authority: it explains where a proposal came from, not
 /// whether the proposal is valid or approved.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AgentTurnProvenance {
     pub provider: String,
     pub model: String,
     pub turn_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalogue_refreshed_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub response_questions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shelf_item_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drawing_interpretation_revision_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drawing_interpretation_inference_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub assumptions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub evidence_limits: Vec<String>,
 }
 
 /// Provenance for the context projection itself. This binds the semantic

@@ -1,25 +1,51 @@
-import { useEffect, useState } from 'react';
-import { Check, Maximize2, PencilLine, Send, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Check, History, Maximize2, MessageSquareText, PencilLine, Send, X } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { Message, MessageContent, MessageGroup, MessageHeader } from '@/components/ui/message';
-import { Bubble, BubbleContent } from '@/components/ui/bubble';
-import { MessageScroller, MessageScrollerContent, MessageScrollerItem, MessageScrollerProvider, MessageScrollerViewport } from '@/components/ui/message-scroller';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@/components/ui/input-group';
+import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { Textarea } from '@/components/ui/textarea';
+import { Spinner } from '@/components/ui/spinner';
+import {
+  ChatTranscript,
+  ChatTranscriptActivity,
+  ChatTranscriptCancel,
+  ChatTranscriptMessage,
+  ChatTranscriptPanel,
+} from '@/components/chat/ChatTranscript';
 import { Viewport3D } from '@/components/viewport/Viewport3D';
 import { cn } from '@/lib/utils';
+import { AnalysisHistorySheet } from './AnalysisHistorySheet';
 import type { WorkbenchState } from '@/lib/types';
+type AnalysisAttemptResponse = Awaited<ReturnType<typeof window.fraia.analysisAttemptStatus>>;
+
+function analysisDiagnosticMessage(diagnostic: string) {
+  if (diagnostic.startsWith('analysis.cancelled:')) return 'Analysis cancelled. The accepted design was not changed.';
+  if (diagnostic.startsWith('analysis.test-forced-failure:')) return 'Analysis failed before Fraia could publish a result. Retry starts a new attempt.';
+  return diagnostic;
+}
+
+function friendlyTransportMessage(detail: string) {
+  const normalized = detail.toLowerCase();
+  if (/timed?\s*out|timeout|too long/.test(normalized)) return 'Fraia took too long to respond. Try again.';
+  if (/schema|validation|unknown (section|reference)|invalid design proposal/.test(normalized)) return 'Fraia could not prepare a valid design proposal. Try again or clarify your request.';
+  if (/connect|unavailable|contact|network|fetch/.test(normalized)) return 'Fraia could not connect. Check your connection and try again.';
+  return 'Fraia could not complete this response. Try again.';
+}
 import {
   acceptConversationProposal,
   analyseConversationAlternative,
   applyConversationOperation,
+  applyConversationOperations,
   analyseConversationSnapshot,
   applyConversationWorkingCopyOperation,
   commitConversationWorkingCopy,
@@ -27,15 +53,14 @@ import {
   createConversationProjection,
   initializeConversation,
   openConversationWorkingCopy,
+  respondConversationAgent,
   sendConversationMessage,
   rejectConversationProposal,
-  updateConversationFacts,
   type ConversationArtefactProjection,
   type ConversationAnalysisProjection,
   type ConversationComparisonProjection,
   type ConversationEvidenceProjection,
   type ConversationMessageProjection,
-  type ConversationProjectFacts,
   type ConversationProposalProjection,
   type ConversationStructuralOperation,
   type ConversationWorkspaceProjection,
@@ -46,17 +71,19 @@ import type { AgentTarget } from '@/lib/types';
 function PreviewSurface({
   artefact,
   expanded = false,
+  label = 'Current structure',
   onExpand,
   onOpenEditor,
 }: {
   artefact: ConversationArtefactProjection;
   expanded?: boolean;
+  label?: string;
   onExpand?: () => void;
   onOpenEditor?: () => void | Promise<void>;
 }) {
   return (
     <div data-testid={expanded ? 'expanded-artefact-preview' : 'artefact-preview'} className={cn('flex min-h-0 flex-col gap-2', expanded ? 'h-[min(70vh,720px)]' : 'h-52')}>
-      <div role="region" aria-label="Read-only structural preview" data-testid="read-only-preview" data-preview-interaction="orbit-pan-zoom" className="relative min-h-0 flex-1 overflow-hidden rounded-lg border bg-muted/20">
+      <div role="region" aria-label={`${label} (${artefact.artefactId})`} data-testid="read-only-preview" data-preview-interaction="orbit-pan-zoom" className="relative min-h-0 flex-1 overflow-hidden rounded-lg border bg-muted/20">
         <Viewport3D
           scene={artefact.scene}
           selectionEnabled={false}
@@ -65,83 +92,18 @@ function PreviewSurface({
         />
         {!artefact.scene.nodes.length && !artefact.scene.members.length && !artefact.scene.plates?.length ? (
           <div data-testid="empty-preview-message" className="pointer-events-none absolute inset-x-4 bottom-4 rounded-lg border bg-background/90 px-3 py-2 text-center text-xs text-muted-foreground">
-            The design is empty. Fraia will propose a first concept here.
+            No structure exists in this revision.
           </div>
         ) : null}
       </div>
       <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-xs text-muted-foreground">Current design</span>
+        <span className="truncate text-xs text-muted-foreground">{label}</span>
         <div className="flex items-center gap-1">
           {onExpand ? <Button variant="ghost" size="sm" onClick={onExpand}><Maximize2 data-icon="inline-start" /> Inspect</Button> : null}
           {onOpenEditor ? <Button variant="outline" size="sm" onClick={onOpenEditor}><PencilLine data-icon="inline-start" /> Open in editor</Button> : null}
         </div>
       </div>
     </div>
-  );
-}
-
-function BriefCapture({
-  facts,
-  open,
-  onToggle,
-  onSave,
-  saved = false,
-}: {
-  facts: ConversationProjectFacts;
-  open: boolean;
-  onToggle: () => void;
-  onSave: (facts: ConversationProjectFacts) => void;
-  saved?: boolean;
-}) {
-  const [draft, setDraft] = useState(facts);
-  useEffect(() => setDraft(facts), [facts]);
-  const setList = (key: 'constraints' | 'loadsAndAssumptions' | 'unknowns', value: string) => setDraft((current) => ({ ...current, [key]: value.split('\n').map((item) => item.trim()).filter(Boolean) }));
-  return (
-    <Card size="sm" data-testid="project-brief">
-      <CardHeader>
-        <CardTitle>Project brief</CardTitle>
-        <CardDescription>Optional facts that keep the first design conversation grounded. Unknowns can stay explicit.</CardDescription>
-        <CardAction className="flex items-center gap-2">{saved ? <span role="status" className="text-xs text-muted-foreground">Saved</span> : null}<Button variant="ghost" size="sm" aria-expanded={open} onClick={onToggle}>{open ? 'Hide brief' : 'Add brief'}</Button></CardAction>
-      </CardHeader>
-      {open ? (
-        <>
-          <CardContent>
-            <FieldGroup className="grid gap-3 sm:grid-cols-2">
-              <Field>
-                <FieldLabel htmlFor="brief-building-type">Building type</FieldLabel>
-                <Input id="brief-building-type" value={draft.buildingType ?? ''} onChange={(event) => setDraft((current) => ({ ...current, buildingType: event.target.value }))} placeholder="e.g. workshop" />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="brief-objective">Objective</FieldLabel>
-                <Input id="brief-objective" value={draft.objective ?? ''} onChange={(event) => setDraft((current) => ({ ...current, objective: event.target.value }))} placeholder="e.g. compare economical frames" />
-              </Field>
-              {(['approximateLengthM', 'approximateWidthM', 'approximateHeightM'] as const).map((key) => (
-                <Field key={key}>
-                  <FieldLabel htmlFor={`brief-${key}`}>{key === 'approximateLengthM' ? 'Length' : key === 'approximateWidthM' ? 'Width' : 'Height'} (m)</FieldLabel>
-                  <Input id={`brief-${key}`} type="number" step="0.1" value={draft[key] ?? ''} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value === '' ? undefined : Number(event.target.value) }))} />
-                </Field>
-              ))}
-              <Field className="sm:col-span-2">
-                <FieldLabel htmlFor="brief-constraints">Constraints</FieldLabel>
-                <Textarea id="brief-constraints" rows={2} value={draft.constraints.join('\n')} onChange={(event) => setList('constraints', event.target.value)} placeholder="One constraint per line" />
-              </Field>
-              <Field className="sm:col-span-2">
-                <FieldLabel htmlFor="brief-loads">Loads and assumptions</FieldLabel>
-                <Textarea id="brief-loads" rows={2} value={draft.loadsAndAssumptions.join('\n')} onChange={(event) => setList('loadsAndAssumptions', event.target.value)} placeholder="One load or assumption per line" />
-              </Field>
-              <Field className="sm:col-span-2">
-                <FieldLabel htmlFor="brief-unknowns">Unknowns</FieldLabel>
-                <Textarea id="brief-unknowns" rows={2} value={draft.unknowns.join('\n')} onChange={(event) => setList('unknowns', event.target.value)} placeholder="One unresolved question per line" />
-                <FieldDescription>Fraia will keep these visible rather than silently deciding them.</FieldDescription>
-              </Field>
-            </FieldGroup>
-          </CardContent>
-          <CardFooter className="justify-end gap-2">
-            <Button size="sm" onClick={() => onSave(draft)}>Save brief</Button>
-          </CardFooter>
-        </>
-      ) : null}
-    </Card>
   );
 }
 
@@ -185,21 +147,25 @@ function ProposalComparison({
 
 function ProposalCard({
   proposal,
+  previewArtefact,
   index,
   busy,
   onAccept,
   onReject,
   onOpenEditor,
+  onInspect,
   onAnalyseCandidate,
   onShowAlternatives,
   showAlternatives,
 }: {
   proposal: ConversationProposalProjection;
+  previewArtefact: ConversationArtefactProjection;
   index: number;
   busy: boolean;
   onAccept: () => void;
   onReject: () => void;
   onOpenEditor: () => void | Promise<void>;
+  onInspect: () => void;
   onAnalyseCandidate?: () => void;
   onShowAlternatives?: () => void;
   showAlternatives: boolean;
@@ -211,7 +177,15 @@ function ProposalCard({
         <CardDescription>{proposal.summary}</CardDescription>
         <CardAction><Badge variant="outline">Proposal</Badge></CardAction>
       </CardHeader>
-      <CardFooter className="justify-end gap-2">
+      <CardContent>
+        <PreviewSurface
+          artefact={previewArtefact}
+          label="Proposed structure"
+          onExpand={onInspect}
+          onOpenEditor={onOpenEditor}
+        />
+      </CardContent>
+      <CardFooter className="flex-wrap justify-end gap-2">
         <Button variant="outline" size="sm" disabled={busy} onClick={onOpenEditor}><PencilLine data-icon="inline-start" /> Edit this direction</Button>
         {!showAlternatives && index === 0 && onShowAlternatives ? <Button variant="ghost" size="sm" disabled={busy} onClick={onShowAlternatives}>Explore another</Button> : null}
         {showAlternatives ? <Button variant="ghost" size="sm" disabled={busy} onClick={onReject}><X data-icon="inline-start" /> Keep exploring</Button> : null}
@@ -237,7 +211,7 @@ function AnalysisResultCard({ analysis }: { analysis: ConversationAnalysisProjec
   return (
     <Card size="sm" data-testid="analysis-result-card">
       <CardHeader>
-        <CardTitle>Analysis result</CardTitle>
+        <CardTitle>Result</CardTitle>
         <CardDescription>{analysis.summary}</CardDescription>
         <CardAction><Badge variant={variant}>{label}</Badge></CardAction>
       </CardHeader>
@@ -260,6 +234,7 @@ function MessageRow({
   onCompare,
   onShowAlternatives,
   showAlternatives,
+  currentArtefact,
 }: {
   message: ConversationMessageProjection;
   onInspect: (artefact: ConversationArtefactProjection) => void;
@@ -272,25 +247,35 @@ function MessageRow({
   onCompare: () => void;
   onShowAlternatives: () => void;
   showAlternatives: boolean;
+  currentArtefact: ConversationArtefactProjection;
 }) {
-  const align = message.role === 'user' ? 'end' : 'start';
   const allProposals = message.proposals ?? (message.proposal ? [message.proposal] : []);
   const proposals = showAlternatives ? allProposals : allProposals.slice(0, 1);
-  return (
-    <Message align={align} data-testid={`conversation-message-${message.id}`}>
-      <MessageContent>
-        <MessageHeader className="px-0">{message.role === 'user' ? 'You' : message.role === 'system' ? 'Fraia' : 'Fraia'}</MessageHeader>
-        <Bubble variant={message.role === 'user' ? 'default' : 'secondary'} align={align}>
-          <BubbleContent>{message.content}</BubbleContent>
-        </Bubble>
-        {message.artefact ? (
+  const hasCurrentStructure = Boolean(
+    message.artefact
+    && (message.artefact.scene.nodes.length
+      || message.artefact.scene.members.length
+      || message.artefact.scene.plates?.length),
+  );
+  const previewForProposal = (proposal: ConversationProposalProjection): ConversationArtefactProjection => ({
+    ...currentArtefact,
+    artefactId: `proposal-preview-${proposal.proposalId}`,
+    sourceSnapshotId: proposal.proposedRevisionId,
+    scene: applyConversationOperations(
+      currentArtefact.scene,
+      proposal.operations?.length ? proposal.operations : [proposal.operation],
+    ).scene,
+  });
+  const details = (
+    <>
+        {message.artefact && hasCurrentStructure ? (
           <Card size="sm" className="max-w-xl">
             <CardHeader>
               <CardTitle>Structural preview</CardTitle>
               <CardDescription>Inspection only. The committed snapshot stays unchanged.</CardDescription>
             </CardHeader>
             <CardContent>
-              <PreviewSurface artefact={message.artefact} onExpand={() => onInspect(message.artefact!)} onOpenEditor={onOpenEditor} />
+              <PreviewSurface artefact={message.artefact} onExpand={() => onInspect(message.artefact!)} onOpenEditor={() => onOpenEditor()} />
             </CardContent>
           </Card>
         ) : null}
@@ -299,6 +284,7 @@ function MessageRow({
           <ProposalCard
             key={proposal.proposalId}
             proposal={proposal}
+            previewArtefact={previewForProposal(proposal)}
             index={index}
             busy={proposalBusy}
             onAccept={() => onAcceptProposal(proposal)}
@@ -307,14 +293,25 @@ function MessageRow({
             onShowAlternatives={onShowAlternatives}
             showAlternatives={showAlternatives}
             onOpenEditor={() => onOpenEditor(proposal)}
+            onInspect={() => onInspect(previewForProposal(proposal))}
           />
         ) : <ProposalRecord key={proposal.proposalId} proposal={proposal} />)}
         {!showAlternatives && allProposals.length > 1 && proposals.every((proposal) => proposal.status !== 'pending') ? (
           <Button variant="ghost" size="sm" className="self-start" onClick={onShowAlternatives}>Explore another</Button>
         ) : null}
         {message.analysis ? <AnalysisResultCard analysis={message.analysis} /> : null}
-      </MessageContent>
-    </Message>
+    </>
+  );
+  return (
+    <ChatTranscriptMessage
+      author={message.role === 'user' ? 'user' : 'assistant'}
+      messageId={message.id}
+      scrollAnchor={message.role === 'user'}
+      testId={`conversation-message-${message.id}`}
+      details={details}
+    >
+      {message.content}
+    </ChatTranscriptMessage>
   );
 }
 
@@ -390,6 +387,24 @@ function WorkingCopyPanel({
   const [releaseMemberId, setReleaseMemberId] = useState('');
   const [releaseEnd, setReleaseEnd] = useState<'start' | 'end'>('start');
   const [releaseRestraints, setReleaseRestraints] = useState({ ux: false, uy: false, uz: false, rx: true, ry: true, rz: true });
+  const nodeItems: Array<{ label: string; value: string | null }> = [
+    { label: 'Select node', value: null },
+    ...projection.scene.nodes.map((node) => ({ label: node.id, value: node.id })),
+  ];
+  const nodeSelect = (
+    value: string,
+    onValueChange: (value: string) => void,
+    triggerId: string,
+  ) => (
+    <Select items={nodeItems} value={value || null} onValueChange={(nextValue) => onValueChange(nextValue ?? '')}>
+      <SelectTrigger id={triggerId} className="w-full"><SelectValue /></SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          {nodeItems.map((item) => <SelectItem key={item.value ?? 'placeholder'} value={item.value}>{item.label}</SelectItem>)}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  );
   return (
     <div data-testid="working-copy-panel" className="flex min-h-0 flex-1 flex-col gap-4 p-4">
       <div className="flex items-start justify-between gap-4">
@@ -407,7 +422,7 @@ function WorkingCopyPanel({
           </CardHeader>
         </Card>
       ) : null}
-      {error ? <div role="alert" data-testid="working-copy-error" className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div> : null}
+      {error ? <Alert variant="destructive" data-testid="working-copy-error"><AlertDescription>{error}</AlertDescription></Alert> : null}
       <div className="min-h-0 flex-1 overflow-hidden rounded-lg border bg-muted/20">
         <Viewport3D
           scene={projection.scene}
@@ -460,8 +475,8 @@ function WorkingCopyPanel({
               <div className="flex flex-col gap-3 rounded-lg border p-3" data-testid="add-member-editor">
                 <p className="text-sm font-medium">Member</p>
                 <Field><FieldLabel htmlFor="new-member-id">Id</FieldLabel><Input id="new-member-id" value={memberId} onChange={(event) => setMemberId(event.target.value)} /></Field>
-                <Field><FieldLabel htmlFor="new-member-start">Start node</FieldLabel><Select value={memberStart || null} onValueChange={(value) => setMemberStart(value ?? '')}><SelectTrigger id="new-member-start" className="w-full"><SelectValue placeholder="Select node" /></SelectTrigger><SelectContent>{projection.scene.nodes.map((node) => <SelectItem key={node.id} value={node.id}>{node.id}</SelectItem>)}</SelectContent></Select></Field>
-                <Field><FieldLabel htmlFor="new-member-end">End node</FieldLabel><Select value={memberEnd || null} onValueChange={(value) => setMemberEnd(value ?? '')}><SelectTrigger id="new-member-end" className="w-full"><SelectValue placeholder="Select node" /></SelectTrigger><SelectContent>{projection.scene.nodes.map((node) => <SelectItem key={node.id} value={node.id}>{node.id}</SelectItem>)}</SelectContent></Select></Field>
+                <Field><FieldLabel htmlFor="new-member-start">Start node</FieldLabel>{nodeSelect(memberStart, setMemberStart, 'new-member-start')}</Field>
+                <Field><FieldLabel htmlFor="new-member-end">End node</FieldLabel>{nodeSelect(memberEnd, setMemberEnd, 'new-member-end')}</Field>
                 <Field><FieldLabel htmlFor="new-member-role">Role</FieldLabel><Input id="new-member-role" value={memberRole} onChange={(event) => setMemberRole(event.target.value)} placeholder="beam, rafter, column" /></Field>
                 <FieldGroup className="grid grid-cols-2 gap-2"><Field><FieldLabel htmlFor="new-member-section">Section</FieldLabel><Input id="new-member-section" value={sectionId} onChange={(event) => setSectionId(event.target.value)} /></Field><Field><FieldLabel htmlFor="new-member-material">Material</FieldLabel><Input id="new-member-material" value={materialId} onChange={(event) => setMaterialId(event.target.value)} /></Field></FieldGroup>
                 <Button variant="outline" size="sm" disabled={pending} onClick={() => onAddMember({ kind: 'add_member', id: memberId, startNode: memberStart, endNode: memberEnd, role: memberRole, sectionId, materialId })}>Add member</Button>
@@ -470,7 +485,7 @@ function WorkingCopyPanel({
               <div className="flex flex-col gap-3 rounded-lg border p-3" data-testid="add-support-editor">
                 <p className="text-sm font-medium">Support</p>
                 <Field><FieldLabel htmlFor="new-support-id">Id</FieldLabel><Input id="new-support-id" value={supportId} onChange={(event) => setSupportId(event.target.value)} /></Field>
-                <Field><FieldLabel htmlFor="new-support-node">Target node</FieldLabel><Select value={supportNode || null} onValueChange={(value) => setSupportNode(value ?? '')}><SelectTrigger id="new-support-node" className="w-full"><SelectValue placeholder="Select node" /></SelectTrigger><SelectContent>{projection.scene.nodes.map((node) => <SelectItem key={node.id} value={node.id}>{node.id}</SelectItem>)}</SelectContent></Select></Field>
+                <Field><FieldLabel htmlFor="new-support-node">Target node</FieldLabel>{nodeSelect(supportNode, setSupportNode, 'new-support-node')}</Field>
                 <FieldGroup className="grid grid-cols-3 gap-2">{(['ux', 'uy', 'uz', 'rx', 'ry', 'rz'] as const).map((axis) => <Field key={axis} orientation="horizontal"><Checkbox checked={restraints[axis]} onCheckedChange={(checked) => setRestraints((current) => ({ ...current, [axis]: Boolean(checked) }))} /><FieldLabel>{axis}</FieldLabel></Field>)}</FieldGroup>
                 <Button variant="outline" size="sm" disabled={pending} onClick={() => onAddSupport({ kind: 'add_support', id: supportId, targetNode: supportNode, ...restraints })}>Add support</Button>
               </div>
@@ -515,7 +530,7 @@ function WorkingCopyPanel({
   );
 }
 
-export function ConversationWorkspace({ state }: { state: WorkbenchState }) {
+export function ConversationWorkspace({ state, onState }: { state: WorkbenchState; onState?: (nextState: WorkbenchState) => void }) {
   const [projection, setProjection] = useState(() => createConversationProjection(state));
   const [liveTransport, setLiveTransport] = useState(false);
   const [inspectionArtefact, setInspectionArtefact] = useState<ConversationArtefactProjection | null>(null);
@@ -528,13 +543,18 @@ export function ConversationWorkspace({ state }: { state: WorkbenchState }) {
   const [selectedWorkingCopyNode, setSelectedWorkingCopyNode] = useState<string | null>(null);
   const [workingCopyNodePosition, setWorkingCopyNodePosition] = useState<{ x: number; y: number; z: number } | null>(null);
   const [analysisBusy, setAnalysisBusy] = useState(false);
+  const [analysisAttempt, setAnalysisAttempt] = useState<AnalysisAttemptResponse | null>(null);
   const [workingCopyError, setWorkingCopyError] = useState<string | null>(null);
   const [proposalHandoff, setProposalHandoff] = useState<ConversationProposalProjection | null>(null);
-  const [briefOpen, setBriefOpen] = useState(false);
-  const [briefSaved, setBriefSaved] = useState(false);
   const [showAlternatives, setShowAlternatives] = useState(false);
   const [manualCommitCount, setManualCommitCount] = useState(0);
   const [transportWarning, setTransportWarning] = useState<string | null>(null);
+  const [activeTurnId, setActiveTurnId] = useState<number | null>(null);
+  const [failedTurnText, setFailedTurnText] = useState<string | null>(null);
+  const [analysisHistoryOpen, setAnalysisHistoryOpen] = useState(false);
+  const turnSequence = useRef(0);
+  const activeRequestId = useRef<string | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -549,25 +569,137 @@ export function ConversationWorkspace({ state }: { state: WorkbenchState }) {
   async function submitMessage() {
     const message = composer.trim();
     if (!message || sending) return;
+    const turnId = ++turnSequence.current;
+    const requestId = `conversation-turn-${projection.head.revisionId}-${turnId}-${Date.now()}`;
+    activeRequestId.current = requestId;
+    setActiveTurnId(turnId);
     setComposer('');
     setProjection((current) => ({
       ...current,
       messages: [...current.messages, { id: `user-${Date.now()}`, role: 'user', content: message }],
     }));
     setSending(true);
+    setFailedTurnText(null);
     try {
-      const next = await sendConversationMessage(projection, message);
-      setProjection((current) => ({ ...next, messages: current.messages.length > next.messages.length ? current.messages : next.messages }));
+      if (window.fraia.conversationAgentRespond) {
+        const result = await respondConversationAgent(
+          projection,
+          message,
+          requestId,
+        );
+        if (turnSequence.current !== turnId) return;
+        setProjection((current) => {
+          const currentIds = new Set(current.messages.map((item) => item.id));
+          return {
+            ...result.projection,
+            messages: [
+              ...current.messages,
+              ...result.projection.messages.filter((item) => !currentIds.has(item.id)),
+            ],
+          };
+        });
+        return;
+      }
+      const [next, agentResponse] = await Promise.all([
+        sendConversationMessage(projection, message),
+        window.fraia.agentRespondSession?.({
+          projectDir: projection.projectDir,
+          surface: 'pre_solve',
+          text: message,
+          selectedOptionIds: [],
+          requestId,
+        }).catch((error: unknown) => ({ error: error instanceof Error ? error.message : String(error) })),
+      ]);
+      if (turnSequence.current !== turnId) return;
+      const nextState = agentResponse?.state as WorkbenchState | undefined;
+      const agentState = nextState?.agentState ?? nextState?.agent_state;
+      const agentSession = agentState?.sessions?.find((item) => item.surface === 'pre_solve');
+      const latestAgentMessage = [...(agentSession?.messages ?? [])].reverse().find((item) => item.author === 'assistant' && item.text.trim());
+      const agentMessage: ConversationMessageProjection | null = latestAgentMessage ? {
+        id: `agent-pre-solve-${latestAgentMessage.createdAt ?? latestAgentMessage.created_at ?? Date.now()}`,
+        role: 'assistant',
+        content: latestAgentMessage.text,
+      } : agentResponse?.error ? {
+        id: `agent-error-${Date.now()}`,
+        role: 'system',
+        content: `Fraia could not reach the design agent. ${agentResponse.error}`,
+      } : null;
+      setProjection((current) => {
+        const currentIds = new Set(current.messages.map((item) => item.id));
+        const currentUserMessages = new Set(
+          current.messages
+            .filter((item) => item.role === 'user')
+            .map((item) => item.content),
+        );
+        const incoming = [...next.messages, ...(agentMessage ? [agentMessage] : [])];
+        return {
+          ...next,
+          messages: [
+            ...current.messages,
+            ...incoming.filter((item) =>
+              !currentIds.has(item.id)
+              && !(item.role === 'user' && currentUserMessages.has(item.content))),
+          ],
+        };
+      });
+      if (nextState) onState?.(nextState);
+    } catch (error) {
+      if (turnSequence.current !== turnId) return;
+      const detail = error instanceof Error ? error.message : String(error);
+      setFailedTurnText(message);
+      setTransportWarning(detail);
     } finally {
-      setSending(false);
+      if (turnSequence.current === turnId) {
+        setSending(false);
+        setActiveTurnId(null);
+        activeRequestId.current = null;
+        composerRef.current?.focus();
+      }
     }
+  }
+
+  function cancelResponse() {
+    if (!sending) return;
+    const requestId = activeRequestId.current;
+    if (requestId) void window.fraia.agentCancelSession?.({ requestId });
+    activeRequestId.current = null;
+    turnSequence.current += 1;
+    setSending(false);
+    setActiveTurnId(null);
+    setProjection((current) => ({
+      ...current,
+      messages: [...current.messages, {
+        id: `response-cancelled-${Date.now()}`,
+        role: 'system',
+        content: 'Response cancelled. Your message remains in the conversation.',
+      }],
+    }));
+    window.requestAnimationFrame(() => composerRef.current?.focus());
   }
 
   async function runAnalysis() {
     if (analysisBusy) return;
     setAnalysisBusy(true);
+    setTransportWarning(null);
+    setAnalysisAttempt({
+      attemptId: 'starting',
+      projectId: projection.revisionScopeId,
+      revisionId: projection.head.revisionId,
+      authoredSnapshotId: projection.head.snapshotId,
+      evidenceId: 'pending',
+      stage: 'preparing',
+      status: 'running',
+      elapsedMillis: 0,
+      diagnostics: [],
+    });
     try {
-      const result = await analyseConversationSnapshot(projection);
+      const identity = crypto.randomUUID();
+      let attempt = await window.fraia.startAnalysisAttempt({ projectId: projection.revisionScopeId, request: { contractVersion: 'fraia.operations.v1', requestId: `analysis-request-${identity}`, operation: 'analyse_snapshot', parameters: { revision_id: projection.head.revisionId, expected_snapshot_id: projection.head.snapshotId, evidence_id: `analysis-${identity}`, settings: { request: { Frame2DRealization: { configuration_version: 'fraia.frame2d.realization.v1' } }, check_limits: { max_utilization: 1, max_drift_ratio: 300, max_deflection_ratio: 360 } } } } });
+      attempt = { ...attempt, diagnostics: attempt.diagnostics ?? [] };
+      setAnalysisAttempt(attempt);
+      while (attempt.status === 'running' || attempt.status === 'cancelling') { await new Promise((resolve) => setTimeout(resolve, 120)); const status = await window.fraia.analysisAttemptStatus({ projectId: projection.revisionScopeId, attemptId: attempt.attemptId }); attempt = { ...status, diagnostics: status.diagnostics ?? [] }; setAnalysisAttempt(attempt); }
+      if (attempt.status === 'cancelled') return;
+      const result = { live: true, analysis: { evidenceId: attempt.evidenceId, snapshotId: attempt.authoredSnapshotId, status: attempt.status === 'completed' ? 'success' as const : attempt.status === 'unsupported' ? 'unsupported' as const : 'failed' as const, summary: attempt.status === 'completed' ? 'Analysis complete. The technical record is saved in History.' : (attempt.diagnostics ?? []).join(' ') || `Analysis ${attempt.status}.` } };
       setLiveTransport((current) => current || result.live);
       setProjection((current) => {
         const evidence: ConversationEvidenceProjection[] = [...current.evidence.filter((item) => item.evidenceId !== result.analysis.evidenceId && item.status !== 'stale'), {
@@ -587,9 +719,18 @@ export function ConversationWorkspace({ state }: { state: WorkbenchState }) {
           messages: [...current.messages, { id: `analysis-${result.analysis.evidenceId}-${Date.now()}`, role: 'assistant', content: result.analysis.summary, analysis: result.analysis }],
         };
       });
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : String(caught);
+      setTransportWarning(`Analysis attempt failed: ${message}`);
     } finally {
       setAnalysisBusy(false);
     }
+  }
+
+  async function cancelAnalysis() {
+    if (!analysisAttempt || analysisAttempt.attemptId === 'starting' || analysisAttempt.status !== 'running') return;
+    const cancelled = await window.fraia.cancelAnalysisAttempt({ projectId: projection.revisionScopeId, attemptId: analysisAttempt.attemptId });
+    setAnalysisAttempt({ ...cancelled, diagnostics: cancelled.diagnostics ?? [] });
   }
 
   async function compareEvidence() {
@@ -615,7 +756,12 @@ export function ConversationWorkspace({ state }: { state: WorkbenchState }) {
       setTransportWarning(result.error ? `The live proposal transport rejected this candidate. The UI is showing a local typed projection for inspection only: ${result.error}` : null);
       setProjection((current) => ({
         ...result.projection,
-        messages: [...result.projection.messages, { id: `accepted-${nextProposal.proposalId}`, role: 'assistant', content: 'This direction is now the current design. We can analyse it or refine it.' }],
+        messages: [...result.projection.messages, {
+          id: `accepted-${nextProposal.proposalId}`,
+          role: 'assistant',
+          content: 'This direction is now the current design. We can analyse it or refine it.',
+          artefact: result.projection.artefact,
+        }],
       }));
     } finally {
       setProposalBusy(false);
@@ -662,11 +808,33 @@ export function ConversationWorkspace({ state }: { state: WorkbenchState }) {
     setProposalHandoff(nextProposal ?? null);
     try {
       const result = await openConversationWorkingCopy(projection);
-      setWorkingCopy(result.workingCopy);
-      setSelectedWorkingCopyMember(result.workingCopy.scene.members[0]?.id ?? null);
-      const firstNode = result.workingCopy.scene.nodes[0];
+      let nextWorkingCopy = result.workingCopy;
+      if (nextProposal) {
+        const operations = nextProposal.operations?.length ? nextProposal.operations : [nextProposal.operation];
+        for (const operation of operations) {
+          const applied = applyConversationOperation(nextWorkingCopy.scene, operation);
+          if ('error' in applied) throw new Error(applied.error);
+          const persisted = await applyConversationWorkingCopyOperation(projection, nextWorkingCopy, operation);
+          if (!persisted) throw new Error('Fraia could not apply the proposed structure to the private editor.');
+          nextWorkingCopy = {
+            ...nextWorkingCopy,
+            scene: applied.scene,
+            operationCount: nextWorkingCopy.operationCount + 1,
+            operations: [...(nextWorkingCopy.operations ?? []), operation],
+            diffSummary: [...(nextWorkingCopy.diffSummary ?? []), applied.summary],
+          };
+        }
+      }
+      setWorkingCopy(nextWorkingCopy);
+      setSelectedWorkingCopyMember(nextWorkingCopy.scene.members[0]?.id ?? null);
+      const firstNode = nextWorkingCopy.scene.nodes[0];
       setSelectedWorkingCopyNode(firstNode?.id ?? null);
       setWorkingCopyNodePosition(firstNode ? { x: firstNode.x, y: firstNode.y, z: firstNode.z } : null);
+    } catch (error) {
+      setProposalHandoff(null);
+      const message = error instanceof Error ? error.message : String(error);
+      setWorkingCopyError(message);
+      setTransportWarning(message);
     } finally {
       setWorkingCopyPending(false);
     }
@@ -796,95 +964,111 @@ export function ConversationWorkspace({ state }: { state: WorkbenchState }) {
     );
   }
 
+  const hasStructure = Boolean(
+    projection.artefact.scene.nodes.length
+    || projection.artefact.scene.members.length
+    || projection.artefact.scene.plates?.length,
+  );
+  const firstUse = !hasStructure && projection.messages.length === 0;
+  const projectName = state.overview?.projectName ?? state.overview?.project_name ?? 'Untitled Project';
+  const designName = state.overview?.designName ?? state.overview?.design_name ?? 'Design 1';
+
   return (
     <div data-testid="conversation-workspace" className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center justify-between gap-3 border-b px-5 py-3">
+      {!firstUse ? <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-3" data-purpose="manage-current-design">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{projection.purpose}</p>
-          <p className="truncate text-xs text-muted-foreground">Your design conversation</p>
+          <p className="truncate text-xs text-muted-foreground">{projectName} / {designName}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
           {projection.evidence.some((item) => item.status === 'stale') ? <Badge variant="outline" data-testid="stale-evidence">Stale evidence</Badge> : null}
           {projection.evidence.some((item) => item.status === 'current') ? <Badge variant="secondary" data-testid="analysis-complete">Analysis complete</Badge> : null}
+          <Button variant="ghost" size="sm" onClick={() => setAnalysisHistoryOpen(true)}><History data-icon="inline-start" />History</Button>
           {projection.head.revisionId !== 'root-revision' && !projection.head.revisionId.endsWith(':root') ? (
             projection.evidence.some((item) => item.status === 'current') && !projection.evidence.some((item) => item.status === 'stale') ? (
-              <Button variant="outline" size="sm" data-testid="view-analysis" onClick={viewAnalysis}>View analysis</Button>
+              <Button size="sm" data-testid="view-analysis" onClick={viewAnalysis}>View result</Button>
             ) : (
-              <Button variant="outline" size="sm" disabled={analysisBusy} data-testid={projection.evidence.some((item) => item.status === 'stale') ? 'rerun-analysis' : 'run-analysis'} onClick={() => void runAnalysis()}>{analysisBusy ? 'Analysing…' : projection.evidence.some((item) => item.status === 'stale') ? 'Rerun analysis' : 'Run analysis'}</Button>
+              <Button variant="outline" size="sm" disabled={analysisBusy} data-testid={projection.evidence.some((item) => item.status === 'stale') ? 'rerun-analysis' : 'run-analysis'} onClick={() => void runAnalysis()}>{analysisBusy ? 'Analysing…' : projection.evidence.some((item) => item.status === 'stale') ? 'Rerun analysis' : analysisAttempt && ['failed','unsupported','cancelled'].includes(analysisAttempt.status) ? 'Retry analysis' : 'Run analysis'}</Button>
             )
           ) : null}
-          <span className="sr-only" aria-live="polite">{liveTransport ? 'Conversation connected' : 'Conversation is starting'}</span>
+          <span className="sr-only" aria-live="polite">{liveTransport ? 'Fraia is ready' : 'Fraia is starting'}</span>
         </div>
+      </div> : null}
+      <AnalysisHistorySheet open={analysisHistoryOpen} projectDir={projection.projectRootDir} designId={projection.designId} designName={designName} currentSnapshotId={projection.head.snapshotId} ancestorSnapshotIds={projection.messages.flatMap((message) => message.evidence?.authoredSnapshotId ? [message.evidence.authoredSnapshotId] : [])} onOpenChange={setAnalysisHistoryOpen} />
+      {analysisAttempt ? <div className="mx-auto flex w-full max-w-4xl flex-wrap items-center gap-2 px-3 pt-2" data-testid="analysis-attempt" data-attempt-id={analysisAttempt.attemptId} data-canonical-run-id={analysisAttempt.canonicalRunId ?? ''} data-status={analysisAttempt.status}><Marker className="min-w-0 flex-1"><MarkerIcon>{['running','cancelling'].includes(analysisAttempt.status) ? <Spinner /> : null}</MarkerIcon><MarkerContent>{analysisAttempt.attemptId === 'starting' ? 'Starting analysis…' : `${analysisAttempt.stage.split('_').join(' ')} · ${(analysisAttempt.elapsedMillis / 1000).toFixed(1)} s · ${analysisAttempt.status}`}</MarkerContent></Marker>{analysisAttempt.status === 'running' && analysisAttempt.attemptId !== 'starting' ? <Button size="sm" variant="outline" onClick={() => void cancelAnalysis()}>Cancel analysis</Button> : null}{analysisAttempt.diagnostics?.length ? <Alert className="basis-full" variant={analysisAttempt.status === 'failed' ? 'destructive' : 'default'}><AlertDescription>{analysisAttempt.diagnostics.map(analysisDiagnosticMessage).join(' ')}</AlertDescription></Alert> : null}</div> : null}
+      {transportWarning ? <Alert variant="destructive" data-testid="conversation-transport-warning" className="mx-auto mt-3 w-full max-w-4xl"><AlertDescription className="flex flex-col gap-2"><span>{friendlyTransportMessage(transportWarning)}</span><Collapsible><CollapsibleTrigger render={<Button variant="ghost" size="sm" className="self-start">Details</Button>} /><CollapsibleContent><span className="break-words text-xs">{transportWarning}</span></CollapsibleContent></Collapsible></AlertDescription></Alert> : null}
+      <div className="min-h-0 flex-1">
+        <ChatTranscript busy={sending}>
+          {firstUse ? (
+            <ChatTranscriptPanel messageId="blank-conversation">
+              <Empty data-testid="blank-conversation" className="min-h-full">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon"><MessageSquareText /></EmptyMedia>
+                  <Badge variant="outline" data-testid="project-design-identity">{projectName} / {designName}</Badge>
+                  <EmptyTitle>What would you like to design?</EmptyTitle>
+                  <EmptyDescription>Describe what you need. Fraia will ask for any dimensions, supports, loads, or constraints that are still missing.</EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            </ChatTranscriptPanel>
+          ) : projection.messages.map((message) => (
+            <MessageRow
+              key={message.id}
+              message={message.id === 'assistant-preview' ? { ...message, artefact: projection.artefact } : message}
+              onInspect={setInspectionArtefact}
+              onOpenEditor={openEditor}
+              onAcceptProposal={acceptProposal}
+              onRejectProposal={rejectProposal}
+              onAnalyseCandidate={analyseAlternative}
+              proposalBusy={proposalBusy}
+              comparison={projection.comparison}
+              onCompare={() => void compareEvidence()}
+              onShowAlternatives={() => setShowAlternatives(true)}
+              showAlternatives={showAlternatives}
+              currentArtefact={projection.artefact}
+            />
+          ))}
+          {sending && activeTurnId !== null ? (
+            <ChatTranscriptActivity messageId={`agent-activity-${activeTurnId}`} label="Fraia is working…">
+              <ChatTranscriptCancel onClick={cancelResponse} />
+            </ChatTranscriptActivity>
+          ) : null}
+          {!sending && failedTurnText ? (
+            <div className="flex justify-end px-3">
+              <Button variant="outline" size="sm" onClick={() => {
+                setComposer(failedTurnText);
+                setFailedTurnText(null);
+                composerRef.current?.focus();
+              }}>Try again</Button>
+            </div>
+          ) : null}
+        </ChatTranscript>
       </div>
-      {transportWarning ? <div role="alert" data-testid="conversation-transport-warning" className="mx-auto mt-3 w-full max-w-4xl rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{transportWarning}</div> : null}
-      <div className="mx-auto w-full max-w-4xl px-5 pt-4">
-        <BriefCapture
-          facts={projection.projectFacts}
-          open={briefOpen}
-          saved={briefSaved}
-          onToggle={() => { setBriefSaved(false); setBriefOpen((open) => !open); }}
-          onSave={(projectFacts) => {
-            setBriefSaved(false);
-            void updateConversationFacts(projection, projectFacts).then((result) => {
-              setLiveTransport((current) => current || result.live);
-              setTransportWarning(result.error ? `The project brief was not persisted: ${result.error}` : null);
-              if (!result.error) {
-                setProjection(result.projection);
-                setBriefSaved(true);
-                setBriefOpen(false);
-              }
-            });
-          }}
-        />
-      </div>
-      <MessageScrollerProvider>
-        <MessageScroller className="min-h-0 flex-1">
-          <MessageScrollerViewport>
-            <MessageScrollerContent className="mx-auto w-full max-w-4xl px-5 py-6">
-              <MessageGroup>
-                {projection.messages.map((message) => (
-                  <MessageScrollerItem key={message.id}>
-                    <MessageRow
-                      message={message.id === 'assistant-preview' ? { ...message, artefact: projection.artefact } : message}
-                      onInspect={setInspectionArtefact}
-                      onOpenEditor={openEditor}
-                      onAcceptProposal={acceptProposal}
-                      onRejectProposal={rejectProposal}
-                      onAnalyseCandidate={analyseAlternative}
-                      proposalBusy={proposalBusy}
-                      comparison={projection.comparison}
-                      onCompare={() => void compareEvidence()}
-                      onShowAlternatives={() => setShowAlternatives(true)}
-                      showAlternatives={showAlternatives}
-                    />
-                  </MessageScrollerItem>
-                ))}
-              </MessageGroup>
-            </MessageScrollerContent>
-          </MessageScrollerViewport>
-        </MessageScroller>
-      </MessageScrollerProvider>
       <div className="mx-auto w-full max-w-4xl px-5 pb-5">
         <Separator className="mb-4" />
-        <div className="flex items-end gap-2">
-          <Textarea
-            value={composer}
-            onChange={(event) => setComposer(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-                event.preventDefault();
-                void submitMessage();
-              }
-            }}
-            placeholder="Continue the design conversation…"
-            aria-label="Conversation message"
-            rows={2}
-          />
-          <Button size="icon" aria-label="Send message" disabled={!composer.trim() || sending} onClick={() => void submitMessage()}>
-            <Send />
-          </Button>
-        </div>
-        <p className="mt-2 text-xs text-muted-foreground">Cmd/Ctrl + Enter to send</p>
+        <Field>
+          <FieldLabel htmlFor="conversation-message" className="sr-only">Conversation message</FieldLabel>
+          <InputGroup>
+            <InputGroupTextarea
+              ref={composerRef}
+              id="conversation-message"
+              value={composer}
+              onChange={(event) => setComposer(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                  event.preventDefault();
+                  void submitMessage();
+                }
+              }}
+              rows={2}
+            />
+            <InputGroupAddon align="inline-end">
+              <InputGroupButton size="icon-xs" aria-label="Send message" aria-disabled={!composer.trim() || sending} onClick={() => void submitMessage()}>
+                <Send data-icon="inline-start" />
+              </InputGroupButton>
+            </InputGroupAddon>
+          </InputGroup>
+          <FieldDescription>Cmd/Ctrl + Enter to send</FieldDescription>
+        </Field>
         <p data-testid="manual-commit-count" className="sr-only">Manual revisions committed: {manualCommitCount}</p>
       </div>
       <Dialog open={Boolean(inspectionArtefact)} onOpenChange={(open) => { if (!open) setInspectionArtefact(null); }}>

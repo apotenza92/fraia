@@ -226,6 +226,7 @@ class FraiaAiRuntime {
     refreshIntervalMs = DEFAULT_REFRESH_INTERVAL_MS,
     focusDebounceMs = DEFAULT_FOCUS_DEBOUNCE_MS,
     turnTimeoutMs = DEFAULT_TURN_TIMEOUT_MS,
+    turnHeartbeatMs = 5_000,
   }) {
     this.safeStorage = safeStorage;
     this.shell = shell;
@@ -236,6 +237,7 @@ class FraiaAiRuntime {
     this.refreshIntervalMs = refreshIntervalMs;
     this.focusDebounceMs = focusDebounceMs;
     this.turnTimeoutMs = turnTimeoutMs;
+    this.turnHeartbeatMs = turnHeartbeatMs;
     this.modelRuntime = null;
     this.pi = null;
     this.Type = null;
@@ -248,6 +250,40 @@ class FraiaAiRuntime {
     this.catalogRefreshError = null;
     this.activeTurns = new Map();
     this.authFlows = new Map();
+  }
+
+  emitTurnProgress(activeTurn, state, details = {}) {
+    if (activeTurn.terminalState) return false;
+    this.emitStatus({
+      kind: 'turn',
+      requestId: activeTurn.requestId,
+      state,
+      elapsedMs: Date.now() - activeTurn.startedAt,
+      ...details,
+    });
+    return true;
+  }
+
+  finishTurn(activeTurn, state, message) {
+    if (activeTurn.terminalState) return false;
+    activeTurn.terminalState = state;
+    activeTurn.cancellationMessage = message ?? null;
+    this.emitStatus({
+      kind: 'turn',
+      requestId: activeTurn.requestId,
+      state,
+      elapsedMs: Date.now() - activeTurn.startedAt,
+      ...(message ? { message } : {}),
+    });
+    return true;
+  }
+
+  async cancelTurnsForScope(scopeId) {
+    const requestIds = [...this.activeTurns.values()]
+      .filter((turn) => turn.scopeId === scopeId)
+      .map((turn) => turn.requestId);
+    const results = await Promise.all(requestIds.map((requestId) => this.cancelTurn(requestId)));
+    return results.filter(Boolean).length;
   }
 
   async initialize() {
@@ -310,7 +346,7 @@ class FraiaAiRuntime {
         displayName: model.name || model.id,
         available: availableIds.has(`${model.provider}/${model.id}`),
         reasoning: Boolean(model.reasoning),
-        defaultReasoningLevel: model.reasoning ? 'low' : 'off',
+        defaultReasoningLevel: model.reasoning ? 'high' : 'off',
         supportedReasoningLevels: reasoningLevels(model),
         contextWindow: model.contextWindow ?? null,
         maxTokens: model.maxTokens ?? null,
@@ -418,13 +454,16 @@ class FraiaAiRuntime {
     if (!requestId || !providerId || !modelId || !prompt || !responseSchema) {
       throw new Error('AI turn request is missing required fields.');
     }
+    const deadlineTimeoutMs = Number.isSafeInteger(request.deadlineAtUnixMs)
+      ? Math.max(1, Math.min(this.turnTimeoutMs, request.deadlineAtUnixMs - Date.now()))
+      : this.turnTimeoutMs;
     if (this.activeTurns.has(requestId)) throw new Error(`AI request ${requestId} is already active.`);
     if (
       providerId !== FRAIA_AI_PROVIDER_ID
       || modelId !== FRAIA_AI_MODEL_ID
-      || reasoningEffort !== 'low'
+      || reasoningEffort !== 'high'
     ) {
-      throw new Error(`Fraia supports only ${FRAIA_AI_PROVIDER_ID}/${FRAIA_AI_MODEL_ID} with low reasoning.`);
+      throw new Error(`Fraia supports only ${FRAIA_AI_PROVIDER_ID}/${FRAIA_AI_MODEL_ID} with high reasoning.`);
     }
     const model = this.modelRuntime.getModel(providerId, modelId);
     if (!model) throw new Error(`Pi does not know model ${providerId}/${modelId}.`);
@@ -434,6 +473,7 @@ class FraiaAiRuntime {
     }
 
     let structuredResult = null;
+    let activeTurn = null;
     const schema = typeBoxSchema(this.Type, responseSchema);
     const tool = {
       name: 'submit_fraia_response',
@@ -441,6 +481,9 @@ class FraiaAiRuntime {
       description: 'Submit the final structured response to Fraia. This must be the final action.',
       parameters: schema,
       async execute(_toolCallId, params) {
+        if (!activeTurn || activeTurn.terminalState) {
+          throw new Error('This AI turn is no longer active.');
+        }
         structuredResult = params;
         return {
           content: [{ type: 'text', text: 'Fraia received the structured response.' }],
@@ -459,13 +502,23 @@ class FraiaAiRuntime {
       streamFn: (selectedModel, context, options) => this.modelRuntime.streamSimple(selectedModel, context, options),
       toolExecution: 'sequential',
     });
-    const activeTurn = { agent, cancellationMessage: null };
+    activeTurn = {
+      agent,
+      requestId,
+      scopeId: request.scopeId ?? null,
+      startedAt: Date.now(),
+      terminalState: null,
+      cancellationMessage: null,
+    };
     const timeout = setTimeout(() => {
-      activeTurn.cancellationMessage = 'The AI turn timed out and was cancelled.';
-      agent.abort();
-    }, this.turnTimeoutMs);
+      if (this.finishTurn(activeTurn, 'timed_out', 'The AI turn timed out.')) agent.abort();
+    }, deadlineTimeoutMs);
+    const heartbeat = setInterval(() => {
+      this.emitTurnProgress(activeTurn, 'working', { liveness: true });
+    }, this.turnHeartbeatMs);
+    heartbeat.unref?.();
     this.activeTurns.set(requestId, activeTurn);
-    this.emitStatus({ kind: 'turn', requestId, state: 'generating', providerId, modelId });
+    this.emitTurnProgress(activeTurn, 'generating', { providerId, modelId });
     const promptAgent = async (message) => {
       if (activeTurn.cancellationMessage) throw new Error(activeTurn.cancellationMessage);
       try {
@@ -480,13 +533,16 @@ class FraiaAiRuntime {
     try {
       await promptAgent(prompt);
       if (!structuredResult) {
-        this.emitStatus({ kind: 'turn', requestId, state: 'correcting' });
+        this.emitTurnProgress(activeTurn, 'correcting');
         await promptAgent('Your previous response did not call submit_fraia_response with valid arguments. Call it now with a complete response matching the tool schema.');
       }
       if (!structuredResult) {
         throw new Error('The model did not submit a valid structured Fraia response after one corrective attempt.');
       }
-      this.emitStatus({ kind: 'turn', requestId, state: 'validating' });
+      this.emitTurnProgress(activeTurn, 'validating');
+      if (!this.finishTurn(activeTurn, 'completed')) {
+        throw new Error(activeTurn.cancellationMessage ?? 'The AI turn is no longer active.');
+      }
       return {
         output: structuredResult,
         providerId,
@@ -494,9 +550,15 @@ class FraiaAiRuntime {
         reasoningEffort,
         catalogueRefreshedAt: this.catalogRefreshedAt,
       };
+    } catch (error) {
+      if (!activeTurn.terminalState) {
+        this.finishTurn(activeTurn, 'failed', normalizeError(error));
+      }
+      throw error;
     } finally {
       clearTimeout(timeout);
-      this.activeTurns.delete(requestId);
+      clearInterval(heartbeat);
+      if (this.activeTurns.get(requestId) === activeTurn) this.activeTurns.delete(requestId);
       agent.reset();
     }
   }
@@ -504,10 +566,9 @@ class FraiaAiRuntime {
   async cancelTurn(requestId) {
     const activeTurn = this.activeTurns.get(requestId);
     if (!activeTurn) return false;
-    activeTurn.cancellationMessage = 'The AI turn was cancelled.';
+    if (!this.finishTurn(activeTurn, 'cancelled', 'The AI turn was cancelled.')) return false;
     activeTurn.agent.abort();
     await activeTurn.agent.waitForIdle();
-    this.emitStatus({ kind: 'turn', requestId, state: 'cancelled' });
     return true;
   }
 
@@ -532,6 +593,10 @@ class FraiaAiRuntime {
         if (request.method === 'DELETE' && url.pathname.startsWith('/v1/turns/')) {
           const requestId = decodeURIComponent(url.pathname.slice('/v1/turns/'.length));
           return this.sendJson(response, 200, { cancelled: await this.cancelTurn(requestId) });
+        }
+        if (request.method === 'DELETE' && url.pathname.startsWith('/v1/scopes/')) {
+          const scopeId = decodeURIComponent(url.pathname.slice('/v1/scopes/'.length));
+          return this.sendJson(response, 200, { cancelled: await this.cancelTurnsForScope(scopeId) });
         }
         return this.sendJson(response, 404, { error: 'not found' });
       } catch (error) {
@@ -577,8 +642,10 @@ class FraiaAiRuntime {
     for (const requestId of [...this.activeTurns.keys()]) await this.cancelTurn(requestId);
     for (const flowId of [...this.authFlows.keys()]) this.cancelAuth(flowId);
     if (this.server) {
-      this.server.closeAllConnections?.();
-      await new Promise((resolve) => this.server.close(resolve));
+      await new Promise((resolve, reject) => {
+        this.server.close((error) => error ? reject(error) : resolve());
+        this.server.closeAllConnections?.();
+      });
     }
     this.server = null;
   }
@@ -633,7 +700,7 @@ class FakeFraiaAiRuntime extends FraiaAiRuntime {
         displayName: 'GPT-5.6 Luna',
         available: connected,
         reasoning: true,
-        defaultReasoningLevel: 'low',
+        defaultReasoningLevel: 'high',
         supportedReasoningLevels: reasoningLevels({ reasoning: true }),
         contextWindow: 128000,
         maxTokens: 16384,
@@ -681,36 +748,174 @@ class FakeFraiaAiRuntime extends FraiaAiRuntime {
     if (request.providerId !== 'openai-codex' || request.modelId !== 'gpt-5.6-luna') {
       throw new Error('The selected fake model is unavailable.');
     }
-    const delayMs = Number.parseInt(process.env.FRAIA_FAKE_AI_TURN_DELAY_MS || '0', 10);
+    const deadlineTimeoutMs = Number.isSafeInteger(request.deadlineAtUnixMs)
+      ? Math.max(1, Math.min(this.turnTimeoutMs, request.deadlineAtUnixMs - Date.now()))
+      : this.turnTimeoutMs;
+    const typedProposal = request.prompt.includes('FRAIA_FAKE_TYPED_PROPOSAL_REQUEST');
+    const delayMs = Number.parseInt(process.env.FRAIA_FAKE_AI_TURN_DELAY_MS || (typedProposal ? '80' : '0'), 10);
+    if (this.activeTurns.has(request.requestId)) {
+      throw new Error(`AI request ${request.requestId} is already active.`);
+    }
+    const activeTurn = {
+      requestId: request.requestId,
+      scopeId: request.scopeId ?? null,
+      startedAt: Date.now(),
+      terminalState: null,
+      cancellationMessage: null,
+      abort: null,
+    };
+    this.activeTurns.set(request.requestId, activeTurn);
+    this.emitTurnProgress(activeTurn, 'sending');
+    const heartbeat = setInterval(() => {
+      this.emitTurnProgress(activeTurn, 'working', { liveness: true });
+    }, this.turnHeartbeatMs);
+    heartbeat.unref?.();
+    const timeout = setTimeout(() => {
+      if (this.finishTurn(activeTurn, 'timed_out', 'The AI turn timed out.')) {
+        void activeTurn.abort?.('The AI turn timed out.');
+      }
+    }, deadlineTimeoutMs);
     try {
       if (delayMs > 0) {
+        this.emitTurnProgress(activeTurn, 'working');
         await new Promise((resolve, reject) => {
           const timer = setTimeout(resolve, delayMs);
-          this.activeTurns.set(request.requestId, {
-            abort: async () => {
+          activeTurn.abort = async (message = 'The AI turn was cancelled.') => {
               clearTimeout(timer);
-              reject(new Error('The AI turn was cancelled.'));
-            },
-          });
+              reject(new Error(message));
+          };
         });
       }
+      if (activeTurn.terminalState) {
+        throw new Error(activeTurn.cancellationMessage ?? 'The AI turn is no longer active.');
+      }
+      this.emitTurnProgress(activeTurn, 'checking');
+      const bound = (field, fallback) => {
+        const match = request.prompt.match(new RegExp(`"${field}"\\s*:\\s*"([^"]+)"`));
+        return match?.[1] ?? fallback;
+      };
+      let boundContext = {};
+      const contractMarker = '"contract": "fraia.conversation-agent.v1"';
+      const contractIndex = request.prompt.indexOf(contractMarker);
+      const markerIndex = contractIndex >= 0
+        ? contractIndex
+        : request.prompt.indexOf('"acceptedHeadRevisionId"');
+      let contextStart = markerIndex >= 0
+        ? request.prompt.lastIndexOf('{', markerIndex)
+        : -1;
+      while (contextStart >= 0) {
+        let depth = 0;
+        let inString = false;
+        let escaped = false;
+        let parsed = false;
+        for (let index = contextStart; index < request.prompt.length; index += 1) {
+          const character = request.prompt[index];
+          if (inString) {
+            if (escaped) escaped = false;
+            else if (character === '\\') escaped = true;
+            else if (character === '"') inString = false;
+            continue;
+          }
+          if (character === '"') inString = true;
+          else if (character === '{') depth += 1;
+          else if (character === '}') {
+            depth -= 1;
+            if (depth === 0) {
+              try {
+                const candidate = JSON.parse(request.prompt.slice(contextStart, index + 1));
+                if (
+                  candidate?.contract === 'fraia.conversation-agent.v1'
+                  || (contractIndex < 0 && typeof candidate?.acceptedHeadRevisionId === 'string')
+                ) {
+                  boundContext = candidate;
+                  parsed = true;
+                }
+              } catch {
+                // Continue with the next enclosing object candidate.
+              }
+              break;
+            }
+          }
+        }
+        if (parsed) break;
+        contextStart = request.prompt.lastIndexOf('{', contextStart - 1);
+      }
+      const boundArray = (field) => Array.isArray(boundContext[field])
+        ? boundContext[field].filter((value) => typeof value === 'string')
+        : [];
+      const inferredDrawingAssumptions = boundArray('inferredDrawingAssumptions');
+      const conversationResponse = Boolean(
+        request.responseSchema?.properties?.responseId
+        && request.responseSchema?.properties?.text
+        && request.responseSchema?.properties?.proposal,
+      );
+      const malformedFirstTypedProposal = typedProposal
+        && process.env.FRAIA_FAKE_AI_MALFORMED_FIRST_RESPONSE === '1'
+        && !request.requestId.endsWith(':schema-correction');
+      const output = typedProposal ? {
+        responseId: 'fake-response-typed-1',
+        text: 'I prepared a simple supported framing line from the explicit test request. Review the assumptions before accepting it.',
+        questions: [],
+        proposal: {
+          proposalId: 'fake-proposal-typed-1',
+          proposedRevisionId: 'fake-revision-typed-1',
+          parentRevisionId: bound('acceptedHeadRevisionId', 'root-revision'),
+          expectedSnapshotId: bound('acceptedSnapshotId', 'root-snapshot'),
+          shelfItemIds: boundArray('selectedDesignReferenceIds'),
+          drawingInterpretationRevisionIds: boundArray('drawingInterpretationRevisionIds'),
+          drawingInterpretationInferenceIds: boundArray('inferredDrawingAssumptionIds'),
+          assumptions: [
+            'The test request explicitly asks for a six metre framing line.',
+            ...inferredDrawingAssumptions,
+          ],
+          evidenceLimits: inferredDrawingAssumptions.length
+            ? ['Every inferred drawing candidate requires confirmation and is not a confirmed fact.']
+            : ['No inferred drawing candidate was supplied as design evidence.'],
+          operations: [
+            { kind: 'add_node', id: 'test-left', x: 0, y: 0, z: 0 },
+            { kind: 'add_node', id: 'test-right', x: 6, y: 0, z: 0 },
+            { kind: 'add_member', id: 'test-beam', startNode: 'test-left', endNode: 'test-right', role: 'beam', sectionId: '250UB', materialId: 'steel' },
+            { kind: 'add_support', id: 'test-left-support', ...(malformedFirstTypedProposal ? { nodeId: 'test-left' } : { targetNode: 'test-left' }), ux: true, uy: true, uz: true, rx: false, ry: false, rz: false },
+            { kind: 'add_support', id: 'test-right-support', targetNode: 'test-right', ux: false, uy: true, uz: true, rx: false, ry: false, rz: false },
+          ],
+        },
+      } : conversationResponse ? {
+        responseId: `fake-response-${request.requestId}`,
+        text: 'I have reviewed the current design context. Tell me the confirmed dimensions, support conditions, loads, and constraints you want me to use before I prepare structural geometry.',
+        questions: [
+          'What span and support conditions should I use?',
+          'Which loads and design constraints are confirmed?',
+        ],
+      } : fakeValueForSchema(request.responseSchema);
+      if (!this.finishTurn(activeTurn, 'completed')) {
+        throw new Error(activeTurn.cancellationMessage ?? 'The AI turn is no longer active.');
+      }
       return {
-        output: fakeValueForSchema(request.responseSchema),
+        output,
         providerId: request.providerId,
         modelId: request.modelId,
         reasoningEffort: request.reasoningEffort,
         catalogueRefreshedAt: this.catalogRefreshedAt,
       };
+    } catch (error) {
+      if (!activeTurn.terminalState) {
+        this.finishTurn(activeTurn, 'failed', normalizeError(error));
+      }
+      throw error;
     } finally {
-      this.activeTurns.delete(request.requestId);
+      clearTimeout(timeout);
+      clearInterval(heartbeat);
+      if (this.activeTurns.get(request.requestId) === activeTurn) {
+        this.activeTurns.delete(request.requestId);
+      }
     }
   }
 
   async cancelTurn(requestId) {
     const turn = this.activeTurns.get(requestId);
     if (!turn) return false;
-    await turn.abort();
-    this.emitStatus({ kind: 'turn', requestId, state: 'cancelled' });
+    if (!this.finishTurn(turn, 'cancelled', 'The AI turn was cancelled.')) return false;
+    await turn.abort?.();
     return true;
   }
 }

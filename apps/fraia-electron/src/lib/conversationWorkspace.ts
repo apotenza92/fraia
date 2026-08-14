@@ -8,6 +8,7 @@ export type ConversationTransportState = {
   headRevisionId: string;
   headSnapshotId: string;
   messages?: string[];
+  agentResponses?: ConversationAgentRespondResponse[];
   projectFacts?: ConversationProjectFacts;
 };
 
@@ -61,6 +62,29 @@ export type ConversationProposalProjection = {
   operations?: ConversationStructuralOperation[];
   status: 'pending' | 'accepted' | 'rejected';
   analysed?: boolean;
+  persisted?: boolean;
+  assumptions?: string[];
+  evidenceLimits?: string[];
+};
+
+export type ConversationAgentRespondResponse = {
+  responseId: string;
+  text: string;
+  questions: string[];
+  proposal?: {
+    proposalId: string;
+    proposedRevisionId: string;
+    parentRevisionId: string;
+    status?: 'pending' | 'accepted' | 'rejected';
+    assumptions: string[];
+    evidenceLimits: string[];
+    operations: ConversationStructuralOperation[];
+  };
+  provider: string;
+  model: string;
+  reasoningEffort: string;
+  catalogueRefreshedAt?: string;
+  turnId: string;
 };
 
 export type ConversationComparisonProjection = {
@@ -90,7 +114,11 @@ export type ConversationMessageProjection = {
 
 export type ConversationWorkspaceProjection = {
   projectId: string;
+  designId: string;
+  /** Internal fraia-revision project scope. One design owns one revision DB. */
+  revisionScopeId: string;
   projectDir: string;
+  projectRootDir: string;
   conversationId: string;
   purpose: string;
   projectFacts: ConversationProjectFacts;
@@ -268,6 +296,79 @@ export type ConversationProposalRequest = {
   operation?: ConversationStructuralOperation;
   operations?: ConversationStructuralOperation[];
 };
+
+export async function respondConversationAgent(
+  projection: ConversationWorkspaceProjection,
+  text: string,
+  turnId: string,
+): Promise<{ projection: ConversationWorkspaceProjection; live: boolean }> {
+  const respond = window.fraia?.conversationAgentRespond;
+  if (!respond) return { projection, live: false };
+  const shelf = await window.fraia?.listShelf?.({
+    projectDir: projection.projectRootDir,
+    designId: projection.designId,
+  });
+  const confirmedDesignReferenceIds = Object.values(shelf?.items ?? {})
+    .filter((item) => item.confirmation?.confirmed === true)
+    .map((item) => item.id)
+    .sort();
+  const interpretationList = await window.fraia?.listDrawingInterpretations?.({
+    projectDir: projection.projectRootDir,
+    designId: projection.designId,
+  });
+  const interpretationHead = interpretationList?.headRevisionId
+    ? await window.fraia.inspectDrawingInterpretation({
+      projectDir: projection.projectRootDir,
+      designId: projection.designId,
+      revisionId: interpretationList.headRevisionId,
+    })
+    : null;
+  const confirmedInterpretationRevisionIds = interpretationHead
+    && Object.values(interpretationHead.observations).some((observation) => observation.confirmation.status === 'confirmed' && observation.designGeometry)
+    && !Object.values(interpretationHead.conflicts).some((conflict) => conflict.resolution.status === 'unresolved')
+    ? [interpretationHead.revisionId]
+    : [];
+  const response = await respond({
+    projectDir: projection.projectRootDir,
+    packageProjectId: projection.projectId,
+    projectId: projection.revisionScopeId,
+    designId: projection.designId,
+    conversationId: projection.conversationId,
+    expectedHeadRevisionId: projection.head.revisionId,
+    expectedSnapshotId: projection.head.snapshotId,
+    text,
+    shelfItemIds: confirmedDesignReferenceIds,
+    drawingInterpretationRevisionIds: confirmedInterpretationRevisionIds,
+    turnId,
+  }) as ConversationAgentRespondResponse;
+  const proposal = response.proposal && response.proposal.operations.length ? {
+    proposalId: response.proposal.proposalId,
+    title: 'Fraia proposal',
+    summary: response.text,
+    parentRevisionId: response.proposal.parentRevisionId,
+    proposedRevisionId: response.proposal.proposedRevisionId,
+    operation: response.proposal.operations[0],
+    operations: response.proposal.operations,
+    status: response.proposal.status ?? 'pending' as const,
+    persisted: true,
+    assumptions: response.proposal.assumptions,
+    evidenceLimits: response.proposal.evidenceLimits,
+  } : undefined;
+  const assistant: ConversationMessageProjection = {
+    id: `agent-response-${response.responseId}`,
+    role: 'assistant',
+    content: [response.text, ...response.questions].filter(Boolean).join('\n\n'),
+    proposal,
+  };
+  return {
+    live: true,
+    projection: {
+      ...projection,
+      messages: [...projection.messages, assistant],
+      alternatives: proposal ? [...projection.alternatives, proposal] : projection.alternatives,
+    },
+  };
+}
 
 export type ConversationProposalActionRequest = {
   projectId: string;
@@ -495,16 +596,16 @@ export function applyConversationOperations(scene: RenderScene, operations: Conv
 
 function transportOperation(operation: ConversationStructuralOperation): Record<string, unknown> {
   switch (operation.kind) {
-    case 'set_member_role': return { kind: operation.kind, member_id: operation.memberId, role: operation.role };
-    case 'move_node': return { kind: operation.kind, node_id: operation.nodeId, x: operation.x, y: operation.y, z: operation.z };
+    case 'set_member_role': return { kind: operation.kind, memberId: operation.memberId, role: operation.role };
+    case 'move_node': return { kind: operation.kind, nodeId: operation.nodeId, x: operation.x, y: operation.y, z: operation.z };
     case 'add_node': return { kind: operation.kind, id: operation.id, x: operation.x, y: operation.y, z: operation.z };
-    case 'add_member': return { kind: operation.kind, id: operation.id, start_node: operation.startNode, end_node: operation.endNode, role: operation.role, section_id: operation.sectionId, material_id: operation.materialId };
-    case 'add_support': return { kind: operation.kind, id: operation.id, target_node: operation.targetNode, ux: operation.ux, uy: operation.uy, uz: operation.uz, rx: operation.rx, ry: operation.ry, rz: operation.rz };
-    case 'set_section': return { kind: operation.kind, member_id: operation.memberId, section_id: operation.sectionId };
-    case 'add_plate': return { kind: operation.kind, id: operation.id, boundary_nodes: operation.boundaryNodes, role: operation.role, thickness_m: operation.thicknessM, material_id: operation.materialId, generated_from: operation.generatedFrom };
-    case 'add_load': return { kind: operation.kind, id: operation.id, target_kind: operation.targetKind, target_id: operation.targetId, load_case_id: operation.loadCaseId, direction_x: operation.directionX, direction_y: operation.directionY, direction_z: operation.directionZ, magnitude: operation.magnitude, unit: operation.unit };
+    case 'add_member': return { kind: operation.kind, id: operation.id, startNode: operation.startNode, endNode: operation.endNode, role: operation.role, sectionId: operation.sectionId, materialId: operation.materialId };
+    case 'add_support': return { kind: operation.kind, id: operation.id, targetNode: operation.targetNode, ux: operation.ux, uy: operation.uy, uz: operation.uz, rx: operation.rx, ry: operation.ry, rz: operation.rz };
+    case 'set_section': return { kind: operation.kind, memberId: operation.memberId, sectionId: operation.sectionId };
+    case 'add_plate': return { kind: operation.kind, id: operation.id, boundaryNodes: operation.boundaryNodes, role: operation.role, thicknessM: operation.thicknessM, materialId: operation.materialId, generatedFrom: operation.generatedFrom };
+    case 'add_load': return { kind: operation.kind, id: operation.id, targetKind: operation.targetKind, targetId: operation.targetId, loadCaseId: operation.loadCaseId, directionX: operation.directionX, directionY: operation.directionY, directionZ: operation.directionZ, magnitude: operation.magnitude, unit: operation.unit };
     case 'add_release':
-    case 'set_release': return { kind: operation.kind, id: operation.id, member_id: operation.memberId, end: operation.end, ux: operation.ux, uy: operation.uy, uz: operation.uz, rx: operation.rx, ry: operation.ry, rz: operation.rz };
+    case 'set_release': return { kind: operation.kind, id: operation.id, memberId: operation.memberId, end: operation.end, ux: operation.ux, uy: operation.uy, uz: operation.uz, rx: operation.rx, ry: operation.ry, rz: operation.rz };
   }
 }
 
@@ -542,11 +643,17 @@ function initialMessages(
   artefact: ConversationArtefactProjection,
   proposals: ConversationProposalProjection[],
 ): ConversationMessageProjection[] {
+  const hasStructure = Boolean(
+    artefact.scene.nodes.length
+    || artefact.scene.members.length
+    || artefact.scene.plates?.length,
+  );
+  if (!hasStructure) return [];
   return [
     {
       id: 'assistant-preview',
       role: 'assistant',
-      content: 'Here is the current design. Inspect it, or accept this direction to continue.',
+      content: 'This is the current structure. Inspect it, then review the proposed change below.',
       artefact,
       proposal: proposals[0],
       proposals,
@@ -554,9 +661,28 @@ function initialMessages(
   ];
 }
 
+function agentAssistantMessages(state: WorkbenchState): ConversationMessageProjection[] {
+  const agentState = state.agentState ?? state.agent_state;
+  const session = agentState?.sessions?.find((item) => item.surface === 'pre_solve');
+  return (session?.messages ?? [])
+    .filter((message) => message.author === 'assistant' && message.text.trim())
+    .map((message, index) => ({
+      id: `agent-pre-solve-${message.createdAt ?? message.created_at ?? index}`,
+      role: 'assistant' as const,
+      content: message.text,
+    }));
+}
+
 export function createConversationProjection(state: WorkbenchState): ConversationWorkspaceProjection {
   const projectDir = projectDirOf(state);
-  const projectId = state.overview?.documentId ?? state.overview?.document_id ?? projectDir;
+  const projectRootDir = state.overview?.projectRootDir ?? state.overview?.project_root_dir ?? projectDir;
+  const projectId = state.overview?.projectId ?? state.overview?.project_id;
+  const designId = state.overview?.designId ?? state.overview?.design_id ?? state.overview?.documentId ?? state.overview?.document_id;
+  if (typeof projectId !== 'string' || !projectId || typeof designId !== 'string' || !designId) {
+    throw new Error('Fraia requires stable project and design identity before starting a conversation.');
+  }
+  // Each design has its own durable revision database, so the canonical
+  // overall-framing id remains stable when a legacy project is migrated.
   const conversationId = 'overall-framing';
   const revisionId = 'root-revision';
   const snapshotId = 'root-snapshot';
@@ -568,42 +694,7 @@ export function createConversationProjection(state: WorkbenchState): Conversatio
     sourceSnapshotId: snapshotId,
     scene,
   };
-  const memberId = scene.members[0]?.id;
-  const operations: ConversationStructuralOperation[] = memberId
-    ? [{ kind: 'set_member_role', memberId, role: 'beam' }]
-    : [
-      { kind: 'add_node', id: 'n1', x: 0, y: 0, z: 0 },
-      { kind: 'add_node', id: 'n2', x: 6, y: 0, z: 0 },
-      { kind: 'add_member', id: 'm1', startNode: 'n1', endNode: 'n2', role: 'beam', sectionId: '250UB', materialId: 'steel' },
-      { kind: 'add_support', id: 's1', targetNode: 'n1', ux: true, uy: true, uz: true, rx: false, ry: false, rz: false },
-      { kind: 'add_support', id: 's2', targetNode: 'n2', ux: false, uy: true, uz: true, rx: false, ry: false, rz: false },
-    ];
-  const proposal: ConversationProposalProjection = {
-    proposalId: 'proposal-frame-role',
-    title: memberId ? 'Clarify the primary framing member' : 'Establish a first framing line',
-    summary: memberId ? 'Treat the highlighted framing member as a beam in this conversation branch so the load path can be analysed explicitly.' : 'Start the model with two nodes and one beam so the structural conversation has a concrete, inspectable snapshot.',
-    parentRevisionId: revisionId,
-    proposedRevisionId: 'agent-revision-1',
-    operation: operations[0],
-    operations,
-    status: 'pending',
-  };
-  const alternative: ConversationProposalProjection = {
-    ...proposal,
-    proposalId: 'proposal-alternative-frame',
-    proposedRevisionId: 'agent-revision-alternative-1',
-    title: memberId ? 'Keep the framing member as a rafter' : 'Add a supported rafter line',
-    summary: memberId ? 'Keep the current rafter role as a separate candidate so the conversation can compare both framing interpretations.' : 'Start with the same two-node line but preserve a rafter role as a distinct candidate for later comparison.',
-    operation: memberId ? { kind: 'set_member_role', memberId, role: 'rafter' } : { kind: 'add_member', id: 'm1', startNode: 'n1', endNode: 'n2', role: 'rafter', sectionId: '250UB', materialId: 'steel' },
-    operations: memberId ? [{ kind: 'set_member_role', memberId, role: 'rafter' }] : [
-      { kind: 'add_node', id: 'n1', x: 0, y: 0, z: 0 },
-      { kind: 'add_node', id: 'n2', x: 6, y: 0, z: 0 },
-      { kind: 'add_member', id: 'm1', startNode: 'n1', endNode: 'n2', role: 'rafter', sectionId: '250UB', materialId: 'steel' },
-      { kind: 'add_support', id: 's1', targetNode: 'n1', ux: true, uy: true, uz: true, rx: false, ry: false, rz: false },
-      { kind: 'add_support', id: 's2', targetNode: 'n2', ux: false, uy: true, uz: true, rx: false, ry: false, rz: false },
-    ],
-  };
-  const alternatives = [proposal, alternative];
+  const alternatives: ConversationProposalProjection[] = [];
   const head: ConversationRevisionProjection = {
     revisionId,
     snapshotId,
@@ -612,12 +703,15 @@ export function createConversationProjection(state: WorkbenchState): Conversatio
   };
   return {
     projectId,
+    designId,
+    revisionScopeId: designId,
     projectDir,
+    projectRootDir,
     conversationId,
     purpose: 'Overall framing',
     projectFacts,
     head,
-    messages: initialMessages(artefact, alternatives),
+    messages: [...initialMessages(artefact, alternatives), ...agentAssistantMessages(state)],
     evidence: [],
     artefact,
     alternatives,
@@ -636,13 +730,35 @@ function projectionFromTransport(
   const persistedMessages = response.messages ?? [];
   const transportMessages: ConversationMessageProjection[] = persistedMessages.map((message, index) => ({
     id: `transport-message-${index}`,
-    role: index % 2 === 0 ? 'user' as const : 'assistant' as const,
+    role: 'user' as const,
     content: message,
   }));
-  const messages = persistedMessages.length
-    ? [...transportMessages, ...current.messages.filter((message) => message.proposal || message.artefact)]
-    : current.messages;
+  const agentMessages: ConversationMessageProjection[] = (response.agentResponses ?? []).map((agent) => {
+    const proposal = agent.proposal && agent.proposal.operations.length ? {
+      proposalId: agent.proposal.proposalId,
+      title: 'Fraia proposal',
+      summary: agent.text,
+      parentRevisionId: agent.proposal.parentRevisionId,
+      proposedRevisionId: agent.proposal.proposedRevisionId,
+      operation: agent.proposal.operations[0],
+      operations: agent.proposal.operations,
+      status: agent.proposal.status ?? 'pending' as const,
+      persisted: true,
+      assumptions: agent.proposal.assumptions,
+      evidenceLimits: agent.proposal.evidenceLimits,
+    } : undefined;
+    return {
+      id: `agent-response-${agent.responseId}`,
+      role: 'assistant' as const,
+      content: [agent.text, ...agent.questions].filter(Boolean).join('\n\n'),
+      proposal,
+    };
+  });
   const acceptedOnRestart = current.head.revisionId === 'root-revision' && !response.headRevisionId.endsWith(':root');
+  const resumableMessages = current.messages.filter((message) => message.proposal || message.artefact || message.id.startsWith('agent-pre-solve-'));
+  const messages = persistedMessages.length || agentMessages.length
+    ? [...transportMessages, ...agentMessages, ...resumableMessages]
+    : current.messages;
   const messagesWithCurrentProposal = messages.map((message) => message.proposal
     ? {
       ...message,
@@ -671,8 +787,20 @@ function projectionFromTransport(
       unknowns: response.projectFacts.unknowns ?? current.projectFacts.unknowns,
     }
     : current.projectFacts;
+  const acceptedOperations = messagesWithCurrentProposal.flatMap((message) => {
+    const proposals = [...(message.proposals ?? []), ...(message.proposal ? [message.proposal] : [])];
+    const accepted = proposals.find((proposal) => proposal.status === 'accepted');
+    return accepted?.operations ?? [];
+  });
+  const restoredScene = acceptedOnRestart
+    && !current.artefact.scene.nodes.length
+    && !current.artefact.scene.members.length
+    && acceptedOperations.length
+    ? applyConversationOperations(current.artefact.scene, acceptedOperations).scene
+    : current.artefact.scene;
+  const restoredArtefact = { ...current.artefact, sourceSnapshotId: response.headSnapshotId, scene: restoredScene };
   const restoredMessages = acceptedOnRestart && !messagesWithCurrentProposal.some((message) => message.id.startsWith('restored-head-') || message.content.includes('Your current design was restored.'))
-    ? [...messagesWithCurrentProposal, { id: `restored-head-${response.headRevisionId}`, role: 'system' as const, content: 'Your current design was restored.' }]
+    ? [...messagesWithCurrentProposal, { id: `restored-head-${response.headRevisionId}`, role: 'system' as const, content: 'Your current design was restored.', artefact: restoredArtefact }]
     : messagesWithCurrentProposal;
   return {
     ...current,
@@ -690,7 +818,7 @@ function projectionFromTransport(
       proposedRevisionId: `agent-revision-${response.headRevisionId}-${proposal.proposalId}`,
     })),
     comparison: current.comparison,
-    artefact: { ...current.artefact, sourceSnapshotId: response.headSnapshotId },
+    artefact: restoredArtefact,
   };
 }
 
@@ -701,7 +829,7 @@ export async function initializeConversation(
   if (!create) return { projection, live: false };
   try {
     const response = await create({
-      projectId: projection.projectId,
+      projectId: projection.revisionScopeId,
       projectDir: projection.projectDir,
       conversationId: projection.conversationId,
       purpose: projection.purpose,
@@ -732,7 +860,7 @@ export async function analyseConversationSnapshot(
   }
   try {
     const response = await analyse({
-      projectId: projection.projectId,
+      projectId: projection.revisionScopeId,
       conversationId: projection.conversationId,
       revisionId: projection.head.revisionId,
       evidenceId,
@@ -788,7 +916,7 @@ export async function compareConversationEvidence(
   }
   try {
     const response = await compare({
-      projectId: projection.projectId,
+      projectId: projection.revisionScopeId,
       conversationId: projection.conversationId,
       baselineEvidenceId: candidates[0].evidenceId,
       candidateEvidenceId: candidates[1].evidenceId,
@@ -829,12 +957,13 @@ export async function sendConversationMessage(
   if (!converse) return projection;
   try {
     const response = await converse({
-      projectId: projection.projectId,
+      projectId: projection.revisionScopeId,
       conversationId: projection.conversationId,
       purpose: projection.purpose,
       message,
     });
-    return projectionFromTransport(projection, response);
+    const transported = projectionFromTransport(projection, response);
+    return transported;
   } catch (error) {
     console.warn('Conversation message was kept in the local projection.', error);
     return projection;
@@ -856,7 +985,7 @@ export async function updateConversationFacts(
   }
   try {
     const response = await update({
-      projectId: projection.projectId,
+      projectId: projection.revisionScopeId,
       conversationId: projection.conversationId,
       projectFacts,
     });
@@ -884,8 +1013,8 @@ export async function acceptConversationProposal(
   }
 
   try {
-    await propose({
-      projectId: projection.projectId,
+    if (!proposal.persisted) await propose({
+      projectId: projection.revisionScopeId,
       conversationId: projection.conversationId,
       proposalId: proposal.proposalId,
       proposedRevisionId: proposal.proposedRevisionId,
@@ -897,7 +1026,7 @@ export async function acceptConversationProposal(
       operation: undefined,
     });
     const revision = await accept({
-      projectId: projection.projectId,
+      projectId: projection.revisionScopeId,
       proposalId: proposal.proposalId,
       provider: 'local-conversation-adapter',
       model: 'typed-projection',
@@ -934,7 +1063,7 @@ export async function rejectConversationProposal(
   };
   if (!reject) return { projection: rejectedProjection, live: false };
   try {
-    await reject({ projectId: projection.projectId, proposalId: proposal.proposalId });
+    await reject({ projectId: projection.revisionScopeId, proposalId: proposal.proposalId });
     return { projection: rejectedProjection, live: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -958,14 +1087,14 @@ export async function analyseConversationAlternative(
   const branchRevisionId = `${proposal.proposedRevisionId}-branch`;
   try {
     await fork({
-      projectId: projection.projectId,
+      projectId: projection.revisionScopeId,
       conversationId: branchConversationId,
       purpose: proposal.title,
       fromRevisionId: proposal.parentRevisionId,
     });
     const operations = proposal.operations?.length ? proposal.operations : [proposal.operation];
     await propose({
-      projectId: projection.projectId,
+      projectId: projection.revisionScopeId,
       conversationId: branchConversationId,
       proposalId: branchProposalId,
       proposedRevisionId: branchRevisionId,
@@ -977,14 +1106,14 @@ export async function analyseConversationAlternative(
       operation: undefined,
     });
     const revision = await accept({
-      projectId: projection.projectId,
+      projectId: projection.revisionScopeId,
       proposalId: branchProposalId,
       provider: 'local-conversation-adapter',
       model: 'typed-projection',
       turnId: `turn-${branchProposalId}`,
     });
     const evidence = await analyse({
-      projectId: projection.projectId,
+      projectId: projection.revisionScopeId,
       conversationId: branchConversationId,
       revisionId: revision.revisionId,
       evidenceId: `analysis-${revision.revisionId}`,
@@ -1031,7 +1160,7 @@ export async function openConversationWorkingCopy(
   if (!open) return { workingCopy: fallback, live: false };
   try {
     const response = await open({
-      projectId: projection.projectId,
+      projectId: projection.revisionScopeId,
       conversationId: projection.conversationId,
       revisionId: projection.head.revisionId,
     });
@@ -1057,7 +1186,7 @@ export async function applyConversationWorkingCopyOperation(
   if (!apply || !workingCopy.workingCopyId) return true;
   try {
     await apply({
-      projectId: projection.projectId,
+      projectId: projection.revisionScopeId,
       workingCopyId: workingCopy.workingCopyId,
       operation: transportOperation(operation) as ConversationWorkingCopyOperationRequest['operation'],
     });
@@ -1082,7 +1211,7 @@ export async function commitConversationWorkingCopy(
   }
   try {
     const revision = await commit({
-      projectId: projection.projectId,
+      projectId: projection.revisionScopeId,
       conversationId: projection.conversationId,
       workingCopyId: workingCopy.workingCopyId,
       revisionId: `manual-revision-${projection.head.revisionId}`,
