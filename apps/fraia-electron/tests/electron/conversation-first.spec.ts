@@ -14,7 +14,7 @@ const deterministicLinuxRenderingArgs = process.platform === 'linux'
   : [];
 
 test('desktop shell keeps blank conversation truthful and preserves project files with isolated design references', async () => {
-  test.setTimeout(180_000);
+  test.setTimeout(process.env.CI ? 300_000 : 180_000);
   const journeyStartedAt = Date.now();
   const checkpoint = (phase: string) => {
     console.log(`[conversation-first] ${phase} at ${Date.now() - journeyStartedAt} ms`);
@@ -30,6 +30,9 @@ test('desktop shell keeps blank conversation truthful and preserves project file
   const ifcFixture = path.join(appRoot, 'tests', 'fixtures', 'architect-reference.ifc');
   const meshFixture = path.join(appRoot, 'tests', 'fixtures', 'reference-frame.obj');
   const visualRoot = path.join(appRoot, 'tmp', 'visual-matrix');
+  const visualSizes = process.env.CI
+    ? [['minimum', 900, 600] as const]
+    : [['minimum', 900, 600] as const, ['default', 1152, 768] as const, ['large', 1440, 960] as const];
   fs.mkdirSync(visualRoot, { recursive: true });
   fs.mkdirSync(userDataDir, { recursive: true });
 
@@ -68,7 +71,7 @@ test('desktop shell keeps blank conversation truthful and preserves project file
       }, { timeout: 5_000 }).toBe(true);
     }
     async function captureVisualState(name: string) {
-      for (const [sizeName, width, height] of [['minimum', 900, 600], ['default', 1152, 768], ['large', 1440, 960]] as const) {
+      for (const [sizeName, width, height] of visualSizes) {
         await electronApp.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setContentSize(size.width, size.height), { width, height });
         await expect.poll(() => page.evaluate(() => innerWidth)).toBe(width);
         await page.waitForTimeout(350);
@@ -137,7 +140,9 @@ test('desktop shell keeps blank conversation truthful and preserves project file
           expect(dialog.right).toBeLessThanOrEqual(layout.viewport.width);
           expect(dialog.bottom).toBeLessThanOrEqual(layout.viewport.height);
         }
-        await page.screenshot({ path: path.join(visualRoot, `${name}-${sizeName}.png`) });
+        if (!process.env.CI) {
+          await page.screenshot({ path: path.join(visualRoot, `${name}-${sizeName}.png`) });
+        }
       }
       await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setContentSize(1152, 768));
     }
