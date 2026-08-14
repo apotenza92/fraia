@@ -10,6 +10,7 @@ const {
   installedPackageDigest,
   installedPackageVersion,
   prepareSignedTarget,
+  seedTestTrustedRoot,
   waitForPath,
   waitForPathRemoval,
   windowsUnpackedDirectoryName,
@@ -136,6 +137,28 @@ test('native updater audit waits for an asynchronous predecessor install', () =>
   );
 });
 
+test('native updater audit seeds its disposable root before the public predecessor launches', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-native-updater-root-'));
+  try {
+    const rootPath = path.join(directory, 'ephemeral-root.json');
+    const userData = path.join(directory, 'user-data');
+    const rootBytes = Buffer.from('{"signed":{"version":1}}\n');
+    fs.writeFileSync(rootPath, rootBytes);
+    const trustedRootPath = seedTestTrustedRoot({ rootPath, userData });
+    assert.equal(
+      trustedRootPath,
+      path.join(userData, 'update-trust', 'metadata', 'root.json'),
+    );
+    assert.deepEqual(fs.readFileSync(trustedRootPath), rootBytes);
+    assert.throws(
+      () => seedTestTrustedRoot({ rootPath, userData }),
+      /EEXIST/,
+    );
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('native updater workflow performs real TUF-backed Windows and AppImage replacements', () => {
   assert.match(workflow, /runs-on:.*windows-11-arm.*windows-2025.*ubuntu-24\.04/);
   assert.match(workflow, /ubuntu-24\.04-arm/);
@@ -173,6 +196,8 @@ test('native updater workflow performs real TUF-backed Windows and AppImage repl
   assert.match(workflow, /Remove disposable private key and package outputs/);
   assert.doesNotMatch(workflow, /secrets\./);
   assert.match(auditScript, /updated-runtime-launched/);
+  assert.match(auditScript, /timeoutMs = 180_000/);
+  assert.match(auditScript, /seedTestTrustedRoot\(\{ rootPath, userData \}\)/);
   assert.match(auditScript, /update-downloaded/);
   assert.match(auditScript, /installedPackageVersion/);
   assert.match(auditScript, /waitForInstalledWindowsPackage/);
