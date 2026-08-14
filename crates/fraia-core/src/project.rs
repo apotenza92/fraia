@@ -1299,9 +1299,9 @@ fn yes_no(value: bool) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::{
-        LegacyMigrationStage, ManifestValidationError, apply_planning_draft, create_project,
-        create_project_package, design_package_paths, load_project, load_project_package,
-        materialize_project_structural_model, migrate_legacy_project_package,
+        ID_SEQUENCE, LegacyMigrationStage, ManifestValidationError, apply_planning_draft,
+        create_project, create_project_package, design_package_paths, load_project,
+        load_project_package, materialize_project_structural_model, migrate_legacy_project_package,
         migrate_legacy_project_package_with_hook, new_blank_project_manifests, planning_draft,
         project_package_paths, project_paths, save_project, save_project_package,
         sibling_transaction_paths,
@@ -1316,6 +1316,7 @@ mod tests {
     use serde_json::json;
     use std::fs;
     use std::path::Path;
+    use std::sync::atomic::Ordering;
 
     #[test]
     fn blank_manifests_have_stable_identity_and_typed_paths() {
@@ -1643,8 +1644,12 @@ mod tests {
     }
 
     fn legacy_fixture(kind: &str) -> (std::path::PathBuf, Vec<u8>) {
-        let temp_dir =
-            std::env::temp_dir().join(format!("fraia-legacy-package-{kind}-{}", timestamp_id()));
+        let sequence = ID_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let temp_dir = std::env::temp_dir().join(format!(
+            "fraia-legacy-package-{kind}-{}-{}-{sequence}",
+            std::process::id(),
+            timestamp_id()
+        ));
         let (mut project, paths) =
             create_project(&temp_dir, &format!("{kind} fixture")).expect("create legacy fixture");
         match kind {
