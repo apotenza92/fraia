@@ -194,6 +194,117 @@ pub struct ProjectFiles {
     pub planning: String,
 }
 
+/// Stable opaque identity for a Fraia project container.
+///
+/// Display names and filesystem locations can change without changing this
+/// value. Package validation rejects empty or path-like identities before any
+/// path is derived from them.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ProjectId(String);
+
+impl ProjectId {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for ProjectId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// Stable opaque identity for one design inside a project.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DesignId(String);
+
+impl DesignId {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for DesignId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectManifestFiles {
+    pub planning: String,
+    pub sources: String,
+    pub designs: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectDesignEntry {
+    pub id: DesignId,
+    pub name: String,
+}
+
+/// Versioned project-container metadata. Authored engineering state belongs in
+/// the referenced design manifests and revision repositories, not here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectManifest {
+    pub schema_version: String,
+    pub id: ProjectId,
+    pub name: String,
+    pub created_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+    pub files: ProjectManifestFiles,
+    pub designs: Vec<ProjectDesignEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DesignManifestFiles {
+    /// Transitional mutable app state. This keeps the legacy `ProjectFile`
+    /// model design-local until revision-native authored state replaces it.
+    pub state: String,
+    pub planning: String,
+    pub shelf: String,
+    pub workspace: String,
+    pub runs: String,
+    /// Exact pre-package project input retained for migration recovery and
+    /// compatibility. New designs do not have this file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legacy_project: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LegacyProjectMigration {
+    pub source_schema_version: String,
+    pub archive: String,
+    pub source_sha256: String,
+    pub migrated_at: String,
+}
+
+/// Versioned identity and file ownership for one arbitrary-size design.
+/// Canonical authored snapshots remain in the Rust-owned revision repository.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DesignManifest {
+    pub schema_version: String,
+    pub id: DesignId,
+    pub name: String,
+    pub created_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+    pub files: DesignManifestFiles,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legacy_migration: Option<LegacyProjectMigration>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BuilderArchetypeInstance {
     pub id: String,
@@ -365,7 +476,7 @@ pub struct BuilderGraph {
 
 pub const FRAIA_AI_PROVIDER_ID: &str = "openai-codex";
 pub const FRAIA_AI_MODEL_ID: &str = "gpt-5.6-luna";
-pub const FRAIA_AI_REASONING_EFFORT: &str = "low";
+pub const FRAIA_AI_REASONING_EFFORT: &str = "high";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

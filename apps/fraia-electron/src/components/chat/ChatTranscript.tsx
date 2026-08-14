@@ -29,9 +29,9 @@ export function ChatTranscript({
       defaultScrollPosition={defaultScrollPosition}
       scrollPreviousItemPeek={0}
     >
-      <MessageScroller data-default-scroll-position={defaultScrollPosition}>
-        <MessageScrollerViewport>
-          <MessageScrollerContent aria-busy={busy} className="gap-3 p-3">
+      <MessageScroller data-default-scroll-position={defaultScrollPosition} data-purpose="conversation-scroll-region">
+        <MessageScrollerViewport className="max-h-full" data-testid="conversation-transcript-viewport">
+          <MessageScrollerContent aria-busy={busy} className="gap-3 p-3 pb-16">
             {children}
           </MessageScrollerContent>
         </MessageScrollerViewport>
@@ -47,12 +47,14 @@ export function ChatTranscriptMessage({
   details,
   messageId,
   scrollAnchor,
+  testId,
 }: {
   author: 'assistant' | 'user';
   children: ReactNode;
   details?: ReactNode;
   messageId: string;
   scrollAnchor?: boolean;
+  testId?: string;
 }) {
   const userMessage = author === 'user';
   return (
@@ -61,6 +63,7 @@ export function ChatTranscriptMessage({
         align={userMessage ? 'end' : 'start'}
         aria-label={userMessage ? 'You' : 'Fraia AI'}
         data-author={author}
+        data-testid={testId}
       >
         <MessageContent>
           <Bubble align={userMessage ? 'end' : 'start'} variant={userMessage ? 'default' : 'ghost'}>
@@ -94,12 +97,14 @@ export function ChatTranscriptPanel({
 export function ChatTranscriptActivity({
   children,
   label,
+  messageId,
 }: {
   children: ReactNode;
   label: string;
+  messageId: string;
 }) {
   return (
-    <MessageScrollerItem>
+    <MessageScrollerItem messageId={messageId} scrollAnchor={false}>
       <Message aria-label="Fraia AI status">
         <MessageContent>
           <Marker role="status">

@@ -105,7 +105,7 @@ describe("DocumentTabBar", () => {
 
     const tabList = screen.getByRole("tablist", { name: "Open documents" })
     const openTab = screen.getByRole("button", { name: "Open Fraia model" })
-    const newBlankModel = screen.getByRole("button", { name: "New blank model" })
+    const newBlankModel = screen.getByRole("button", { name: "New design" })
     expect(openTab).toHaveAttribute("data-slot", "tooltip-trigger")
     expect(openTab).toHaveAttribute("data-document-tab-open")
     expect(openTab.querySelector("svg")).toHaveClass("lucide-plus")

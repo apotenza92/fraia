@@ -1,0 +1,3 @@
+{
+  "request": "Create a typed proposal for one straight 6 metre steel beam from (0, 0, 0) to (6, 0, 0). Use member role beam, section 250UB, and material steel. Add a pinned support at the left node and a roller support at the right node. Do not add loads or any other geometry. State that analysis and code checks have not been run."
+}

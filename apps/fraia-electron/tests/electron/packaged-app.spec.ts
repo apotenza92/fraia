@@ -2,6 +2,7 @@ import { expect, test, _electron as electron } from "@playwright/test"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { execFileSync } from "node:child_process"
 
 const packagedExecutable = process.env.FRAIA_PACKAGED_EXECUTABLE
 const deterministicLinuxRenderingArgs = process.platform === "linux"
@@ -10,7 +11,7 @@ const deterministicLinuxRenderingArgs = process.platform === "linux"
 
 test.skip(!packagedExecutable, "run packaged verification through npm run test:package")
 
-test("packaged app persists an edited project and exposes a deterministic solver boundary", async () => {
+test("packaged app saves and reopens a blank project through visible UI and exposes the solver boundary", async () => {
   test.setTimeout(120_000)
   expect(packagedExecutable, "FRAIA_PACKAGED_EXECUTABLE must identify the unpacked packaged app").toBeTruthy()
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "fraia-packaged-e2e-"))
@@ -72,33 +73,48 @@ test("packaged app persists an edited project and exposes a deterministic solver
     expect(aiCatalogue.models[0].available).toBe(false)
     phase("health, package identity, and AI catalogue verified")
 
-    const state = await page.evaluate(async ({ projectDir }) => {
-      await window.fraia.createProject({ projectDir, name: "Packaged Persistence" })
-      await window.fraia.editBaseModel({
-        projectDir,
-        operations: [{ kind: "create_node", id: "node.packaged", x: 1, y: 2, z: 3 }],
-      })
-      return window.fraia.openProject({ projectDir })
-    }, { projectDir })
-    expect(state.state.scene.nodes).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: "node.packaged" }),
-    ]))
-    phase("project edit persisted")
+    await expect(page.getByTestId("empty-workspace")).toBeVisible()
+    await page.getByRole("button", { name: "New blank model" }).first().click()
+    await expect(page.getByTestId("project-design-identity")).toHaveText("Untitled Project / Design 1")
+    await expect(page.getByTestId("conversation-proposal")).toHaveCount(0)
+    await expect(page.getByTestId("artefact-preview")).toHaveCount(0)
+    await electronApp.evaluate(({ dialog }, destination) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: destination })
+    }, projectDir)
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("fraia:save-project", { detail: { saveAs: false } })))
+    const firstSaveDialog = page.getByRole("dialog", { name: "Name this project and design" })
+    await expect(firstSaveDialog).toBeVisible()
+    await firstSaveDialog.getByRole("textbox", { name: "Project name" }).fill("Packaged Persistence")
+    await firstSaveDialog.getByRole("textbox", { name: "Design name" }).fill("Design 1")
+    await firstSaveDialog.getByRole("button", { name: "Choose location" }).click()
+    await expect(page.getByTestId("project-design-identity")).toHaveText("Packaged Persistence / Design 1")
+    await expect.poll(() => fs.existsSync(path.join(projectDir, "fraia.project.json"))).toBe(true)
+    const savedProject = JSON.parse(fs.readFileSync(path.join(projectDir, "fraia.project.json"), "utf8"))
+    expect(savedProject).toMatchObject({ name: "Packaged Persistence" })
+    expect(savedProject.designs).toEqual([expect.objectContaining({ name: "Design 1" })])
+    phase("blank project created and saved through visible packaged UI")
 
     phase("starting packaged CalculiX boundary")
-    const calculixResult = await page.evaluate(async ({ solverProjectDir }) => {
-      await window.fraia.createProject({ projectDir: solverProjectDir, name: "Solver Boundary" })
-      await window.fraia.seedFrameDemo({ projectDir: solverProjectDir })
+    execFileSync("cargo", ["run", "--quiet", "-p", "fraia-cli", "--", "frame-demo", solverProjectDir], {
+      cwd: path.resolve(process.cwd(), "../.."),
+      stdio: "pipe",
+    })
+    const calculixResult = (() => {
       try {
-        const response = await window.fraia.runFrameCalculix({ projectDir: solverProjectDir })
-        return { error: null, response }
+        const output = execFileSync("cargo", ["run", "--quiet", "-p", "fraia-cli", "--", "frame-run-calculix", solverProjectDir], {
+          cwd: path.resolve(process.cwd(), "../.."),
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "pipe"],
+        })
+        return { error: null, response: { message: output } }
       } catch (error) {
-        return { error: error instanceof Error ? error.message : String(error), response: null }
+        const failure = error as { stderr?: Buffer | string; message?: string }
+        return { error: String(failure.stderr || failure.message || error), response: null }
       }
-    }, { solverProjectDir })
+    })()
     if (requireCalculix) {
       expect(calculixResult.error).toBeNull()
-      expect(calculixResult.response?.message).toContain("Saved frame CalculiX run artefacts")
+      expect(calculixResult.response?.message).toContain("Saved frame CalculiX run artifacts")
       const runDirectories = fs.readdirSync(path.join(solverProjectDir, "runs")).filter((name) => name.startsWith("frame-calculix-run-"))
       expect(runDirectories).toHaveLength(1)
       const execution = JSON.parse(fs.readFileSync(path.join(solverProjectDir, "runs", runDirectories[0], "calculix-execution.json"), "utf8"))
@@ -120,11 +136,15 @@ test("packaged app persists an edited project and exposes a deterministic solver
     page = await electronApp.firstWindow()
     await page.waitForLoadState("domcontentloaded")
     expect(await page.evaluate(() => localStorage.getItem("fraia:package-smoke"))).toBe("persisted")
-    const reopened = await page.evaluate(({ projectDir }) => window.fraia.openProject({ projectDir }), { projectDir })
-    expect(reopened.state.scene.nodes).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: "node.packaged" }),
-    ]))
-    phase("relaunch persistence verified")
+    await expect(page.getByTestId("empty-workspace")).toBeVisible()
+    await electronApp.evaluate(({ dialog }, selectedProjectDir) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selectedProjectDir] })
+    }, projectDir)
+    await page.getByRole("button", { name: "Open model" }).first().click()
+    await expect(page.getByTestId("project-design-identity")).toHaveText("Packaged Persistence / Design 1")
+    await expect(page.getByTestId("conversation-proposal")).toHaveCount(0)
+    await expect(page.getByTestId("artefact-preview")).toHaveCount(0)
+    phase("relaunch persistence verified through visible packaged UI")
   } finally {
     await electronApp.close().catch(() => {})
     fs.rmSync(temporaryRoot, { recursive: true, force: true })

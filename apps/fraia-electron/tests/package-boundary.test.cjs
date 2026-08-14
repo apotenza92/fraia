@@ -2,6 +2,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const { createHash } = require('node:crypto');
+const { spawnSync } = require('node:child_process');
 const {
   SUPPORTED_TARGETS,
   nativePlatformArch,
@@ -10,6 +12,53 @@ const {
   resolveCalculixRuntime,
   resolveSidecarLaunch,
 } = require('../package-boundary.cjs');
+const {
+  importRuntimeContract,
+  validateImportRuntimeSources,
+} = require('../import-runtime-contract.cjs');
+
+test('all importers have one reviewed offline package contract', () => {
+  const appRoot = path.join(__dirname, '..');
+  const builderSource = fs.readFileSync(path.join(appRoot, 'electron-builder.config.cjs'), 'utf8');
+  const notices = fs.readFileSync(path.join(appRoot, 'IMPORT_RUNTIME_NOTICES.txt'), 'utf8');
+
+  assert.equal(validateImportRuntimeSources(appRoot), importRuntimeContract);
+  assert.equal(importRuntimeContract.networkPolicy, 'offline-only-no-runtime-downloads');
+  assert.deepEqual(importRuntimeContract.targets, [
+    'darwin-arm64',
+    'darwin-x64',
+    'linux-arm64',
+    'linux-x64',
+    'win32-arm64',
+    'win32-x64',
+  ]);
+  assert.equal(importRuntimeContract.importers.ocr.implementation, 'bundled-node-worker-wasm');
+  assert.equal(importRuntimeContract.importers.ocr.coreVariants.length, 6);
+  assert.match(builderSource, /'IMPORT_RUNTIME_NOTICES\.txt'/);
+  assert.match(builderSource, /'import-runtime-licenses\/\*\*\/\*'/);
+  assert.match(builderSource, /'import-runtime-contract\.cjs'/);
+  assert.match(notices, /PDF\.js 6\.2\.108/);
+  assert.match(notices, /lopdf 0\.44\.0/);
+  assert.match(notices, /import-runtime-licenses\/PDFJS-APACHE-2\.0\.txt/);
+  assert.match(notices, /import-runtime-licenses\/LOPDF-MIT\.txt/);
+  assert.match(notices, /Tesseract\.js 7\.0\.0 and tesseract\.js-core 7\.0\.0/);
+  assert.match(notices, /English tessdata_fast 4\.1\.0/);
+  assert.match(notices, /unconfirmed inferred candidate/);
+});
+
+test('scanned OCR PDF fixture is raster-only and byte-deterministic', () => {
+  const appRoot = path.join(__dirname, '..');
+  const fixture = path.join(appRoot, 'tests', 'fixtures', 'scanned-architectural-drawing.pdf');
+  const generator = path.join(appRoot, 'tests', 'fixtures', 'generate-scanned-ocr-fixture.cjs');
+  const expected = 'b6180dec6b6f33a323c36d6dc5215ebc6382d04e418a4ae7e87546d2786cd8ae';
+  const before = fs.readFileSync(fixture);
+  assert.equal(createHash('sha256').update(before).digest('hex'), expected);
+  assert.doesNotMatch(before.toString('latin1'), /CreationDate|Quartz|\/Font\b/);
+  assert.match(before.toString('latin1'), /\/Subtype \/Image/);
+  const generated = spawnSync(process.execPath, [generator], { encoding: 'utf8' });
+  assert.equal(generated.status, 0, generated.stderr);
+  assert.equal(createHash('sha256').update(fs.readFileSync(fixture)).digest('hex'), expected);
+});
 
 test('production uses the reviewed low-level Pi runtime without coding-agent shrinkwrap', () => {
   const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
@@ -24,11 +73,15 @@ test('production uses the reviewed low-level Pi runtime without coding-agent shr
     '@fontsource-variable/geist',
     '@shadcn/react',
     'electron-updater',
+    'tesseract.js',
+    'tesseract.js-core',
     'tuf-js',
     'typebox',
   ]);
   for (const dependency of Object.keys(packageJson.dependencies)) {
-    const expectedLicense = dependency === '@fontsource-variable/geist' ? 'OFL-1.1' : 'MIT';
+    const expectedLicense = dependency === '@fontsource-variable/geist'
+      ? 'OFL-1.1'
+      : (dependency.startsWith('tesseract.js') ? 'Apache-2.0' : 'MIT');
     assert.equal(
       packageLock.packages[`node_modules/${dependency}`]?.license,
       expectedLicense,
@@ -43,6 +96,21 @@ test('production uses the reviewed low-level Pi runtime without coding-agent shr
     if (!packagePath.endsWith('/brace-expansion')) continue;
     assert.notEqual(metadata.version, '5.0.7', `${packagePath} must not resolve vulnerable brace-expansion 5.0.7`);
   }
+});
+
+test('PDF.js is an offline browser build and not a packaged native runtime dependency', () => {
+  const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+  const packageLock = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8'));
+  const browserSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'sources', 'PdfPageBrowser.tsx'), 'utf8');
+  const builderSource = fs.readFileSync(path.join(__dirname, '..', 'electron-builder.config.cjs'), 'utf8');
+
+  assert.equal(packageJson.devDependencies['pdfjs-dist'], '6.2.108');
+  assert.equal(packageJson.dependencies['pdfjs-dist'], undefined);
+  assert.equal(packageLock.packages['node_modules/pdfjs-dist'].license, 'Apache-2.0');
+  assert.equal(packageLock.packages['node_modules/pdfjs-dist'].optionalDependencies['@napi-rs/canvas'], '^1.0.0');
+  assert.match(browserSource, /import\('pdfjs-dist'\)/);
+  assert.match(browserSource, /pdf\.worker\.min\.mjs\?url/);
+  assert.doesNotMatch(builderSource, /pdfjs-dist|napi-rs\/canvas|pdftoppm|poppler/i);
 });
 
 test('packaged apps launch only the bundled native sidecar', () => {

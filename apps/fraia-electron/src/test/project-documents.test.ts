@@ -8,29 +8,37 @@ import {
 } from "@/lib/projectDocuments"
 import type { WorkbenchState } from "@/lib/types"
 
-function state(projectDir: string, fileName?: string): WorkbenchState {
+function state(projectDir: string, designName = "Design 1"): WorkbenchState {
+  const suffix = projectDir.split("/").pop() ?? "design"
   return {
     overview: {
       projectDir,
-      ...(fileName ? { fileName } : {}),
+      projectId: `project-${suffix}`,
+      projectName: `Project ${suffix}`,
+      designId: `design-${suffix}`,
+      designName,
+      documentId: `design-${suffix}`,
+      managedUnsaved: false,
     },
     scene: { nodes: [], members: [] },
   }
 }
 
 describe("project documents", () => {
-  it("uses the canonical project directory as document identity", () => {
+  it("uses the stable design id as document identity", () => {
     const document = projectDocumentFromState(state("/projects/frame-a", "Frame A"))
 
     expect(document).toMatchObject({
-      id: "/projects/frame-a",
+      id: "design-frame-a",
       projectDir: "/projects/frame-a",
       label: "Frame A",
+      projectId: "project-frame-a",
+      designId: "design-frame-a",
     })
   })
 
-  it("falls back to the project folder for the tab label", () => {
-    expect(projectDocumentLabel(state("/projects/frame-b"))).toBe("frame-b")
+  it("falls back to the first design label", () => {
+    expect(projectDocumentLabel({ overview: { designName: "" } })).toBe("Design 1")
   })
 
   it("updates one document without replacing another project state", () => {
@@ -38,12 +46,12 @@ describe("project documents", () => {
     const second = projectDocumentFromState(state("/projects/frame-b"))
     const updatedFirst = projectDocumentFromState({
       ...first.state,
-      overview: { ...first.state.overview, projectDir: first.projectDir, fileName: "Frame A revised" },
+      overview: { ...first.state.overview, projectDir: first.projectDir, designName: "Frame A revised" },
     })
 
     const documents = upsertProjectDocument([first, second], updatedFirst)
 
-    expect(documents.map((document) => document.label)).toEqual(["Frame A revised", "frame-b"])
+    expect(documents.map((document) => document.label)).toEqual(["Frame A revised", "Design 1"])
     expect(documents[1].state).toBe(second.state)
   })
 

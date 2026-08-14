@@ -17,11 +17,13 @@ use crate::{
     ArtefactId, CanonicalFormatVersion, ConversationId, EvidenceId, ProjectId, RevisionId,
     SnapshotId, SnapshotIdentityDeriver,
 };
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
-use std::path::Path;
-use std::{error::Error, fmt, time::Duration};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, backup, params};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::{error::Error, fmt, fs, time::Duration};
 
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 4;
+static BACKUP_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug)]
 pub enum SqliteRepositoryError {
@@ -33,6 +35,12 @@ pub enum SqliteRepositoryError {
     UnknownSnapshot(SnapshotId),
     UnknownEvidence(EvidenceId),
     UnknownProposal(ProposalId),
+    ConflictingProposal(ProposalId),
+    ConflictingOperationRequest(String),
+    BackupTargetExists(PathBuf),
+    InvalidBackupTarget(PathBuf),
+    BackupValidation(String),
+    Io(std::io::Error),
     UnknownArtefact(ArtefactId),
     DuplicateRevision(RevisionId),
     DuplicateConversation(ConversationId),
@@ -92,6 +100,31 @@ impl fmt::Display for SqliteRepositoryError {
             Self::UnknownSnapshot(id) => write!(f, "snapshot `{id}` does not exist"),
             Self::UnknownEvidence(id) => write!(f, "evidence `{id}` does not exist"),
             Self::UnknownProposal(id) => write!(f, "proposal `{id}` does not exist"),
+            Self::ConflictingProposal(id) => {
+                write!(f, "proposal `{id}` already exists with different content")
+            }
+            Self::ConflictingOperationRequest(id) => write!(
+                f,
+                "operation request `{id}` was already used for different content"
+            ),
+            Self::BackupTargetExists(path) => {
+                write!(
+                    f,
+                    "SQLite backup target `{}` already exists",
+                    path.display()
+                )
+            }
+            Self::InvalidBackupTarget(path) => {
+                write!(
+                    f,
+                    "SQLite backup target `{}` has no file name",
+                    path.display()
+                )
+            }
+            Self::BackupValidation(reason) => {
+                write!(f, "SQLite backup validation failed: {reason}")
+            }
+            Self::Io(error) => error.fmt(f),
             Self::UnknownArtefact(id) => write!(f, "artefact `{id}` does not exist"),
             Self::DuplicateRevision(id) => write!(f, "revision `{id}` already exists"),
             Self::DuplicateConversation(id) => write!(f, "conversation `{id}` already exists"),
@@ -174,6 +207,12 @@ impl fmt::Display for SqliteRepositoryError {
 }
 impl Error for SqliteRepositoryError {}
 
+impl From<std::io::Error> for SqliteRepositoryError {
+    fn from(value: std::io::Error) -> Self {
+        Self::Io(value)
+    }
+}
+
 /// Durable snapshot content. `canonical_bytes` is the only large payload S6
 /// stores directly; later blob storage may move it behind `blob_ref` without
 /// changing the immutable identity or repository graph.
@@ -230,6 +269,13 @@ pub struct StoredProposal {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredOperationReceipt {
+    pub request_id: String,
+    pub request_json: String,
+    pub response_json: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredArtefact {
     pub id: ArtefactId,
     pub kind: String,
@@ -270,6 +316,74 @@ impl SqliteRevisionRepository {
         connection.busy_timeout(Duration::from_secs(5))?;
         migrate(&mut connection)?;
         Ok(Self { connection })
+    }
+
+    /// Creates a transactionally consistent copy of this open repository at a
+    /// new path. SQLite's online backup API includes committed pages that are
+    /// still resident in the source WAL. The target is written and validated
+    /// as a sibling temporary database, synced, and atomically published with
+    /// a no-overwrite hard link. Existing targets and sidecars are never
+    /// overwritten.
+    pub fn backup_to_path(&self, target: impl AsRef<Path>) -> Result<(), SqliteRepositoryError> {
+        let target = target.as_ref();
+        let parent = target
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let file_name = target
+            .file_name()
+            .ok_or_else(|| SqliteRepositoryError::InvalidBackupTarget(target.to_path_buf()))?;
+        for path in [
+            target.to_path_buf(),
+            sqlite_sidecar_path(target, "-wal"),
+            sqlite_sidecar_path(target, "-shm"),
+        ] {
+            if path.exists() {
+                return Err(SqliteRepositoryError::BackupTargetExists(path));
+            }
+        }
+
+        let sequence = BACKUP_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let mut temp_name = file_name.to_os_string();
+        temp_name.push(format!(
+            ".fraia-backup-{}-{sequence}.tmp",
+            std::process::id()
+        ));
+        let temp_path = parent.join(temp_name);
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp_path)?;
+
+        let backup_result = (|| -> Result<(), SqliteRepositoryError> {
+            let mut destination = Connection::open(&temp_path)?;
+            destination.pragma_update(None, "foreign_keys", "ON")?;
+            {
+                let backup = backup::Backup::new(&self.connection, &mut destination)?;
+                backup.run_to_completion(128, Duration::from_millis(1), None)?;
+            }
+            validate_backup_connection(&destination)?;
+            destination.close().map_err(|(_, error)| error)?;
+            fs::File::open(&temp_path)?.sync_all()?;
+            // A same-directory hard link publishes the completed database
+            // atomically and fails if another process created the target
+            // after the preflight. Unlike rename, it never replaces a path.
+            fs::hard_link(&temp_path, target)?;
+            let _ = fs::remove_file(&temp_path);
+            sync_parent_directory(parent)?;
+
+            let reopened = Self::open(target)?;
+            validate_backup_connection(&reopened.connection)?;
+            drop(reopened);
+            Ok(())
+        })();
+
+        if backup_result.is_err() {
+            let _ = fs::remove_file(&temp_path);
+            let _ = fs::remove_file(sqlite_sidecar_path(&temp_path, "-wal"));
+            let _ = fs::remove_file(sqlite_sidecar_path(&temp_path, "-shm"));
+        }
+        backup_result
     }
 
     pub fn create_project(&mut self, root: StoredProjectRoot) -> Result<(), SqliteRepositoryError> {
@@ -366,6 +480,46 @@ impl SqliteRevisionRepository {
         proposal_id: &ProposalId,
         provenance: Option<&AgentTurnProvenance>,
     ) -> Result<(), SqliteRepositoryError> {
+        self.append_revision_with_snapshot_proposal_and_receipt(
+            revision,
+            snapshot,
+            expected_parent,
+            proposal_id,
+            provenance,
+            None,
+        )
+    }
+
+    /// The accepted revision, head movement, proposal status, and request
+    /// receipt share one commit. A receipt failure rolls back every mutation.
+    pub fn append_revision_with_snapshot_proposal_and_operation_receipt(
+        &mut self,
+        revision: &StoredRevision,
+        snapshot: &StoredSnapshot,
+        expected_parent: &RevisionId,
+        proposal_id: &ProposalId,
+        provenance: Option<&AgentTurnProvenance>,
+        receipt: &StoredOperationReceipt,
+    ) -> Result<(), SqliteRepositoryError> {
+        self.append_revision_with_snapshot_proposal_and_receipt(
+            revision,
+            snapshot,
+            expected_parent,
+            proposal_id,
+            provenance,
+            Some(receipt),
+        )
+    }
+
+    fn append_revision_with_snapshot_proposal_and_receipt(
+        &mut self,
+        revision: &StoredRevision,
+        snapshot: &StoredSnapshot,
+        expected_parent: &RevisionId,
+        proposal_id: &ProposalId,
+        provenance: Option<&AgentTurnProvenance>,
+        receipt: Option<&StoredOperationReceipt>,
+    ) -> Result<(), SqliteRepositoryError> {
         if revision.snapshot_id != snapshot.id {
             return Err(SqliteRepositoryError::InvalidRevisionSnapshotBinding {
                 revision_id: revision.id.clone(),
@@ -376,10 +530,21 @@ impl SqliteRevisionRepository {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let proposal = proposal_in_transaction(&transaction, proposal_id)?
+            .ok_or_else(|| SqliteRepositoryError::UnknownProposal(proposal_id.clone()))?;
+        if proposal.status != "pending"
+            || proposal.conversation_id != revision.conversation_id
+            || proposal.parent_revision_id != *expected_parent
+            || proposal.proposed_revision_id != revision.id
+        {
+            return Err(SqliteRepositoryError::ConflictingProposal(
+                proposal_id.clone(),
+            ));
+        }
         insert_snapshot(&transaction, snapshot)?;
         append_revision_in_transaction(&transaction, revision, expected_parent)?;
         let changed = transaction.execute(
-            "UPDATE proposals SET status = 'accepted', accepted_revision_id = ?1, provider = ?2, model = ?3, turn_id = ?4 WHERE id = ?5",
+            "UPDATE proposals SET status = 'accepted', accepted_revision_id = ?1, provider = ?2, model = ?3, turn_id = ?4 WHERE id = ?5 AND status = 'pending'",
             params![
                 revision.id.as_str(),
                 provenance.map(|value| value.provider.as_str()),
@@ -390,6 +555,9 @@ impl SqliteRevisionRepository {
         )?;
         if changed != 1 {
             return Err(SqliteRepositoryError::UnknownProposal(proposal_id.clone()));
+        }
+        if let Some(receipt) = receipt {
+            insert_operation_receipt(&transaction, receipt)?;
         }
         transaction.commit()?;
         Ok(())
@@ -457,7 +625,7 @@ impl SqliteRevisionRepository {
             ));
         }
         let result = transaction.execute(
-            "INSERT INTO proposals (id, project_id, conversation_id, parent_revision_id, proposed_revision_id, patch_json, status, accepted_revision_id, provider, model, turn_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT INTO proposals (id, project_id, conversation_id, parent_revision_id, proposed_revision_id, patch_json, status, accepted_revision_id, provider, model, turn_id, provenance_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 proposal.id.as_str(),
                 proposal.project_id.as_str(),
@@ -470,6 +638,7 @@ impl SqliteRevisionRepository {
                 proposal.agent_provenance.as_ref().map(|value| value.provider.as_str()),
                 proposal.agent_provenance.as_ref().map(|value| value.model.as_str()),
                 proposal.agent_provenance.as_ref().map(|value| value.turn_id.as_str()),
+                proposal.agent_provenance.as_ref().map(|value| serde_json::to_string(value).expect("agent provenance is serializable")),
             ],
         );
         match result {
@@ -484,6 +653,140 @@ impl SqliteRevisionRepository {
             }
             Err(error) => Err(error.into()),
         }
+    }
+
+    /// Inserts a pending proposal only while the conversation is still at the
+    /// exact parent used to validate its patch. An identical proposal is an
+    /// idempotent replay; an identifier collision with different content is
+    /// rejected.
+    pub fn insert_proposal_at_expected_head(
+        &mut self,
+        proposal: &StoredProposal,
+        expected_head: &RevisionId,
+    ) -> Result<(), SqliteRepositoryError> {
+        self.insert_proposal_at_expected_head_with_receipt(proposal, expected_head, None)
+    }
+
+    /// Proposal creation and its request receipt share one commit. This is the
+    /// durable idempotency boundary used by transport adapters.
+    pub fn insert_proposal_at_expected_head_and_operation_receipt(
+        &mut self,
+        proposal: &StoredProposal,
+        expected_head: &RevisionId,
+        receipt: &StoredOperationReceipt,
+    ) -> Result<(), SqliteRepositoryError> {
+        self.insert_proposal_at_expected_head_with_receipt(proposal, expected_head, Some(receipt))
+    }
+
+    fn insert_proposal_at_expected_head_with_receipt(
+        &mut self,
+        proposal: &StoredProposal,
+        expected_head: &RevisionId,
+        receipt: Option<&StoredOperationReceipt>,
+    ) -> Result<(), SqliteRepositoryError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if proposal.parent_revision_id != *expected_head {
+            return Err(SqliteRepositoryError::InvalidRevisionParentBinding {
+                revision_id: proposal.proposed_revision_id.clone(),
+                expected_parent_id: expected_head.clone(),
+                actual_parent_id: Some(proposal.parent_revision_id.clone()),
+            });
+        }
+        let actual_head = head_in(&transaction, &proposal.conversation_id)?;
+        if actual_head != *expected_head {
+            return Err(SqliteRepositoryError::ExpectedHeadConflict {
+                conversation_id: proposal.conversation_id.clone(),
+                expected_revision_id: expected_head.clone(),
+                actual_revision_id: actual_head,
+            });
+        }
+        let project_id = transaction
+            .query_row(
+                "SELECT project_id FROM conversations WHERE id = ?1",
+                [proposal.conversation_id.as_str()],
+                |row| row.get::<_, String>(0),
+            )
+            .map(ProjectId::from)?;
+        if project_id != proposal.project_id {
+            return Err(SqliteRepositoryError::UnknownProject(
+                proposal.project_id.clone(),
+            ));
+        }
+
+        let existing = proposal_in_transaction(&transaction, &proposal.id)?;
+        if let Some(existing) = existing {
+            if existing == *proposal {
+                if let Some(receipt) = receipt {
+                    insert_operation_receipt(&transaction, receipt)?;
+                }
+                transaction.commit()?;
+                return Ok(());
+            }
+            return Err(SqliteRepositoryError::ConflictingProposal(
+                proposal.id.clone(),
+            ));
+        }
+        transaction.execute(
+            "INSERT INTO proposals (id, project_id, conversation_id, parent_revision_id, proposed_revision_id, patch_json, status, accepted_revision_id, provider, model, turn_id, provenance_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            params![
+                proposal.id.as_str(),
+                proposal.project_id.as_str(),
+                proposal.conversation_id.as_str(),
+                proposal.parent_revision_id.as_str(),
+                proposal.proposed_revision_id.as_str(),
+                proposal.patch_json,
+                proposal.status,
+                proposal.accepted_revision_id.as_ref().map(RevisionId::as_str),
+                proposal.agent_provenance.as_ref().map(|value| value.provider.as_str()),
+                proposal.agent_provenance.as_ref().map(|value| value.model.as_str()),
+                proposal.agent_provenance.as_ref().map(|value| value.turn_id.as_str()),
+                proposal.agent_provenance.as_ref().map(|value| serde_json::to_string(value).expect("agent provenance is serializable")),
+            ],
+        )?;
+        if let Some(receipt) = receipt {
+            insert_operation_receipt(&transaction, receipt)?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn proposal(&self, id: &ProposalId) -> Result<StoredProposal, SqliteRepositoryError> {
+        proposal_in_connection(&self.connection, id)?
+            .ok_or_else(|| SqliteRepositoryError::UnknownProposal(id.clone()))
+    }
+
+    pub fn operation_receipt(
+        &self,
+        request_id: &str,
+    ) -> Result<Option<StoredOperationReceipt>, SqliteRepositoryError> {
+        self.connection
+            .query_row(
+                "SELECT request_id, request_json, response_json FROM operation_receipts WHERE request_id = ?1",
+                [request_id],
+                |row| {
+                    Ok(StoredOperationReceipt {
+                        request_id: row.get(0)?,
+                        request_json: row.get(1)?,
+                        response_json: row.get(2)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(Into::into)
+    }
+
+    pub fn store_operation_receipt(
+        &mut self,
+        receipt: &StoredOperationReceipt,
+    ) -> Result<(), SqliteRepositoryError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        insert_operation_receipt(&transaction, receipt)?;
+        transaction.commit()?;
+        Ok(())
     }
 
     pub fn reject_proposal(
@@ -502,6 +805,50 @@ impl SqliteRevisionRepository {
         Ok(())
     }
 
+    /// Rejects a pending proposal against its exact conversation head and
+    /// stores the operation receipt in the same transaction.
+    pub fn reject_proposal_at_expected_head_and_operation_receipt(
+        &mut self,
+        proposal_id: &ProposalId,
+        conversation_id: &ConversationId,
+        expected_head: &RevisionId,
+        receipt: &StoredOperationReceipt,
+    ) -> Result<(), SqliteRepositoryError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let actual_head = head_in(&transaction, conversation_id)?;
+        if actual_head != *expected_head {
+            return Err(SqliteRepositoryError::ExpectedHeadConflict {
+                conversation_id: conversation_id.clone(),
+                expected_revision_id: expected_head.clone(),
+                actual_revision_id: actual_head,
+            });
+        }
+        let proposal = proposal_in_transaction(&transaction, proposal_id)?
+            .ok_or_else(|| SqliteRepositoryError::UnknownProposal(proposal_id.clone()))?;
+        if proposal.conversation_id != *conversation_id
+            || proposal.parent_revision_id != *expected_head
+            || proposal.status != "pending"
+        {
+            return Err(SqliteRepositoryError::ConflictingProposal(
+                proposal_id.clone(),
+            ));
+        }
+        let changed = transaction.execute(
+            "UPDATE proposals SET status = 'rejected', accepted_revision_id = NULL WHERE id = ?1 AND status = 'pending'",
+            [proposal_id.as_str()],
+        )?;
+        if changed != 1 {
+            return Err(SqliteRepositoryError::ConflictingProposal(
+                proposal_id.clone(),
+            ));
+        }
+        insert_operation_receipt(&transaction, receipt)?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub fn project_proposals(
         &self,
         project_id: &ProjectId,
@@ -510,7 +857,7 @@ impl SqliteRevisionRepository {
             return Err(SqliteRepositoryError::UnknownProject(project_id.clone()));
         }
         let mut statement = self.connection.prepare(
-            "SELECT id, project_id, conversation_id, parent_revision_id, proposed_revision_id, patch_json, status, accepted_revision_id, provider, model, turn_id FROM proposals WHERE project_id = ?1 ORDER BY id",
+            "SELECT id, project_id, conversation_id, parent_revision_id, proposed_revision_id, patch_json, status, accepted_revision_id, provider, model, turn_id, provenance_json FROM proposals WHERE project_id = ?1 ORDER BY id",
         )?;
         let rows = statement.query_map([project_id.as_str()], |row| {
             Ok(StoredProposal {
@@ -522,18 +869,26 @@ impl SqliteRevisionRepository {
                 patch_json: row.get(5)?,
                 status: row.get(6)?,
                 accepted_revision_id: row.get::<_, Option<String>>(7)?.map(RevisionId::from),
-                agent_provenance: match (
-                    row.get::<_, Option<String>>(8)?,
-                    row.get::<_, Option<String>>(9)?,
-                    row.get::<_, Option<String>>(10)?,
-                ) {
-                    (Some(provider), Some(model), Some(turn_id)) => Some(AgentTurnProvenance {
-                        provider,
-                        model,
-                        turn_id,
+                agent_provenance: row
+                    .get::<_, Option<String>>(11)?
+                    .and_then(|json| serde_json::from_str(&json).ok())
+                    .or_else(|| {
+                        match (
+                            row.get::<_, Option<String>>(8).ok().flatten(),
+                            row.get::<_, Option<String>>(9).ok().flatten(),
+                            row.get::<_, Option<String>>(10).ok().flatten(),
+                        ) {
+                            (Some(provider), Some(model), Some(turn_id)) => {
+                                Some(AgentTurnProvenance {
+                                    provider,
+                                    model,
+                                    turn_id,
+                                    ..Default::default()
+                                })
+                            }
+                            _ => None,
+                        }
                     }),
-                    _ => None,
-                },
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -793,6 +1148,27 @@ impl SqliteRevisionRepository {
         Ok(())
     }
 
+    /// Publishes resolved state, immutable evidence, and the request receipt
+    /// in one transaction. Unsupported and failed evidence may omit the
+    /// resolved snapshot but still receives the same atomic publication.
+    pub fn attach_evidence_with_snapshot_and_operation_receipt(
+        &mut self,
+        evidence: &StoredEvidence,
+        resolved_snapshot: Option<&StoredSnapshot>,
+        receipt: &StoredOperationReceipt,
+    ) -> Result<(), SqliteRepositoryError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if let Some(snapshot) = resolved_snapshot {
+            insert_snapshot(&transaction, snapshot)?;
+        }
+        insert_evidence(&transaction, evidence)?;
+        insert_operation_receipt(&transaction, receipt)?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub fn evidence(&self, id: &EvidenceId) -> Result<StoredEvidence, SqliteRepositoryError> {
         self.connection.query_row("SELECT id, authored_snapshot_id, resolved_snapshot_id, manifest_json, blob_ref FROM evidence WHERE id = ?1", [id.as_str()], |row| Ok(StoredEvidence { id: EvidenceId::from(row.get::<_, String>(0)?), authored_snapshot_id: SnapshotId::from(row.get::<_, String>(1)?), resolved_snapshot_id: row.get::<_, Option<String>>(2)?.map(SnapshotId::from), manifest_json: row.get(3)?, blob_ref: row.get(4)? })).optional()?.ok_or_else(|| SqliteRepositoryError::UnknownEvidence(id.clone()))
     }
@@ -909,7 +1285,158 @@ fn migrate(connection: &mut Connection) -> Result<(), rusqlite::Error> {
         )?;
         version = 2;
     }
+    if version < 3 {
+        connection.execute_batch(
+            "BEGIN;
+             CREATE TABLE IF NOT EXISTS operation_receipts (
+                 request_id TEXT PRIMARY KEY NOT NULL,
+                 request_json TEXT NOT NULL,
+                 response_json TEXT NOT NULL
+             );
+             INSERT OR IGNORE INTO schema_migrations(version) VALUES (3);
+             COMMIT;",
+        )?;
+        version = 3;
+    }
+    if version < 4 {
+        connection.execute_batch(
+            "BEGIN;
+             ALTER TABLE proposals ADD COLUMN provenance_json TEXT;
+             INSERT OR IGNORE INTO schema_migrations(version) VALUES (4);
+             COMMIT;",
+        )?;
+        version = 4;
+    }
     debug_assert_eq!(version, SCHEMA_VERSION);
+    Ok(())
+}
+
+fn sqlite_sidecar_path(path: &Path, suffix: &str) -> PathBuf {
+    let mut value = path.as_os_str().to_os_string();
+    value.push(suffix);
+    PathBuf::from(value)
+}
+
+#[cfg(unix)]
+fn sync_parent_directory(parent: &Path) -> Result<(), std::io::Error> {
+    fs::File::open(parent)?.sync_all()
+}
+
+#[cfg(not(unix))]
+fn sync_parent_directory(_parent: &Path) -> Result<(), std::io::Error> {
+    Ok(())
+}
+
+fn validate_backup_connection(connection: &Connection) -> Result<(), SqliteRepositoryError> {
+    let integrity =
+        connection.query_row("PRAGMA integrity_check", [], |row| row.get::<_, String>(0))?;
+    if integrity != "ok" {
+        return Err(SqliteRepositoryError::BackupValidation(format!(
+            "integrity_check returned `{integrity}`"
+        )));
+    }
+    let foreign_key_violation: Option<(String, i64)> = connection
+        .query_row("PRAGMA foreign_key_check", [], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .optional()?;
+    if let Some((table, row_id)) = foreign_key_violation {
+        return Err(SqliteRepositoryError::BackupValidation(format!(
+            "foreign key violation in table `{table}` row {row_id}"
+        )));
+    }
+    Ok(())
+}
+
+fn proposal_in_connection(
+    connection: &Connection,
+    id: &ProposalId,
+) -> Result<Option<StoredProposal>, SqliteRepositoryError> {
+    connection
+        .query_row(
+            "SELECT id, project_id, conversation_id, parent_revision_id, proposed_revision_id, patch_json, status, accepted_revision_id, provider, model, turn_id, provenance_json FROM proposals WHERE id = ?1",
+            [id.as_str()],
+            proposal_from_row,
+        )
+        .optional()
+        .map_err(Into::into)
+}
+
+fn proposal_in_transaction(
+    transaction: &Transaction<'_>,
+    id: &ProposalId,
+) -> Result<Option<StoredProposal>, SqliteRepositoryError> {
+    transaction
+        .query_row(
+            "SELECT id, project_id, conversation_id, parent_revision_id, proposed_revision_id, patch_json, status, accepted_revision_id, provider, model, turn_id, provenance_json FROM proposals WHERE id = ?1",
+            [id.as_str()],
+            proposal_from_row,
+        )
+        .optional()
+        .map_err(Into::into)
+}
+
+fn proposal_from_row(row: &rusqlite::Row<'_>) -> Result<StoredProposal, rusqlite::Error> {
+    let id = row.get::<_, String>(0)?;
+    Ok(StoredProposal {
+        id: ProposalId::from(id.as_str()),
+        project_id: ProjectId::from(row.get::<_, String>(1)?),
+        conversation_id: ConversationId::from(row.get::<_, String>(2)?),
+        parent_revision_id: RevisionId::from(row.get::<_, String>(3)?),
+        proposed_revision_id: RevisionId::from(row.get::<_, String>(4)?),
+        patch_json: row.get(5)?,
+        status: row.get(6)?,
+        accepted_revision_id: row.get::<_, Option<String>>(7)?.map(RevisionId::from),
+        agent_provenance: row
+            .get::<_, Option<String>>(11)?
+            .and_then(|json| serde_json::from_str(&json).ok())
+            .or_else(|| {
+                match (
+                    row.get::<_, Option<String>>(8).ok().flatten(),
+                    row.get::<_, Option<String>>(9).ok().flatten(),
+                    row.get::<_, Option<String>>(10).ok().flatten(),
+                ) {
+                    (Some(provider), Some(model), Some(turn_id)) => Some(AgentTurnProvenance {
+                        provider,
+                        model,
+                        turn_id,
+                        ..Default::default()
+                    }),
+                    _ => None,
+                }
+            }),
+    })
+}
+
+fn insert_operation_receipt(
+    transaction: &Transaction<'_>,
+    receipt: &StoredOperationReceipt,
+) -> Result<(), SqliteRepositoryError> {
+    let existing = transaction
+        .query_row(
+            "SELECT request_id, request_json, response_json FROM operation_receipts WHERE request_id = ?1",
+            [receipt.request_id.as_str()],
+            |row| {
+                Ok(StoredOperationReceipt {
+                    request_id: row.get(0)?,
+                    request_json: row.get(1)?,
+                    response_json: row.get(2)?,
+                })
+            },
+        )
+        .optional()?;
+    if let Some(existing) = existing {
+        if existing == *receipt {
+            return Ok(());
+        }
+        return Err(SqliteRepositoryError::ConflictingOperationRequest(
+            receipt.request_id.clone(),
+        ));
+    }
+    transaction.execute(
+        "INSERT INTO operation_receipts (request_id, request_json, response_json) VALUES (?1, ?2, ?3)",
+        params![receipt.request_id, receipt.request_json, receipt.response_json],
+    )?;
     Ok(())
 }
 
@@ -1211,6 +1738,10 @@ fn head_in(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::operations::{
+        OPERATION_CONTRACT_VERSION, Operation, OperationErrorCode, OperationOutcome,
+        OperationRequest, execute_sqlite_operation,
+    };
     use tempfile::tempdir;
 
     fn snapshot(bytes: &[u8]) -> StoredSnapshot {
@@ -1257,6 +1788,26 @@ mod tests {
             parent_revision_id: Some(RevisionId::from(parent)),
             conversation_id: ConversationId::from("overall"),
             metadata_json: "{\"operation\":\"manual_edit\"}".into(),
+        }
+    }
+    fn proposal() -> StoredProposal {
+        StoredProposal {
+            id: ProposalId::from("p1"),
+            project_id: ProjectId::from("warehouse"),
+            conversation_id: ConversationId::from("overall"),
+            parent_revision_id: RevisionId::from("r0"),
+            proposed_revision_id: RevisionId::from("r1"),
+            patch_json: "{\"operations\":[]}".into(),
+            status: "pending".into(),
+            accepted_revision_id: None,
+            agent_provenance: None,
+        }
+    }
+    fn receipt(id: &str) -> StoredOperationReceipt {
+        StoredOperationReceipt {
+            request_id: id.into(),
+            request_json: format!("{{\"requestId\":\"{id}\"}}"),
+            response_json: "{\"status\":\"success\"}".into(),
         }
     }
 
@@ -1319,6 +1870,196 @@ mod tests {
                 .head_revision_id,
             RevisionId::from("r0")
         );
+    }
+
+    #[test]
+    fn receipt_failure_rolls_back_proposal_creation() {
+        let mut repository = SqliteRevisionRepository::open_in_memory().unwrap();
+        repository.create_project(root()).unwrap();
+        repository
+            .connection
+            .execute_batch(
+                "CREATE TRIGGER reject_receipt BEFORE INSERT ON operation_receipts
+                 BEGIN SELECT RAISE(ABORT, 'forced receipt failure'); END;",
+            )
+            .unwrap();
+        assert!(
+            repository
+                .insert_proposal_at_expected_head_and_operation_receipt(
+                    &proposal(),
+                    &RevisionId::from("r0"),
+                    &receipt("request-propose"),
+                )
+                .is_err()
+        );
+        assert!(matches!(
+            repository.proposal(&ProposalId::from("p1")),
+            Err(SqliteRepositoryError::UnknownProposal(_))
+        ));
+        assert!(
+            repository
+                .operation_receipt("request-propose")
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn receipt_failure_rolls_back_acceptance_snapshot_revision_head_and_status() {
+        let mut repository = SqliteRevisionRepository::open_in_memory().unwrap();
+        repository.create_project(root()).unwrap();
+        repository
+            .insert_proposal_at_expected_head(&proposal(), &RevisionId::from("r0"))
+            .unwrap();
+        repository
+            .connection
+            .execute_batch(
+                "CREATE TRIGGER reject_receipt BEFORE INSERT ON operation_receipts
+                 BEGIN SELECT RAISE(ABORT, 'forced receipt failure'); END;",
+            )
+            .unwrap();
+        let candidate = snapshot(b"accepted");
+        assert!(
+            repository
+                .append_revision_with_snapshot_proposal_and_operation_receipt(
+                    &child("r1", &candidate.id, "r0"),
+                    &candidate,
+                    &RevisionId::from("r0"),
+                    &ProposalId::from("p1"),
+                    None,
+                    &receipt("request-accept"),
+                )
+                .is_err()
+        );
+        assert!(matches!(
+            repository.revision(&RevisionId::from("r1")),
+            Err(SqliteRepositoryError::UnknownRevision(_))
+        ));
+        assert!(matches!(
+            repository.snapshot(&candidate.id),
+            Err(SqliteRepositoryError::UnknownSnapshot(_))
+        ));
+        assert_eq!(
+            repository
+                .conversation(&ConversationId::from("overall"))
+                .unwrap()
+                .head_revision_id,
+            RevisionId::from("r0")
+        );
+        assert_eq!(
+            repository.proposal(&ProposalId::from("p1")).unwrap().status,
+            "pending"
+        );
+        assert!(
+            repository
+                .operation_receipt("request-accept")
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn receipt_failure_rolls_back_rejection_status() {
+        let mut repository = SqliteRevisionRepository::open_in_memory().unwrap();
+        repository.create_project(root()).unwrap();
+        repository
+            .insert_proposal_at_expected_head(&proposal(), &RevisionId::from("r0"))
+            .unwrap();
+        repository
+            .connection
+            .execute_batch(
+                "CREATE TRIGGER reject_receipt BEFORE INSERT ON operation_receipts
+                 BEGIN SELECT RAISE(ABORT, 'forced receipt failure'); END;",
+            )
+            .unwrap();
+        assert!(
+            repository
+                .reject_proposal_at_expected_head_and_operation_receipt(
+                    &ProposalId::from("p1"),
+                    &ConversationId::from("overall"),
+                    &RevisionId::from("r0"),
+                    &receipt("request-reject"),
+                )
+                .is_err()
+        );
+        assert_eq!(
+            repository.proposal(&ProposalId::from("p1")).unwrap().status,
+            "pending"
+        );
+    }
+
+    #[test]
+    fn receipt_failure_rolls_back_resolved_snapshot_and_evidence() {
+        let mut repository = SqliteRevisionRepository::open_in_memory().unwrap();
+        repository.create_project(root()).unwrap();
+        repository
+            .connection
+            .execute_batch(
+                "CREATE TRIGGER reject_receipt BEFORE INSERT ON operation_receipts
+                 BEGIN SELECT RAISE(ABORT, 'forced receipt failure'); END;",
+            )
+            .unwrap();
+        let resolved = snapshot(b"resolved-analysis");
+        let evidence = StoredEvidence {
+            id: EvidenceId::from("analysis-evidence"),
+            authored_snapshot_id: snapshot_id(b"root"),
+            resolved_snapshot_id: Some(resolved.id.clone()),
+            manifest_json: "{\"status\":\"completed\"}".into(),
+            blob_ref: None,
+        };
+        assert!(
+            repository
+                .attach_evidence_with_snapshot_and_operation_receipt(
+                    &evidence,
+                    Some(&resolved),
+                    &receipt("request-analysis"),
+                )
+                .is_err()
+        );
+        assert!(matches!(
+            repository.evidence(&EvidenceId::from("analysis-evidence")),
+            Err(SqliteRepositoryError::UnknownEvidence(_))
+        ));
+        assert!(matches!(
+            repository.snapshot(&resolved.id),
+            Err(SqliteRepositoryError::UnknownSnapshot(_))
+        ));
+    }
+
+    #[test]
+    fn executor_surfaces_receipt_read_and_read_only_write_failures() {
+        let request = || OperationRequest {
+            contract_version: OPERATION_CONTRACT_VERSION.into(),
+            request_id: "capabilities-fault".into(),
+            operation: Operation::Capabilities,
+        };
+
+        let mut read_failure = SqliteRevisionRepository::open_in_memory().unwrap();
+        read_failure
+            .connection
+            .execute("DROP TABLE operation_receipts", [])
+            .unwrap();
+        let response = execute_sqlite_operation(&mut read_failure, request());
+        assert!(matches!(
+            response.outcome,
+            OperationOutcome::Error { error }
+                if error.code == OperationErrorCode::RepositoryError
+        ));
+
+        let mut write_failure = SqliteRevisionRepository::open_in_memory().unwrap();
+        write_failure
+            .connection
+            .execute_batch(
+                "CREATE TRIGGER reject_receipt BEFORE INSERT ON operation_receipts
+                 BEGIN SELECT RAISE(ABORT, 'forced receipt failure'); END;",
+            )
+            .unwrap();
+        let response = execute_sqlite_operation(&mut write_failure, request());
+        assert!(matches!(
+            response.outcome,
+            OperationOutcome::Error { error }
+                if error.code == OperationErrorCode::RepositoryError
+        ));
     }
 
     #[test]

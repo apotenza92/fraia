@@ -6,10 +6,13 @@ import { FileBox, FilePlus2, FolderOpen } from 'lucide-react';
 import { AppShell } from './components/layout/AppShell';
 import { AppMenuBar } from './components/layout/AppMenuBar';
 import { DocumentTabBar } from './components/domain-ui/DocumentTabBar';
+import { FirstSaveDialog, type FirstSaveNames } from './components/project/FirstSaveDialog';
+import { NameDialog } from './components/project/NameDialog';
 import { APP_HEADER_HEIGHT, CHROME } from './components/layout/chromeMetrics';
 import { normalizeWorkbenchState } from './lib/defaultProject';
 import {
   projectDocumentFromState,
+  preserveProjectIdentity,
   reorderProjectDocuments,
   upsertProjectDocument,
   type ProjectDocument,
@@ -75,11 +78,16 @@ export default function App() {
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [documentActionPending, setDocumentActionPending] = useState(false);
+  const [firstSaveOpen, setFirstSaveOpen] = useState(false);
+  const [firstSaveError, setFirstSaveError] = useState<string | null>(null);
+  const [nameAction, setNameAction] = useState<'create-design' | 'rename-design' | 'rename-project' | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
   useSystemTheme();
   const activeDocument = documents.find((document) => document.id === activeDocumentId) ?? documents[0] ?? null;
 
   function updateActiveDocument(nextState: WorkbenchState) {
-    const nextDocument = projectDocumentFromState(nextState);
+    if (!activeDocument) return;
+    const nextDocument = projectDocumentFromState(preserveProjectIdentity(nextState, activeDocument));
     setDocuments((current) => current.map((document) => (
       document.id === activeDocument?.id ? nextDocument : document
     )));
@@ -98,13 +106,75 @@ export default function App() {
         setActiveDocumentId(existing.id);
         return;
       }
-      const nextState = normalizeWorkbenchState(await window.fraia.openProject({ projectDir }));
+      const response = await window.fraia.openProject({ projectDir });
+      const designStates = response?.designStates ?? [response?.state ?? response];
+      const nextStates = designStates.map(normalizeWorkbenchState).filter(Boolean) as WorkbenchState[];
+      const nextState = nextStates[0];
       if (!nextState) throw new Error('Fraia did not return the selected model.');
-      const nextDocument = projectDocumentFromState(nextState);
-      setDocuments((current) => upsertProjectDocument(current, nextDocument));
-      setActiveDocumentId(nextDocument.id);
+      const nextDocuments = nextStates.map(projectDocumentFromState);
+      setDocuments((current) => nextDocuments.reduce(upsertProjectDocument, current));
+      setActiveDocumentId(nextDocuments[0].id);
     } catch (caught: any) {
       setError(caught?.message || 'Could not open the selected Fraia model.');
+    } finally {
+      setDocumentActionPending(false);
+    }
+  }
+
+  async function submitNameAction(name: string) {
+    if (!activeDocument || !nameAction || documentActionPending) return;
+    setNameError(null);
+    setDocumentActionPending(true);
+    try {
+      if (nameAction === 'create-design') {
+        const nextState = normalizeWorkbenchState(await window.fraia.createDesign({
+          projectDir: activeDocument.projectRootDir,
+          projectId: activeDocument.projectId,
+          designName: name,
+        }));
+        if (!nextState) throw new Error('Fraia did not return the new design.');
+        const nextDocument = projectDocumentFromState(nextState);
+        setDocuments((current) => upsertProjectDocument(current, nextDocument));
+        setActiveDocumentId(nextDocument.id);
+      } else {
+        const nextState = normalizeWorkbenchState(await window.fraia.renameDesign({
+          projectDir: activeDocument.projectRootDir,
+          projectId: activeDocument.projectId,
+          projectName: nameAction === 'rename-project' ? name : activeDocument.projectName,
+          designId: activeDocument.designId,
+          designName: nameAction === 'rename-design' ? name : activeDocument.designName,
+        }));
+        if (!nextState) throw new Error('Fraia did not return the renamed design.');
+        const nextDocument = projectDocumentFromState(nextState);
+        setDocuments((current) => current.map((document) => {
+          if (document.id === activeDocument.id) return nextDocument;
+          if (nameAction === 'rename-project' && document.projectId === activeDocument.projectId) {
+            return { ...document, projectName: name, state: { ...document.state, overview: { ...document.state.overview, projectName: name } } };
+          }
+          return document;
+        }));
+      }
+      setNameAction(null);
+    } catch (caught: any) {
+      setNameError(caught?.message || 'Could not save the name.');
+    } finally {
+      setDocumentActionPending(false);
+    }
+  }
+
+  async function deleteActiveDesign() {
+    if (!activeDocument || documentActionPending) return;
+    setError(null);
+    setDocumentActionPending(true);
+    try {
+      await window.fraia.deleteDesign({
+        projectDir: activeDocument.projectRootDir,
+        projectId: activeDocument.projectId,
+        designId: activeDocument.designId,
+      });
+      closeDocument(activeDocument.id);
+    } catch (caught: any) {
+      setError(caught?.message || 'Could not delete the design.');
     } finally {
       setDocumentActionPending(false);
     }
@@ -116,7 +186,7 @@ export default function App() {
     setDocumentActionPending(true);
     try {
       const projectDir = await window.fraia.createUntitledProject();
-      const nextState = normalizeWorkbenchState(await window.fraia.createProject({ projectDir, name: 'Untitled Model' }));
+      const nextState = normalizeWorkbenchState(await window.fraia.createProject({ projectDir, name: 'Untitled Project' }));
       if (!nextState) throw new Error('Fraia did not return the new blank model.');
       const nextDocument = projectDocumentFromState(nextState);
       setDocuments((current) => upsertProjectDocument(current, nextDocument));
@@ -128,26 +198,42 @@ export default function App() {
     }
   }
 
-  async function saveActiveProject(saveAs: boolean) {
+  async function saveActiveProject(saveAs: boolean, names?: FirstSaveNames) {
     if (!activeDocument || documentActionPending) return;
+    if (activeDocument.managedUnsaved && !names) {
+      setFirstSaveError(null);
+      setFirstSaveOpen(true);
+      return;
+    }
     setError(null);
+    setFirstSaveError(null);
+    if (names) setFirstSaveOpen(false);
     setDocumentActionPending(true);
     try {
-      const projectId = activeDocument.state.overview?.documentId
-        ?? activeDocument.state.overview?.document_id
-        ?? activeDocument.projectDir;
-      const nextState = normalizeWorkbenchState(await window.fraia.saveProject({
-        projectDir: activeDocument.projectDir,
-        projectId,
-        suggestedName: activeDocument.label === 'Untitled Model' ? 'Untitled Fraia Project' : activeDocument.label,
+      const response = await window.fraia.saveProject({
+        projectDir: activeDocument.projectRootDir,
+        projectId: activeDocument.projectId,
+        designId: activeDocument.designId,
+        designIds: documents.filter((document) => document.projectId === activeDocument.projectId).map((document) => document.designId),
+        projectName: names?.projectName,
+        designName: names?.designName,
+        suggestedName: names?.projectName ?? activeDocument.projectName,
         saveAs,
-      }));
+      });
+      const designStates = response?.designStates ?? [response?.state ?? response];
+      const nextDocuments = designStates.map(normalizeWorkbenchState).filter(Boolean).map(projectDocumentFromState);
+      const nextState = normalizeWorkbenchState(response?.state ?? response);
       if (!nextState) return;
-      const nextDocument = projectDocumentFromState(nextState);
-      setDocuments((current) => current.map((document) => document.id === activeDocument.id ? nextDocument : document));
-      setActiveDocumentId(nextDocument.id);
+      setDocuments((current) => current.map((document) => nextDocuments.find((next: ProjectDocument) => next.id === document.id) ?? document));
+      setActiveDocumentId(activeDocument.id);
     } catch (caught: any) {
-      setError(caught?.message || 'Could not save the Fraia project.');
+      const message = caught?.message || 'Could not save the Fraia project.';
+      if (names) {
+        setFirstSaveError(message);
+        setFirstSaveOpen(true);
+      } else {
+        setError(message);
+      }
     } finally {
       setDocumentActionPending(false);
     }
@@ -170,6 +256,7 @@ export default function App() {
   function closeDocument(documentId: string) {
     const closingIndex = documents.findIndex((document) => document.id === documentId);
     if (closingIndex < 0) return;
+    void window.fraia.conversationCancelDesign?.({ designId: documents[closingIndex].designId });
     const remaining = documents.filter((document) => document.id !== documentId);
     if (activeDocumentId === documentId) {
       setActiveDocumentId(remaining[closingIndex]?.id ?? remaining[closingIndex - 1]?.id ?? null);
@@ -195,20 +282,41 @@ export default function App() {
     reorderable: true,
   }));
 
-  return (
+  return (<>
     <AppShell
-      key={activeDocument.id}
-      state={activeDocument.state}
-      onState={updateActiveDocument}
-      documentTabs={documentTabs}
-      activeDocumentId={activeDocument.id}
-      onDocumentSelect={setActiveDocumentId}
-      onDocumentClose={closeDocument}
-      onDocumentReorder={(orderedIds) => setDocuments((current) => reorderProjectDocuments(current, orderedIds))}
-      onOpenDocument={() => { void openProjectDocument(); }}
-      onNewBlankModel={() => { void createBlankModel(); }}
-      documentActionPending={documentActionPending}
-      documentError={error}
+        key={activeDocument.id}
+        state={activeDocument.state}
+        onState={updateActiveDocument}
+        documentTabs={documentTabs}
+        activeDocumentId={activeDocument.id}
+        onDocumentSelect={setActiveDocumentId}
+        onDocumentClose={closeDocument}
+        onDocumentReorder={(orderedIds) => setDocuments((current) => reorderProjectDocuments(current, orderedIds))}
+        onOpenDocument={() => { void openProjectDocument(); }}
+        onNewBlankModel={() => { setNameError(null); setNameAction('create-design'); }}
+        onRenameProject={() => { setNameError(null); setNameAction('rename-project'); }}
+        onRenameDesign={() => { setNameError(null); setNameAction('rename-design'); }}
+        onDeleteDesign={() => { void deleteActiveDesign(); }}
+        documentActionPending={documentActionPending}
+        documentError={error}
+      />
+    <FirstSaveDialog
+      open={firstSaveOpen}
+      projectName={activeDocument.projectName}
+      designName={activeDocument.designName}
+      pending={documentActionPending}
+      error={firstSaveError}
+      onOpenChange={setFirstSaveOpen}
+      onContinue={(names) => { void saveActiveProject(false, names); }}
     />
-  );
+    <NameDialog
+      open={nameAction !== null}
+      kind={nameAction ?? 'create-design'}
+      initialValue={nameAction === 'rename-project' ? activeDocument.projectName : nameAction === 'rename-design' ? activeDocument.designName : ''}
+      pending={documentActionPending}
+      error={nameError}
+      onOpenChange={(open) => { if (!open) setNameAction(null); }}
+      onSubmit={(name) => { void submitNameAction(name); }}
+    />
+  </>);
 }

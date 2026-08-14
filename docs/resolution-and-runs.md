@@ -204,48 +204,73 @@ Projects should remain concise by relying on references and semantic structures.
 
 ## 8. Frozen run contents
 
-A run directory will likely need at least:
-
-- run manifest/metadata
-- resolved model snapshot
-- solver input or normalized analysis payload
-- results
-- diagnostics/warnings
-- logs
-- summary
-
-### Possible layout
+Each design owns one canonical immutable run index and its run artefacts:
 
 ```text
-runs/
-  2026-04-13T23-59-00Z/
-    run.json
-    snapshot.json
-    solver-input.json
-    results.json
-    diagnostics.json
-    summary.md
-    logs.txt
+designs/<design-id>/runs/
+  index.json
+  design-run-sha256-<content-id>/
+    manifest.json
+    <checksummed attachments>
 ```
+
+`manifest.json` uses the versioned `fraia.design-run.v1` contract. It records:
+
+- the exact project and design ids
+- the actor and creation time
+- the exact authored revision and authored snapshot
+- the resolved snapshot, when resolution completed
+- canonical request and settings identities
+- solver, runtime, input, and result identities
+- a truthful `completed`, `failed`, or `unsupported` status
+- diagnostics and only the metrics that the run actually produced
+- checksums, sizes, media types, and roles for all attachments
+- an optional immutable parent run id
+
+A completed run requires input and result identities. The resolved snapshot is
+optional because a run can use the authored snapshot directly. A failed or
+unsupported run cannot contain result metrics, result identities, design
+actions, check results, or other result attachments. This prevents a partial
+execution from looking complete.
+
+The store stages and validates the complete run directory before it publishes
+the directory and index entry. An interrupted run is not visible in the index.
+If interruption occurs after the complete directory is adopted, the same
+publish request can safely recover and index it. The index itself uses an
+atomic recoverable replacement. No run publication changes authored state.
 
 ---
 
 ## 9. Provenance model
 
-Each run should capture provenance such as:
+Each canonical run captures:
 
 - run id
 - timestamp
 - triggering actor (user, agent, optimizer)
-- source project version
-- source package lock data
-- resolved schema version
-- ruleset version
-- solver adapter/version
+- exact authored revision and snapshot identities
+- optional resolved snapshot identity
+- request, settings, input, result, solver, and runtime identities
 - parent run if iterative
 - notes/reason for run
 
-This will be especially important for optimization and autonomous design loops.
+The run id is deterministic from the immutable manifest content. The store
+validates every indexed manifest and attachment when it lists or inspects runs.
+It rejects undeclared files, symlinks, checksum changes, ownership changes, and
+unknown future manifest or index fields.
+
+Older run directories remain available for read-only inspection. Fraia does
+not rewrite them into the canonical schema. Both the application service and
+the command-line interface read the same design-scoped index; neither maintains
+a separate latest-run pointer.
+
+Accepted-design analysis binds its stored evidence to the canonical run id.
+Completed, failed, and unsupported attempts all publish truthful manifests.
+Failed and unsupported attempts contain diagnostics but no fabricated metrics
+or results. Exact operation receipt replay returns the same run. A retry is a
+new immutable attempt with a new evidence id and run id, while earlier history
+remains available. Current and stale status is derived from the exact authored
+snapshot, not from a mutable latest-run label.
 
 ---
 
@@ -393,3 +418,23 @@ This suggests that “resolve” should be a first-class engineering operation, 
 ---
 
 _End of draft._
+# Live analysis attempts
+
+Live analysis progress is separate from agent-turn progress. An analysis
+attempt is bound to one exact design revision, authored snapshot, evidence id,
+and operation request. It reports `preparing`, `resolving`, `solving`, and
+`collecting` stages with elapsed time. Its terminal status is exactly one of
+`completed`, `failed`, `unsupported`, or `cancelled`.
+
+Cancellation uses an opaque attempt id scoped to the active design. The
+analysis service checks cancellation before it attaches evidence or publishes
+the immutable canonical design run. A late solver result after cancellation
+cannot become the current result. Failed and unsupported attempts retain
+diagnostics and never fabricate metrics. A retry uses a new operation request
+id, evidence id, and attempt id. It never reuses or mutates an earlier run.
+
+The design package keeps an append-only attempt-state journal. If the app
+restarts during a nonterminal attempt, Fraia exposes the attempt as failed with
+an interruption diagnostic. The user can then retry as a new attempt. A
+canonical run id appears only after terminal evidence and canonical run
+publication succeed.

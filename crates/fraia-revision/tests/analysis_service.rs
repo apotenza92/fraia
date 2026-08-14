@@ -3,7 +3,8 @@ use fraia_core::{
     StructuralNode, SupportAssignment,
 };
 use fraia_revision::analysis_service::{
-    SnapshotAnalysisOutcome, analyse_accepted_revision, dependencies_for_snapshot,
+    AnalysisExecutionStage, AnalysisSettings, SnapshotAnalysisError, SnapshotAnalysisOutcome,
+    analyse_accepted_revision, analyse_accepted_revision_with_control, dependencies_for_snapshot,
 };
 use fraia_revision::patch::{
     LineLoadUnit, LoadInput, LoadMagnitude, StructuralOperation, StructuralPatch,
@@ -131,6 +132,52 @@ fn same_snapshot_produces_the_same_exact_analysis_hashes() {
 }
 
 #[test]
+fn completed_analysis_publishes_through_the_canonical_design_run_store() {
+    let directory = tempfile::tempdir().unwrap();
+    let project_dir = directory.path().join("project");
+    let package = fraia_core::create_named_project_package(&project_dir, "Analysis run").unwrap();
+    let design_id = package.designs[0].manifest.id.clone();
+    let mut repository = repository();
+    let revision_id = RevisionId::from("root");
+    let mut analysis = analyse_accepted_revision(
+        &mut repository,
+        &revision_id,
+        EvidenceId::from("canonical-run"),
+    )
+    .unwrap();
+    let published = fraia_revision::design_run_adapter::publish_analysis_evidence_design_run(
+        fraia_revision::design_run_adapter::PublishAnalysisEvidenceDesignRun {
+            project_dir: &project_dir,
+            project_id: package.manifest.id,
+            design_id: design_id.clone(),
+            revision_id: &revision_id,
+            evidence: &mut analysis.evidence,
+            actor: fraia_core::DesignRunActor {
+                actor_type: "test".into(),
+                actor_id: "analysis-service".into(),
+            },
+            created_at: "2026-08-13T04:02:00Z".into(),
+            parent_run_id: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(published.status, fraia_core::DesignRunStatus::Completed);
+    assert_eq!(published.authored_revision_id, "root");
+    assert!(published.result_identity.is_some());
+    assert_eq!(
+        analysis.evidence.canonical_run_id(),
+        Some(published.run_id.as_str())
+    );
+    assert_eq!(
+        fraia_core::list_design_runs(&project_dir, &design_id)
+            .unwrap()
+            .runs[0]
+            .run_id,
+        published.run_id
+    );
+}
+
+#[test]
 fn descendant_edit_marks_exact_snapshot_evidence_stale() {
     let mut repository = repository();
     let root = RevisionId::from("root");
@@ -179,4 +226,36 @@ fn descendant_edit_marks_exact_snapshot_evidence_stale() {
         stale.is_stale(),
         "descendant load change must stale root evidence"
     );
+}
+
+#[test]
+fn controlled_analysis_reports_truthful_stages_and_cancel_publishes_no_evidence() {
+    let mut repository = repository();
+    let revision_id = RevisionId::from("root");
+    let evidence_id = EvidenceId::from("cancelled-run");
+    let mut stages = Vec::new();
+    let solving = std::cell::Cell::new(false);
+    let result = analyse_accepted_revision_with_control(
+        &mut repository,
+        &revision_id,
+        evidence_id.clone(),
+        AnalysisSettings::frame2d(),
+        |stage| {
+            stages.push(stage);
+            if stage == AnalysisExecutionStage::Solving {
+                solving.set(true);
+            }
+        },
+        || solving.get(),
+    );
+    assert!(matches!(result, Err(SnapshotAnalysisError::Cancelled)));
+    assert_eq!(
+        stages,
+        vec![
+            AnalysisExecutionStage::Preparing,
+            AnalysisExecutionStage::Resolving,
+            AnalysisExecutionStage::Solving,
+        ]
+    );
+    assert!(repository.evidence(&evidence_id).is_err());
 }

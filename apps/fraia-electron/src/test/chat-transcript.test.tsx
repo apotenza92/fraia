@@ -28,7 +28,7 @@ describe('ChatTranscript', () => {
           >
             Choose when to continue.
           </ChatTranscriptMessage>
-          <ChatTranscriptActivity label="Fraia AI is thinking">
+          <ChatTranscriptActivity label="Fraia AI is thinking" messageId="assistant-activity">
             <ChatTranscriptCancel onClick={onCancel} />
           </ChatTranscriptActivity>
         </ChatTranscript>
@@ -56,6 +56,7 @@ describe('ChatTranscript', () => {
     expect(screen.getByText('Check the support conditions before analysis.')).toBeVisible();
     expect(screen.getByText('Keep the pinned bases.')).toBeVisible();
     expect(screen.getByRole('status')).toHaveTextContent('Fraia AI is thinking');
+    expect(screen.getByRole('status').closest('[data-message-id="assistant-activity"]')).toHaveAttribute('data-scroll-anchor', 'false');
     expect(screen.getByRole('button', { name: 'Cancel response' })).toBeVisible();
     expect(container.querySelector('[data-slot="scroll-area-scrollbar"]')).toBeNull();
   });

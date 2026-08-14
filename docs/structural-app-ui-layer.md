@@ -212,6 +212,84 @@ These actions should be explicit review/approval operations, not silent automati
 If the user or agent adds new objects directly, Fraia should normally treat them as authored/manual objects first.
 They should not be silently merged into an existing archetype/template interpretation unless the user chooses a promotion or re-parameterization action.
 
+### 6.5 Project navigation and design workspaces
+
+The application shell should make the difference between a project folder and
+an open design visible.
+
+The project home should expose:
+
+- project summary and shared facts
+- project-wide source library
+- named designs and their current status
+- optional read-only references between designs
+
+Starting a blank design from the welcome screen should create an untitled
+managed project automatically. Do not block the user with project metadata or a
+folder picker. The shell can show `Untitled Project` and `Design 1`; the first
+Save asks for the project name, confirms the design name, and asks for the
+location once.
+
+Project and design names are always visible and directly editable in context.
+Do not hide naming in a metadata form. Creating another design uses one compact
+name field and creates it inside the current project. Names do not carry model
+identity; stable project and design ids preserve references across renames.
+
+### 6.6 Required information and contextual help
+
+Explain required information where the user enters it. Do not rely on an
+asterisk, placeholder, tooltip, or validation error as the only explanation.
+Every required control needs a visible label, a short visible description, a
+programmatic required state, and a specific inline error when invalid.
+
+Use this initial naming copy:
+
+- **Project name** — "Names this project, its shared files, and its designs. You
+  can change the display name later without moving the saved folder."
+- **Design name** — "Names this structural model, conversation, options, and
+  analysis. Design names must be unique within this project."
+
+The first Save should show only the information needed to complete that action:
+project name, design name confirmation, and project location. New Design should
+show only the design name plus the same short description. Preserve the user's
+current input after validation fails and move focus to the first invalid field.
+
+Use contextual empty-state descriptions for the project file workflow:
+
+- **Project files** — "Drawings, images, CAD files, and models available to
+  every design in this project. Importing a file does not change a design."
+- **Design references** — "The pages, crops, layers, and model views this design
+  uses. References remain linked to the project file."
+
+When an action changes scope, state that consequence before the action. For
+example, `Add to references` should name the destination design, while `Import file`
+should state that the file becomes available to all designs in the project.
+
+Opening a design should expose:
+
+- one primary design conversation
+- the design references
+- the current authored preview
+- design options and accepted revisions through progressive disclosure
+- validation and analysis evidence bound to the exact revision
+
+Do not show the whole file package or every project model in every design
+conversation. Design references are the deliberate context boundary.
+
+Every design in the open project can browse the shared project files. Reference
+membership remains design-specific and deliberate. The UI should distinguish
+`Project files` from `<Design> references` without duplicating files.
+
+A design is not a small component by definition. The user may keep the complete
+steel structure of a house or building in one design. Use model groups, systems,
+builders, zones, and internal analysis submodels to manage scale inside that
+design.
+
+When a design references another design, bind the reference to one exact
+accepted revision and show when that reference becomes outdated. Cross-design
+references provide context and alignment; they do not silently merge authored
+state or create coupled analysis.
+
 ---
 
 ## 7. Fraia should not start from raw tensors in the UI

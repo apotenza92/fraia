@@ -1,5 +1,6 @@
 *.ps1 text eol=lf
 *.sh text eol=lf
+*.pdf binary
 apps/fraia-electron/runtimes/calculix/** -text
 apps/fraia-electron/runtimes/calculix/win32-x64/** whitespace=cr-at-eol
 apps/fraia-electron/runtimes/calculix/win32-x64/licenses/GCC-Runtime-Library-Exception-3.1.txt whitespace=-blank-at-eof

@@ -11,6 +11,410 @@ pub type AgentState = fraia_core::AgentState;
 pub type BaseModelBrief = fraia_core::BaseModelBrief;
 pub type DesignOptionDecisionState = fraia_core::DesignOptionDecisionState;
 
+pub type SourceId = fraia_core::SourceId;
+pub type SourceRecord = fraia_core::SourceRecord;
+pub type SourceDerivative = fraia_core::SourceDerivative;
+pub type SourceImportJob = fraia_core::SourceImportJob;
+pub type SourceMediaType = fraia_core::SourceMediaType;
+pub type ShelfDocument = fraia_core::ShelfDocument;
+pub type ShelfItem = fraia_core::ShelfItem;
+pub type AcceptedDesignRevisionRef = fraia_core::AcceptedDesignRevisionRef;
+pub type PdfDocumentIndex = fraia_core::PdfDocumentIndex;
+pub type PdfViewRoleInference = fraia_core::PdfViewRoleInference;
+pub type PdfDiagnostic = fraia_core::PdfDiagnostic;
+pub type DrawingInterpretation = fraia_core::DrawingInterpretation;
+pub type DrawingInterpretationRevision = fraia_core::DrawingInterpretationRevision;
+pub type DrawingInterpretationList = fraia_core::DrawingInterpretationList;
+pub type InterpretationCreateAuthority = fraia_core::InterpretationCreateAuthority;
+pub type ConfirmObservationsOperation = fraia_core::ConfirmObservationsOperation;
+pub type ReconcileInterpretationOperation = fraia_core::ReconcileInterpretationOperation;
+pub type ResolveInterpretationConflictOperation =
+    fraia_core::ResolveInterpretationConflictOperation;
+pub type AgentInterpretationContext = fraia_core::AgentInterpretationContext;
+pub type DesignRunList = fraia_core::DesignRunList;
+pub type InspectedDesignRun = fraia_core::InspectedDesignRun;
+pub type DesignRunStatusProjection = fraia_core::DesignRunStatusProjection;
+pub type AnalysisExecutionStage = fraia_revision::analysis_service::AnalysisExecutionStage;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AnalysisAttemptStatus {
+    Running,
+    Cancelling,
+    Completed,
+    Failed,
+    Unsupported,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalysisAttemptStartRequest {
+    pub project_id: ProjectId,
+    pub request: fraia_revision::operations::OperationRequest,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalysisAttemptIdRequest {
+    pub project_id: ProjectId,
+    pub attempt_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalysisAttemptResponse {
+    pub attempt_id: String,
+    pub project_id: ProjectId,
+    pub revision_id: RevisionId,
+    pub authored_snapshot_id: SnapshotId,
+    pub evidence_id: EvidenceId,
+    pub stage: AnalysisExecutionStage,
+    pub status: AnalysisAttemptStatus,
+    pub elapsed_millis: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canonical_run_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<String>,
+}
+pub type DxfIndexResult = fraia_core::DxfIndexResult;
+pub type PreparedDxfSelection = fraia_core::PreparedDxfSelection;
+pub type IfcIndexResult = fraia_core::IfcIndexResult;
+pub type PreparedIfcSelection = fraia_core::PreparedIfcSelection;
+pub type MeshIndexResult = fraia_core::MeshIndexResult;
+pub type PreparedMeshSavedView = fraia_core::PreparedMeshSavedView;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesignRunListRequest {
+    pub project_dir: String,
+    pub design_id: fraia_core::DesignId,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesignRunInspectRequest {
+    pub project_dir: String,
+    pub design_id: fraia_core::DesignId,
+    pub run_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesignRunStatusRequest {
+    pub project_dir: String,
+    pub design_id: fraia_core::DesignId,
+    pub inspected_snapshot_id: String,
+    #[serde(default)]
+    pub ancestor_snapshot_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DxfIndexRequest {
+    pub project_dir: String,
+    pub source_id: fraia_core::SourceId,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DxfPrepareSelectionRequest {
+    pub project_dir: String,
+    pub design_id: fraia_core::DesignId,
+    pub selection: fraia_core::DxfSelectionRequest,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IfcIndexRequest {
+    pub project_dir: String,
+    pub source_id: fraia_core::SourceId,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IfcPrepareSelectionRequest {
+    pub project_dir: String,
+    pub design_id: fraia_core::DesignId,
+    pub selection: fraia_core::IfcSelectionRequest,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeshIndexRequest {
+    pub project_dir: String,
+    pub source_id: fraia_core::SourceId,
+}
+
+pub type MeshContentRequest = MeshIndexRequest;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeshIndexJobRequest {
+    pub project_dir: String,
+    pub source_id: fraia_core::SourceId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeshIndexJobIdRequest {
+    pub job_id: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MeshIndexJobStatus {
+    Running,
+    Cancelling,
+    Completed,
+    Cancelled,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeshIndexJobResponse {
+    pub job_id: String,
+    pub status: MeshIndexJobStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<MeshIndexResult>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeshPrepareSavedViewRequest {
+    pub project_dir: String,
+    pub design_id: fraia_core::DesignId,
+    pub view: fraia_core::MeshSavedViewRequest,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PdfIndexRequest {
+    pub project_dir: String,
+    pub source_id: SourceId,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PdfViewRoleInferenceRequest {
+    pub project_dir: String,
+    pub source_id: SourceId,
+    pub page_number: u32,
+    pub crop: fraia_core::PdfBox,
+    #[serde(default = "default_pdf_inference_margin")]
+    pub margin_points: f64,
+}
+
+fn default_pdf_inference_margin() -> f64 {
+    36.0
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PdfIndexResponse {
+    pub index: PdfDocumentIndex,
+    pub index_derivative: SourceDerivative,
+    pub resumed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PdfCapabilityResponse {
+    pub parser: String,
+    pub parser_version: String,
+    pub metadata_indexing_available: bool,
+    pub packaged_renderer_available: bool,
+    pub ocr_available: bool,
+    pub diagnostics: Vec<PdfDiagnostic>,
+}
+
+/// Electron main sends the result of a native file dialog once. The returned
+/// token is short-lived, single-use, and bound to this project directory.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceSelectionIssueRequest {
+    pub project_dir: String,
+    pub selected_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceSelectionIssueResponse {
+    pub selection_token: String,
+    pub expires_in_seconds: u64,
+}
+
+/// Requests import from a file selection that Electron main has already
+/// authorized. The renderer never supplies an arbitrary filesystem path.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceImportRequest {
+    pub project_dir: String,
+    pub selection_token: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_alias: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_media_type: Option<SourceMediaType>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceImportResponse {
+    pub record: SourceRecord,
+    pub job: SourceImportJob,
+    pub deduplicated: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceListRequest {
+    pub project_dir: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceListResponse {
+    pub sources: Vec<SourceRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceInspectRequest {
+    pub project_dir: String,
+    pub source_id: SourceId,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceInspectResponse {
+    pub source: SourceRecord,
+    pub derivatives: Vec<SourceDerivative>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceDerivativeQueryRequest {
+    pub project_dir: String,
+    pub source_id: SourceId,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceDerivativeQueryResponse {
+    pub derivatives: Vec<SourceDerivative>,
+}
+
+/// appd must resolve all shelf and design references before it calls the core
+/// removal operation. This contract intentionally has no force flag.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceRemoveRequest {
+    pub project_dir: String,
+    pub source_id: SourceId,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceRemoveResponse {
+    pub source_id: SourceId,
+    pub removed_derivatives: usize,
+    pub removed_files: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShelfListRequest {
+    pub project_dir: String,
+    pub design_id: fraia_core::DesignId,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShelfUpsertRequest {
+    pub project_dir: String,
+    pub design_id: fraia_core::DesignId,
+    pub item: ShelfItem,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShelfRemoveRequest {
+    pub project_dir: String,
+    pub design_id: fraia_core::DesignId,
+    pub item_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShelfRetargetRequest {
+    pub project_dir: String,
+    pub design_id: fraia_core::DesignId,
+    pub item_id: String,
+    pub expected: AcceptedDesignRevisionRef,
+    pub replacement: AcceptedDesignRevisionRef,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DrawingInterpretationListRequest {
+    pub project_dir: String,
+    pub design_id: fraia_core::DesignId,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DrawingInterpretationInspectRequest {
+    pub project_dir: String,
+    pub design_id: fraia_core::DesignId,
+    pub revision_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DrawingInterpretationCreateRequest {
+    pub project_dir: String,
+    pub design_id: fraia_core::DesignId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_parent_revision_id: Option<String>,
+    pub authority: InterpretationCreateAuthority,
+    pub revision: DrawingInterpretationRevision,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DrawingInterpretationConfirmRequest {
+    pub project_dir: String,
+    pub design_id: fraia_core::DesignId,
+    pub operation: ConfirmObservationsOperation,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DrawingInterpretationReconcileRequest {
+    pub project_dir: String,
+    pub design_id: fraia_core::DesignId,
+    pub operation: ReconcileInterpretationOperation,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DrawingInterpretationResolveConflictRequest {
+    pub project_dir: String,
+    pub design_id: fraia_core::DesignId,
+    pub operation: ResolveInterpretationConflictOperation,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DrawingInterpretationCorrectRequest {
+    pub project_dir: String,
+    pub design_id: fraia_core::DesignId,
+    pub operation: fraia_core::CorrectInterpretationObservationOperation,
+}
+
 pub type AgentSession = fraia_core::AgentSession;
 
 pub type AgentQuestion = fraia_core::AgentQuestion;
@@ -35,6 +439,12 @@ pub struct ErrorResponse {
 
 // Conversation-first transport contracts. These deliberately sit alongside the
 // staged API during the cutover; they do not reuse option or readiness types.
+//
+// Compatibility note: `project_id` in this transport is the
+// fraia-revision scope id. Fraia stores one revision database per design, so
+// current adapters pass the design id here. It is not the package-level
+// fraia-core ProjectId. New public UI state carries package project, design,
+// and revision-scope identities separately.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConversationCreateRequest {
@@ -103,6 +513,21 @@ pub struct ConversationProposalRequest {
     pub provider: String,
     pub model: String,
     pub turn_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalogue_refreshed_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub response_questions: Vec<String>,
+    /// Exact current-design evidence selected for this turn. Omission means
+    /// the proposal is text-only; it never implies access to every project
+    /// source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_context: Option<ConversationProposalSourceContext>,
     /// A typed patch is a batch so an empty project can receive its first
     /// coherent set of nodes, members, and supports as one accepted revision.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -112,8 +537,83 @@ pub struct ConversationProposalRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operation: Option<ConversationProposalOperation>,
 }
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationProposalSourceContext {
+    pub design_id: fraia_core::DesignId,
+    pub expected_snapshot_id: SnapshotId,
+    #[serde(default)]
+    pub shelf_item_ids: Vec<String>,
+    #[serde(default)]
+    pub assumptions: Vec<String>,
+    #[serde(default)]
+    pub evidence_limits: Vec<String>,
+    #[serde(default)]
+    pub drawing_interpretation_revision_ids: Vec<String>,
+    /// Exact high-confidence, non-conflicted inference candidates reviewed as
+    /// assumptions for this proposal. These ids never become confirmed facts.
+    #[serde(default)]
+    pub drawing_interpretation_inference_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationAgentRespondRequest {
+    pub project_dir: String,
+    pub package_project_id: fraia_core::ProjectId,
+    pub project_id: ProjectId,
+    pub design_id: fraia_core::DesignId,
+    pub conversation_id: ConversationId,
+    pub expected_head_revision_id: RevisionId,
+    pub expected_snapshot_id: SnapshotId,
+    pub text: String,
+    #[serde(default)]
+    pub shelf_item_ids: Vec<String>,
+    #[serde(default)]
+    pub drawing_interpretation_revision_ids: Vec<String>,
+    pub turn_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationAgentProposalResponse {
+    pub proposal_id: String,
+    pub proposed_revision_id: RevisionId,
+    pub parent_revision_id: RevisionId,
+    #[serde(default = "pending_proposal_status")]
+    pub status: String,
+    pub assumptions: Vec<String>,
+    pub evidence_limits: Vec<String>,
+    pub operations: Vec<ConversationProposalOperation>,
+}
+
+fn pending_proposal_status() -> String {
+    "pending".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationAgentRespondResponse {
+    pub response_id: String,
+    pub text: String,
+    #[serde(default)]
+    pub questions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proposal: Option<ConversationAgentProposalResponse>,
+    pub provider: String,
+    pub model: String,
+    pub reasoning_effort: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalogue_refreshed_at: Option<String>,
+    pub turn_id: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum ConversationProposalOperation {
     SetMemberRole {
         member_id: String,
@@ -276,6 +776,8 @@ pub struct ConversationStateResponse {
     pub semantic_summary: fraia_core::ModelUnderstandingReport,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub messages: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub agent_responses: Vec<ConversationAgentRespondResponse>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -305,6 +807,8 @@ pub struct ConversationEvidenceResponse {
     pub summary: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_snapshot_id: Option<SnapshotId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canonical_run_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1200,6 +1704,310 @@ pub struct AgentApplyReviewRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn source_import_contract_uses_authorized_selection_tokens_not_renderer_paths() {
+        let request = SourceImportRequest {
+            project_dir: "/projects/example".into(),
+            selection_token: "selection-7".into(),
+            display_alias: Some("architectural-set.pdf".into()),
+            expected_media_type: Some(SourceMediaType::Pdf),
+        };
+
+        let encoded = serde_json::to_value(&request).expect("serialize source import request");
+        assert_eq!(encoded["selectionToken"], "selection-7");
+        assert_eq!(encoded["expectedMediaType"], "pdf");
+        assert!(encoded.get("selectedPath").is_none());
+        assert!(encoded.get("sourcePath").is_none());
+        let decoded: SourceImportRequest =
+            serde_json::from_value(encoded).expect("deserialize source import request");
+        assert_eq!(decoded.selection_token, "selection-7");
+    }
+
+    #[test]
+    fn source_removal_contract_has_no_renderer_controlled_force_or_reference_list() {
+        let request = SourceRemoveRequest {
+            project_dir: "/projects/example".into(),
+            source_id: SourceId::from_sha256(&"a".repeat(64)).expect("source id"),
+        };
+
+        let encoded = serde_json::to_value(request).expect("serialize source removal request");
+        assert!(encoded.get("sourceId").is_some());
+        assert!(encoded.get("force").is_none());
+        assert!(encoded.get("references").is_none());
+    }
+
+    #[test]
+    fn pdf_index_contract_uses_source_identity_and_exposes_truthful_capabilities() {
+        let request = PdfIndexRequest {
+            project_dir: "/projects/example".into(),
+            source_id: SourceId::from_sha256(&"b".repeat(64)).expect("source id"),
+        };
+        let encoded = serde_json::to_value(request).expect("serialize PDF index request");
+        assert!(encoded.get("sourceId").is_some());
+        assert!(encoded.get("selectedPath").is_none());
+
+        let capabilities = PdfCapabilityResponse {
+            parser: "lopdf".into(),
+            parser_version: "0.44.0".into(),
+            metadata_indexing_available: true,
+            packaged_renderer_available: false,
+            ocr_available: false,
+            diagnostics: vec![fraia_core::pdf_renderer_unavailable_diagnostic()],
+        };
+        let encoded = serde_json::to_value(capabilities).expect("serialize capabilities");
+        assert_eq!(encoded["metadataIndexingAvailable"], true);
+        assert_eq!(encoded["packagedRendererAvailable"], false);
+        assert_eq!(encoded["ocrAvailable"], false);
+    }
+
+    #[test]
+    fn pdf_view_role_inference_contract_is_crop_bound_and_evidence_bearing() {
+        let request = PdfViewRoleInferenceRequest {
+            project_dir: "/projects/example".into(),
+            source_id: SourceId::from_sha256(&"f".repeat(64)).expect("source id"),
+            page_number: 3,
+            crop: fraia_core::PdfBox {
+                x0: 10.0,
+                y0: 20.0,
+                x1: 200.0,
+                y1: 140.0,
+            },
+            margin_points: 36.0,
+        };
+        let encoded = serde_json::to_value(request).expect("serialize PDF inference request");
+        assert_eq!(encoded["pageNumber"], 3);
+        assert_eq!(encoded["crop"]["x0"], 10.0);
+        assert!(encoded.get("pageText").is_none());
+        assert!(encoded.get("claimedRole").is_none());
+    }
+
+    #[test]
+    fn dxf_selection_contract_requires_exact_managed_identity_and_one_relation_confirmation() {
+        let source_id = SourceId::from_sha256(&"d".repeat(64)).expect("source id");
+        let request = serde_json::json!({
+            "projectDir": "/projects/example",
+            "designId": "design-a",
+            "selection": {
+                "shelf_item_id": "cad-plan-selection",
+                "label": "Ground floor plan",
+                "source_id": source_id,
+                "layout": "Model",
+                "entity_ids": ["dxf:1A", "dxf:1B"],
+                "view_role": "plan",
+                "relation_to_design": {
+                    "confirmed": true,
+                    "confirmed_by": "user-a",
+                    "confirmed_at": "2026-08-14T00:00:00Z",
+                    "transform": {
+                        "translation": [0.0, 0.0, 0.0],
+                        "rotation_degrees": [0.0, 0.0, 0.0],
+                        "scale": [1.0, 1.0, 1.0]
+                    },
+                    "orientation": {
+                        "forward": [0.0, 0.0, -1.0],
+                        "up": [0.0, 1.0, 0.0]
+                    },
+                    "scale": 1.0
+                },
+                "created_at": "2026-08-14T00:00:00Z",
+                "created_by": "user-a",
+                "interpretation_parent_revision_id": null
+            }
+        });
+        let decoded: DxfPrepareSelectionRequest =
+            serde_json::from_value(request).expect("decode exact DXF selection request");
+        assert_eq!(decoded.selection.entity_ids, ["dxf:1A", "dxf:1B"]);
+        assert!(
+            decoded
+                .selection
+                .relation_to_design
+                .as_ref()
+                .is_some_and(|relation| relation.confirmed)
+        );
+
+        let encoded = serde_json::to_value(decoded).expect("encode DXF selection request");
+        assert!(encoded.get("selectedPath").is_none());
+        assert!(encoded.get("sourcePath").is_none());
+        assert!(encoded["selection"].get("member_ids").is_none());
+        assert!(encoded["selection"].get("structural_model").is_none());
+    }
+
+    #[test]
+    fn ifc_selection_contract_uses_stable_selectors_and_no_structural_authoring_payload() {
+        let request = IfcPrepareSelectionRequest {
+            project_dir: "/projects/example".into(),
+            design_id: fraia_core::DesignId::new("design-a"),
+            selection: fraia_core::IfcSelectionRequest {
+                shelf_item_id: "ifc-level-two".into(),
+                label: "Level 2 reference".into(),
+                source_id: SourceId::from_sha256(&"e".repeat(64)).expect("source id"),
+                view_id: "level-two".into(),
+                object_ids: vec!["2Vz0ObjectGlobalId".into()],
+                storey_ids: vec![42],
+                grid_ids: vec![81],
+                class_names: vec!["IFCBEAM".into()],
+                created_at: "2026-08-14T00:00:00Z".into(),
+                created_by: "user-a".into(),
+                interpretation_parent_revision_id: None,
+            },
+        };
+        let encoded = serde_json::to_value(request).expect("serialize IFC selection");
+        assert_eq!(encoded["selection"]["object_ids"][0], "2Vz0ObjectGlobalId");
+        assert_eq!(encoded["selection"]["storey_ids"][0], 42);
+        assert!(encoded.get("selectedPath").is_none());
+        assert!(encoded["selection"].get("members").is_none());
+        assert!(encoded["selection"].get("structural_model").is_none());
+    }
+
+    #[test]
+    fn neutral_mesh_saved_view_contract_has_managed_identity_and_no_authored_structure() {
+        let request = MeshPrepareSavedViewRequest {
+            project_dir: "/projects/example".into(),
+            design_id: fraia_core::DesignId::new("design-a"),
+            view: fraia_core::MeshSavedViewRequest {
+                shelf_item_id: "saved-reference-view".into(),
+                label: "Reference view".into(),
+                source_id: SourceId::from_sha256(&"b".repeat(64)).expect("source id"),
+                object_ids: vec!["gltf:node:0".into()],
+                camera: fraia_core::ShelfCamera {
+                    position: [2.0, 3.0, 4.0],
+                    target: [0.0, 0.0, 0.0],
+                    up: [0.0, 1.0, 0.0],
+                    projection: "perspective".into(),
+                },
+                transform: fraia_core::ShelfTransform {
+                    translation: [0.0; 3],
+                    rotation_degrees: [0.0; 3],
+                    scale: [1.0; 3],
+                },
+                orientation: fraia_core::ShelfOrientation {
+                    forward: [0.0, 0.0, -1.0],
+                    up: [0.0, 1.0, 0.0],
+                },
+                scale: 1.0,
+                section_planes: vec![fraia_core::ShelfSectionPlane {
+                    id: "section-a".into(),
+                    normal: [1.0, 0.0, 0.0],
+                    constant: -1.0,
+                }],
+                calibration: None,
+                created_at: "2026-08-14T00:00:00Z".into(),
+                created_by: "engineer".into(),
+            },
+        };
+        let encoded = serde_json::to_value(request).expect("encode mesh saved view request");
+        assert_eq!(encoded["designId"], "design-a");
+        assert_eq!(encoded["view"]["object_ids"][0], "gltf:node:0");
+        assert!(encoded.get("selectedPath").is_none());
+        assert!(encoded["view"].get("members").is_none());
+        assert!(encoded["view"].get("structural_model").is_none());
+    }
+
+    #[test]
+    fn neutral_mesh_job_contract_uses_opaque_identity_and_typed_terminal_state() {
+        let request = MeshIndexJobIdRequest {
+            job_id: "opaque-job-id".into(),
+        };
+        let encoded = serde_json::to_value(request).expect("encode mesh job request");
+        assert_eq!(encoded["jobId"], "opaque-job-id");
+        let response = MeshIndexJobResponse {
+            job_id: "opaque-job-id".into(),
+            status: MeshIndexJobStatus::Cancelled,
+            result: None,
+            error: None,
+        };
+        let encoded = serde_json::to_value(response).expect("encode mesh job response");
+        assert_eq!(encoded["status"], "cancelled");
+        assert!(encoded.get("projectDir").is_none());
+        assert!(encoded.get("sourcePath").is_none());
+    }
+
+    #[test]
+    fn analysis_attempt_contract_is_separate_from_agent_turn_progress() {
+        let response = AnalysisAttemptResponse {
+            attempt_id: "attempt-a".into(),
+            project_id: ProjectId::new("design-scope-a"),
+            revision_id: RevisionId::from("revision-a"),
+            authored_snapshot_id: SnapshotId::from("snapshot-a"),
+            evidence_id: EvidenceId::from("evidence-a"),
+            stage: AnalysisExecutionStage::Solving,
+            status: AnalysisAttemptStatus::Running,
+            elapsed_millis: 1250,
+            canonical_run_id: None,
+            diagnostics: Vec::new(),
+        };
+        let value = serde_json::to_value(response).expect("serialize analysis attempt");
+        assert_eq!(value["stage"], "solving");
+        assert_eq!(value["status"], "running");
+        assert_eq!(value["elapsedMillis"], 1250);
+        assert!(value.get("agentRequestId").is_none());
+        assert!(value.get("turnId").is_none());
+        assert!(value.get("canonicalRunId").is_none());
+    }
+
+    #[test]
+    fn interpretation_create_contract_requires_exact_design_parent_and_authority() {
+        let request = DrawingInterpretationCreateRequest {
+            project_dir: "/projects/example".into(),
+            design_id: fraia_core::DesignId::new("design-a"),
+            expected_parent_revision_id: Some("drawing-interpretation-sha256-parent".into()),
+            authority: InterpretationCreateAuthority::ParserAdapter,
+            revision: DrawingInterpretationRevision {
+                project_id: fraia_core::ProjectId::new("project-a"),
+                design_id: fraia_core::DesignId::new("design-a"),
+                parent_revision_id: Some("drawing-interpretation-sha256-parent".into()),
+                created_at: "fixture".into(),
+                method: fraia_core::InterpretationMethod::NativeVectorExtraction,
+                observations: BTreeMap::new(),
+                correspondences: BTreeMap::new(),
+                alignment_transforms: BTreeMap::new(),
+                conflicts: BTreeMap::new(),
+            },
+        };
+        let encoded = serde_json::to_value(request).expect("serialize interpretation request");
+        assert_eq!(encoded["designId"], "design-a");
+        assert_eq!(
+            encoded["expectedParentRevisionId"],
+            "drawing-interpretation-sha256-parent"
+        );
+        assert_eq!(encoded["authority"], "parser_adapter");
+        assert!(encoded.get("latest").is_none());
+    }
+
+    #[test]
+    fn design_run_inspection_contract_requires_exact_design_and_run_identity() {
+        let request = DesignRunInspectRequest {
+            project_dir: "/projects/example".into(),
+            design_id: fraia_core::DesignId::new("design-a"),
+            run_id: format!("design-run-sha256-{}", "a".repeat(64)),
+        };
+        let encoded = serde_json::to_value(request).unwrap();
+        assert_eq!(encoded["designId"], "design-a");
+        assert!(
+            encoded["runId"]
+                .as_str()
+                .unwrap()
+                .starts_with("design-run-sha256-")
+        );
+        assert!(encoded.get("latest").is_none());
+    }
+
+    #[test]
+    fn design_run_status_contract_is_snapshot_and_ancestry_bound() {
+        let request = DesignRunStatusRequest {
+            project_dir: "/managed/project".into(),
+            design_id: fraia_core::DesignId::new("design-1"),
+            inspected_snapshot_id: "sha256:current".into(),
+            ancestor_snapshot_ids: vec!["sha256:parent".into()],
+        };
+        let encoded = serde_json::to_value(&request).unwrap();
+        assert_eq!(encoded["designId"], "design-1");
+        assert_eq!(encoded["inspectedSnapshotId"], "sha256:current");
+        assert_eq!(encoded["ancestorSnapshotIds"][0], "sha256:parent");
+        assert!(encoded.get("latest").is_none());
+    }
 
     #[test]
     fn workbench_state_round_trips_design_schemes() {
@@ -1321,4 +2129,60 @@ mod tests {
         assert!(encoded.contains("maxDeflectionMm"));
         assert!(encoded.contains("250UB"));
     }
+}
+#[test]
+fn drawing_reconcile_request_has_one_golden_wire_shape() {
+    let request = DrawingInterpretationReconcileRequest {
+        project_dir: "/project".into(),
+        design_id: fraia_core::DesignId::new("design-a"),
+        operation: fraia_core::ReconcileInterpretationOperation {
+            expected_parent_revision_id: "revision-a".into(),
+            design_geometries: BTreeMap::from([(
+                "observation-a".into(),
+                fraia_core::ObservationDesignGeometry::Point {
+                    coordinate: [2.0, 1.0, 0.0],
+                    alignment_transform_id: "alignment-a".into(),
+                },
+            )]),
+            correspondences: BTreeMap::from([(
+                "correspondence-a".into(),
+                fraia_core::CrossViewCorrespondence {
+                    id: "correspondence-a".into(),
+                    observation_ids: vec!["observation-a".into(), "observation-b".into()],
+                    relation: fraia_core::CorrespondenceRelation::SameAxis,
+                    confidence: 1.0,
+                    confirmation: fraia_core::ObservationConfirmation::Confirmed {
+                        confirmed_by: "user".into(),
+                        confirmed_at: "2026-08-14T00:00:00Z".into(),
+                    },
+                    uncertainty: Vec::new(),
+                },
+            )]),
+            alignment_transforms: BTreeMap::from([(
+                "alignment-a".into(),
+                fraia_core::ConfirmedAlignmentTransform {
+                    id: "alignment-a".into(),
+                    from_shelf_item_id: "reference-a".into(),
+                    to_design_coordinate_space: "fraia_design_m".into(),
+                    matrix: [
+                        1.0, 0.0, 0.0, 2.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+                        1.0,
+                    ],
+                    established_by_correspondence_ids: vec!["correspondence-a".into()],
+                    confirmed_by: "user".into(),
+                    confirmed_at: "2026-08-14T00:00:00Z".into(),
+                },
+            )]),
+            conflicts: BTreeMap::new(),
+            created_at: "2026-08-14T00:00:00Z".into(),
+        },
+    };
+    let encoded = serde_json::to_value(&request).unwrap();
+    assert_eq!(
+        encoded,
+        serde_json::json!({
+          "projectDir":"/project","designId":"design-a","operation":{"expectedParentRevisionId":"revision-a","designGeometries":{"observation-a":{"designGeometryKind":"point","coordinate":[2.0,1.0,0.0],"alignment_transform_id":"alignment-a"}},"correspondences":{"correspondence-a":{"id":"correspondence-a","observationIds":["observation-a","observation-b"],"relation":"same_axis","confidence":1.0,"confirmation":{"status":"confirmed","confirmed_by":"user","confirmed_at":"2026-08-14T00:00:00Z"}}},"alignmentTransforms":{"alignment-a":{"id":"alignment-a","fromShelfItemId":"reference-a","toDesignCoordinateSpace":"fraia_design_m","matrix":[1.0,0.0,0.0,2.0,0.0,1.0,0.0,1.0,0.0,0.0,1.0,0.0,0.0,0.0,0.0,1.0],"establishedByCorrespondenceIds":["correspondence-a"],"confirmedBy":"user","confirmedAt":"2026-08-14T00:00:00Z"}},"conflicts":{},"createdAt":"2026-08-14T00:00:00Z"}
+        })
+    );
+    serde_json::from_value::<DrawingInterpretationReconcileRequest>(encoded).unwrap();
 }

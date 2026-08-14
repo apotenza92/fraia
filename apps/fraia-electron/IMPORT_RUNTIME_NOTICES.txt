@@ -1,0 +1,48 @@
+Fraia import runtime notices
+============================
+
+This file covers external components used specifically for project-file import,
+indexing, and rendering. Fraia does not download parser, worker, OCR, model, or
+language-data assets at runtime.
+
+PDF.js 6.2.108
+Copyright Mozilla Foundation
+License: Apache License 2.0
+Use: offline PDF page rendering through the Vite-bundled renderer and worker.
+Source: https://github.com/mozilla/pdf.js
+Packaged license: import-runtime-licenses/PDFJS-APACHE-2.0.txt
+
+lopdf 0.44.0
+Copyright the lopdf contributors
+License: MIT
+Use: bounded PDF indexing compiled into fraia-appd.
+Source: https://github.com/J-F-Liu/lopdf
+Crates.io checksum: 5e2ec995d822e05cabc3f06d196ee43650af3fe4fe38012cacb35e0c3d113b68
+Packaged license: import-runtime-licenses/LOPDF-MIT.txt
+
+Fraia ASCII DXF, IFC STEP, and neutral mesh parsers
+License: the Fraia repository license
+Use: bounded in-tree Rust parsers compiled into fraia-appd. They have no
+separate runtime payload.
+
+OCR
+Tesseract.js 7.0.0 and tesseract.js-core 7.0.0
+Copyright the Tesseract.js contributors
+License: Apache License 2.0
+Use: bounded offline English OCR in an Electron main-process Node worker.
+Source: https://github.com/naptha/tesseract.js
+Packaged licence: import-runtime-licenses/TESSERACTJS-APACHE-2.0.txt
+
+English tessdata_fast 4.1.0
+Exact upstream commit: 65727574dfcd264acbb0c3e07860e4e9e9b22185
+File: eng.traineddata
+SHA-256: 7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2
+License: Apache License 2.0
+Source: https://github.com/tesseract-ocr/tessdata_fast
+Packaged licence: import-runtime-licenses/TESSDATA-FAST-APACHE-2.0.txt
+
+Fraia packages the worker, all six WebAssembly core variants, and this one
+English model. It makes no other language claim and makes no OCR runtime
+download. OCR runs only when native PDF text is absent or explicitly unusable.
+Every OCR text item remains an unconfirmed inferred candidate with exact page,
+crop, source transform, engine, model, confidence, and source-hash provenance.

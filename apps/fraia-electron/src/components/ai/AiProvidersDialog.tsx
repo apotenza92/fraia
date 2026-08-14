@@ -24,9 +24,7 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import {
   FRAIA_AI_MODEL_ID,
-  FRAIA_AI_MODEL_NAME,
   FRAIA_AI_PROVIDER_ID,
-  FRAIA_AI_REASONING_EFFORT,
 } from '@/lib/agentOptions';
 import type { AiProviderCatalogue } from '@/lib/types';
 
@@ -41,6 +39,12 @@ type RuntimeEvent = {
 
 function providerState(provider: NonNullable<AiProviderCatalogue['providers']>[number]) {
   return provider.authState ?? provider.auth_state ?? 'disconnected';
+}
+
+function shortConnectionError(error: string) {
+  if (/timed out/i.test(error)) return 'The connection took too long. Try again.';
+  if (/unavailable|failed to contact|could not reach/i.test(error)) return 'Fraia could not reach ChatGPT. Check your connection and try again.';
+  return 'Fraia could not finish that action. Try again.';
 }
 
 export function AiProvidersDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
@@ -153,8 +157,13 @@ export function AiProvidersDialog({ open, onOpenChange }: { open: boolean; onOpe
           )}
           {error && (
             <Alert variant="destructive">
-              <AlertTitle>Fraia AI could not finish that action</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
+              <AlertTitle>{shortConnectionError(error)}</AlertTitle>
+              <AlertDescription>
+                <details>
+                  <summary className="cursor-pointer">Details</summary>
+                  <p className="mt-2 break-words">{error}</p>
+                </details>
+              </AlertDescription>
             </Alert>
           )}
 
@@ -178,7 +187,7 @@ export function AiProvidersDialog({ open, onOpenChange }: { open: boolean; onOpe
                   <ItemContent>
                     <ItemTitle>ChatGPT</ItemTitle>
                     <ItemDescription>
-                      {FRAIA_AI_MODEL_NAME} · {FRAIA_AI_REASONING_EFFORT[0].toUpperCase() + FRAIA_AI_REASONING_EFFORT.slice(1)} reasoning
+                      Fraia uses one reviewed model for every design conversation.
                     </ItemDescription>
                   </ItemContent>
                   <ItemActions>
@@ -191,14 +200,14 @@ export function AiProvidersDialog({ open, onOpenChange }: { open: boolean; onOpe
 
               {connected && (
                 <p className="text-sm text-muted-foreground">
-                  {chatGptProvider.authSource ?? chatGptProvider.auth_source ?? 'ChatGPT authorization is connected.'}
+                  Signed in securely. Your authorization stays out of project files.
                 </p>
               )}
               {connected && !lunaReady && (
                 <Alert variant="destructive">
-                  <AlertTitle>{FRAIA_AI_MODEL_NAME} is unavailable</AlertTitle>
+                  <AlertTitle>Fraia AI is unavailable</AlertTitle>
                   <AlertDescription>
-                    Fraia does not silently switch models. Refresh the catalogue or reconnect ChatGPT before starting another AI turn.
+                    Refresh the connection. Fraia will not switch to another model.
                   </AlertDescription>
                 </Alert>
               )}
@@ -216,8 +225,8 @@ export function AiProvidersDialog({ open, onOpenChange }: { open: boolean; onOpe
               )}
               {runtimeEvent?.type === 'error' && (
                 <Alert variant="destructive">
-                  <AlertTitle>ChatGPT sign-in failed</AlertTitle>
-                  <AlertDescription>{runtimeEvent.message}</AlertDescription>
+                  <AlertTitle>{shortConnectionError(runtimeEvent.message ?? '')}</AlertTitle>
+                  {runtimeEvent.message && <AlertDescription><details><summary className="cursor-pointer">Details</summary><p className="mt-2 break-words">{runtimeEvent.message}</p></details></AlertDescription>}
                 </Alert>
               )}
             </>

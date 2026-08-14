@@ -73,6 +73,15 @@ function resolveLaunchConfig(args = process.argv.slice(2), env = process.env) {
   };
 }
 
+function viteArguments(config) {
+  return ['--host', config.host, '--port', String(config.port), '--strictPort', '--force'];
+}
+
+function sourceProvenance(directory = appDir) {
+  const files = ['main.js', 'preload.js'];
+  return Object.fromEntries(files.map((file) => [file, fs.statSync(path.join(directory, file)).mtimeMs]));
+}
+
 function serverIsReady(url) {
   return new Promise((resolve) => {
     const request = http.get(url, (response) => {
@@ -121,7 +130,9 @@ async function run() {
     const launchEnv = {
       ...process.env,
       FRAIA_DEV_RUNTIME: '1',
+      FRAIA_DEV_APP_DIR: appDir,
       VITE_DEV_SERVER_URL: config.serverUrl,
+      FRAIA_DEV_SOURCE_PROVENANCE: JSON.stringify(sourceProvenance()),
     };
     if (config.freshGuide) {
       launchEnv.FRAIA_DEV_FRESH_GUIDE = '1';
@@ -138,7 +149,7 @@ async function run() {
     }
 
     const viteCommand = path.join(appDir, 'node_modules', '.bin', process.platform === 'win32' ? 'vite.cmd' : 'vite');
-    viteProcess = spawn(viteCommand, ['--host', config.host, '--port', String(config.port), '--strictPort'], {
+    viteProcess = spawn(viteCommand, viteArguments(config), {
       cwd: appDir,
       env: launchEnv,
       stdio: 'inherit',
@@ -150,6 +161,7 @@ async function run() {
 
     const electronBinary = require('electron');
     console.log('[dev-launch] App identity: Fraia Dev');
+    console.log(`[dev-launch] Source: ${appDir}`);
     console.log(`[dev-launch] Renderer: ${config.serverUrl}`);
     if (launchEnv.FRAIA_USER_DATA_DIR) console.log(`[dev-launch] User data: ${launchEnv.FRAIA_USER_DATA_DIR}`);
     electronProcess = spawn(electronBinary, ['.'], {
@@ -210,5 +222,7 @@ module.exports = {
   releaseLaunchLock,
   resolveLaunchConfig,
   serverIsReady,
+  sourceProvenance,
+  viteArguments,
   waitForServer,
 };

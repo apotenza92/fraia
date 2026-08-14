@@ -223,6 +223,7 @@ test('private-source and package prerequisites fail before any secret-bearing jo
   assert.match(packageMacos, /environment: release-signing/);
   assert.match(packageMacos, /secrets\.APPLE_SIGNING_CERTIFICATE_P12_BASE64/);
   assert.match(validate, /npm run check:icons/);
+  assert.match(validate, /npm run verify:import-runtimes:built/);
   assert.match(validate, /build\/macos\/Fraia\.icon\/Assets\/01-artwork-dark\.svg/);
 });
 
@@ -473,7 +474,13 @@ test('application menu delegates reload and whole-window zoom shortcuts to Elect
   for (const role of ['reload', 'forceReload', 'resetZoom', 'zoomIn', 'zoomOut', 'togglefullscreen']) {
     assert.match(mainProcess, new RegExp(`role: ['"]${role}['"]`));
   }
-  assert.doesNotMatch(mainProcess, /accelerator:\s*['"](?:Cmd|Command|Ctrl|Control)/);
+  const explicitCommandAccelerators = [...mainProcess.matchAll(
+    /accelerator:\s*['"]((?:Cmd|Command|Ctrl|Control)[^'"]*)['"]/g,
+  )].map((match) => match[1]);
+  assert.deepEqual(explicitCommandAccelerators, [
+    'CommandOrControl+S',
+    'CommandOrControl+Shift+S',
+  ]);
 });
 
 test('packaged updater code ships TUF verification for Windows and Linux', () => {

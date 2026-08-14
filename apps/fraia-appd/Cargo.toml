@@ -14,6 +14,7 @@ axum.workspace = true
 fraia-app-api = { path = "../../crates/fraia-app-api" }
 fraia-core = { path = "../../crates/fraia-core" }
 fraia-revision = { path = "../../crates/fraia-revision" }
+getrandom = "0.4"
 serde.workspace = true
 serde_json.workspace = true
 reqwest.workspace = true

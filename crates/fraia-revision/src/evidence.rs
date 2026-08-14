@@ -7,7 +7,7 @@
 
 use crate::diff::{DiffCategory, SemanticDiff};
 use crate::{EvidenceId, SnapshotId};
-use fraia_core::DeterministicDerivationRequest;
+use fraia_core::{DesignRunInterpretationDependencies, DeterministicDerivationRequest};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -156,6 +156,10 @@ pub struct AnalysisEvidenceManifest {
     pub settings_payload: String,
     pub metrics: Option<AnalysisMetrics>,
     pub attachments: Vec<AnalysisEvidenceAttachment>,
+    /// Canonical design-run content identity. Older evidence can omit this
+    /// field, but accepted-design analysis adapters bind it before persistence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canonical_run_id: Option<String>,
 }
 
 impl AnalysisEvidence {
@@ -214,6 +218,13 @@ impl AnalysisEvidence {
             != analysis_manifest.settings_identity
         {
             return Err(EvidenceError::SettingsIdentityMismatch);
+        }
+        if analysis_manifest
+            .canonical_run_id
+            .as_deref()
+            .is_some_and(|run_id| !valid_canonical_run_id(run_id))
+        {
+            return Err(EvidenceError::InvalidCanonicalRunIdentity);
         }
 
         let mut attachment_kinds = BTreeSet::new();
@@ -285,6 +296,70 @@ impl AnalysisEvidence {
         &self.dependencies
     }
 
+    pub fn bind_interpretation_dependencies(
+        &mut self,
+        dependencies: &DesignRunInterpretationDependencies,
+    ) -> Result<(), EvidenceError> {
+        let mut additions = dependencies
+            .revision_ids
+            .iter()
+            .map(|identity| EvidenceDependency {
+                key: format!("drawing_interpretation_revision:{identity}"),
+                identity: identity.clone(),
+                invalidated_by: BTreeSet::new(),
+                identity_change_invalidates: true,
+            })
+            .chain(
+                dependencies
+                    .inference_ids
+                    .iter()
+                    .map(|identity| EvidenceDependency {
+                        key: format!("drawing_interpretation_inference:{identity}"),
+                        identity: identity.clone(),
+                        invalidated_by: BTreeSet::new(),
+                        identity_change_invalidates: true,
+                    }),
+            )
+            .collect::<Vec<_>>();
+        additions.sort_by(|left, right| left.key.cmp(&right.key));
+        for addition in additions {
+            match self
+                .dependencies
+                .iter()
+                .find(|existing| existing.key == addition.key)
+            {
+                Some(existing) if existing == &addition => {}
+                Some(_) => return Err(EvidenceError::DuplicateDependencyKey(addition.key)),
+                None => self.dependencies.push(addition),
+            }
+        }
+        self.dependencies
+            .sort_by(|left, right| left.key.cmp(&right.key));
+        Ok(())
+    }
+
+    pub fn interpretation_dependencies(&self) -> DesignRunInterpretationDependencies {
+        let mut dependencies = DesignRunInterpretationDependencies::default();
+        for dependency in &self.dependencies {
+            if let Some(identity) = dependency
+                .key
+                .strip_prefix("drawing_interpretation_revision:")
+            {
+                dependencies.revision_ids.push(identity.to_owned());
+            } else if let Some(identity) = dependency
+                .key
+                .strip_prefix("drawing_interpretation_inference:")
+            {
+                dependencies.inference_ids.push(identity.to_owned());
+            }
+        }
+        dependencies.revision_ids.sort();
+        dependencies.revision_ids.dedup();
+        dependencies.inference_ids.sort();
+        dependencies.inference_ids.dedup();
+        dependencies
+    }
+
     pub fn analysis_manifest(&self) -> Option<&AnalysisEvidenceManifest> {
         self.analysis_manifest.as_ref()
     }
@@ -349,6 +424,40 @@ impl AnalysisEvidence {
             .as_ref()
             .map_or(&[], AnalysisEvidenceManifest::attachments)
     }
+
+    pub fn canonical_run_id(&self) -> Option<&str> {
+        self.analysis_manifest
+            .as_ref()
+            .and_then(|manifest| manifest.canonical_run_id.as_deref())
+    }
+
+    pub fn bind_canonical_run_id(&mut self, run_id: String) -> Result<(), EvidenceError> {
+        if !valid_canonical_run_id(&run_id) {
+            return Err(EvidenceError::InvalidCanonicalRunIdentity);
+        }
+        let manifest = self
+            .analysis_manifest
+            .as_mut()
+            .ok_or(EvidenceError::MissingAnalysisManifest)?;
+        match &manifest.canonical_run_id {
+            Some(existing) if existing != &run_id => {
+                Err(EvidenceError::CanonicalRunIdentityMismatch)
+            }
+            Some(_) => Ok(()),
+            None => {
+                manifest.canonical_run_id = Some(run_id);
+                Ok(())
+            }
+        }
+    }
+}
+
+fn valid_canonical_run_id(run_id: &str) -> bool {
+    run_id.starts_with("design-run-sha256-")
+        && run_id.len() == "design-run-sha256-".len() + 64
+        && run_id["design-run-sha256-".len()..]
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
 impl AnalysisEvidenceManifest {
@@ -414,6 +523,9 @@ pub enum EvidenceError {
     FailedWithResultIdentity,
     UnsupportedWithResultIdentity,
     NonFiniteMetrics,
+    MissingAnalysisManifest,
+    InvalidCanonicalRunIdentity,
+    CanonicalRunIdentityMismatch,
 }
 
 impl fmt::Display for EvidenceError {
@@ -434,6 +546,14 @@ impl fmt::Display for EvidenceError {
             Self::EmptyAnalysisExecutionIdentity => {
                 formatter.write_str("analysis solver/runtime/settings identities must not be empty")
             }
+            Self::MissingAnalysisManifest => {
+                formatter.write_str("evidence has no analysis manifest to bind to a design run")
+            }
+            Self::InvalidCanonicalRunIdentity => {
+                formatter.write_str("canonical design-run identity is invalid")
+            }
+            Self::CanonicalRunIdentityMismatch => formatter
+                .write_str("evidence is already bound to a different canonical design run"),
             Self::SettingsIdentityMismatch => {
                 formatter.write_str("analysis settings identity does not match its payload")
             }
@@ -469,13 +589,15 @@ impl fmt::Display for EvidenceError {
 
 impl Error for EvidenceError {}
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum EvidenceStaleness {
     Current,
     Stale { reasons: Vec<StaleEvidenceReason> },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "reason", rename_all = "snake_case")]
 pub enum StaleEvidenceReason {
     MissingDependency {
         key: String,

@@ -1,10 +1,17 @@
 import { useId, useRef, useState } from "react"
 import type { DragEvent, KeyboardEvent, MouseEvent } from "react"
-import { FilePlus2, Plus, X } from "lucide-react"
+import { Ellipsis, FilePlus2, Plus, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 
 export type DocumentTab = {
@@ -46,6 +53,10 @@ export function DocumentTabBar({
   onOpen,
   openDisabled = false,
   onNewBlankModel,
+  onRenameProject,
+  onRenameDesign,
+  onDeleteDesign,
+  onConnection,
   newBlankModelDisabled = false,
 }: {
   tabs: DocumentTab[]
@@ -57,6 +68,10 @@ export function DocumentTabBar({
   onOpen: () => void
   openDisabled?: boolean
   onNewBlankModel: () => void
+  onRenameProject?: () => void
+  onRenameDesign?: () => void
+  onDeleteDesign?: () => void
+  onConnection?: () => void
   newBlankModelDisabled?: boolean
 }) {
   const instructionsId = useId()
@@ -147,6 +162,7 @@ export function DocumentTabBar({
     <div
       data-domain-ui="document-tabs"
       className="flex h-full min-w-0 shrink-0 items-center border-b border-border bg-background p-2"
+      data-purpose="switch-current-design"
     >
       <p id={instructionsId} className="sr-only">
         Use Arrow keys, Home, and End to navigate tabs. Hold Control or Command and Shift with an Arrow key to reorder the focused tab.
@@ -173,7 +189,7 @@ export function DocumentTabBar({
                   title={tab.label}
                   draggable={tab.reorderable !== false}
                   className={cn(
-                    "h-8! shrink-0 bg-background! data-active:bg-muted!",
+                    "h-8! w-36 shrink-0 justify-start overflow-hidden bg-background! sm:w-44 data-active:bg-muted!",
                     tab.closable && "pr-8",
                   )}
                   onDragStart={(event) => handleDragStart(event, tab)}
@@ -182,14 +198,14 @@ export function DocumentTabBar({
                   onDrop={(event) => handleDrop(event, tab.id)}
                   onKeyDown={(event) => handleTabKeyDown(event, tab)}
                 >
-                  {tab.label}
+                  <span data-document-tab-label className="min-w-0 truncate">{tab.label}</span>
                 </TabsTrigger>
               ))}
             </TabsList>
             <div className="pointer-events-none absolute inset-0 flex items-center gap-2">
               {tabs.map((tab) => (
-                <div key={tab.id} className={cn("relative flex h-8 shrink-0 items-center px-1.5 text-sm font-medium whitespace-nowrap invisible", tab.closable && "pr-8")}>
-                  <span aria-hidden="true">{tab.label}</span>
+                <div key={tab.id} className={cn("relative flex h-8 w-36 shrink-0 items-center overflow-hidden px-1.5 text-sm font-medium whitespace-nowrap invisible sm:w-44", tab.closable && "pr-8")}>
+                  <span aria-hidden="true" className="min-w-0 truncate">{tab.label}</span>
                   {tab.closable ? (
                     <Button
                       data-document-tab-close
@@ -235,7 +251,7 @@ export function DocumentTabBar({
                   type="button"
                   variant="outline"
                   size="icon"
-                  aria-label="New blank model"
+                  aria-label={tabs.length ? "New design" : "New blank model"}
                   disabled={newBlankModelDisabled}
                   className="shrink-0 bg-background! hover:bg-muted!"
                   onClick={onNewBlankModel}
@@ -244,8 +260,21 @@ export function DocumentTabBar({
                 </Button>
               )}
             />
-            <TooltipContent>New blank model</TooltipContent>
+            <TooltipContent>{tabs.length ? "New design" : "New blank model"}</TooltipContent>
           </Tooltip>
+          {tabs.length && onRenameProject && onRenameDesign && onDeleteDesign ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger render={<Button type="button" variant="outline" size="icon" aria-label="Project and design actions"><Ellipsis /></Button>} />
+              <DropdownMenuContent align="end" className="w-max whitespace-nowrap">
+                <DropdownMenuGroup>
+                  <DropdownMenuItem onClick={onRenameProject}>Rename project</DropdownMenuItem>
+                  <DropdownMenuItem onClick={onRenameDesign}>Rename design</DropdownMenuItem>
+                  {onConnection ? <DropdownMenuItem onClick={onConnection}>Fraia connection…</DropdownMenuItem> : null}
+                  <DropdownMenuItem variant="destructive" onClick={onDeleteDesign}>Delete design</DropdownMenuItem>
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </div>
       </Tabs>
       <p role="status" className="sr-only" aria-live="polite" aria-atomic="true">

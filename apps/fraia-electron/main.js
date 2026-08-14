@@ -1,11 +1,12 @@
 const { app, BrowserWindow, Menu, dialog, ipcMain, nativeTheme, safeStorage, screen, session, shell } = require('electron');
 const { spawn, spawnSync } = require('node:child_process');
-const { randomBytes } = require('node:crypto');
+const { createHash, randomBytes } = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { round, selectedBudget } = require('./scripts/perf-budgets.cjs');
 const { FakeFraiaAiRuntime, FraiaAiRuntime, publicFraiaCatalogue } = require('./ai-runtime.cjs');
+const { recognizeOcr } = require('./ocr-runtime.cjs');
 const { resolveRuntimeApplicationMetadata, resolveUserDataDirectory } = require('./application-metadata.cjs');
 const { nativePlatformArch, resolveCalculixRuntime, resolveSidecarLaunch } = require('./package-boundary.cjs');
 const { configureAutoUpdates } = require('./update-manager.cjs');
@@ -25,6 +26,12 @@ if (process.env.FRAIA_DEV_RUNTIME === '1') {
   const requestedAppDir = path.resolve(process.env.FRAIA_DEV_APP_DIR || '');
   if (app.isPackaged || requestedAppDir !== __dirname || !process.env.VITE_DEV_SERVER_URL) {
     throw new Error('Fraia Dev must run from the current source directory with its local Vite renderer.');
+  }
+  const expectedProvenance = JSON.parse(process.env.FRAIA_DEV_SOURCE_PROVENANCE || '{}');
+  for (const file of ['main.js', 'preload.js']) {
+    if (expectedProvenance[file] !== fs.statSync(path.join(__dirname, file)).mtimeMs) {
+      throw new Error(`Fraia Dev ${file} changed after the launcher resolved its source provenance. Restart npm start.`);
+    }
   }
 }
 
@@ -107,6 +114,67 @@ function isManagedUnsavedProject(projectDir) {
   const root = path.join(app.getPath('userData'), 'unsaved-projects');
   const relative = path.relative(root, path.resolve(projectDir));
   return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
+async function projectIdentity(projectDir, designId) {
+  const selected = designId ? `&designId=${encodeURIComponent(designId)}` : '';
+  return callApi(`/projects/identity?projectDir=${encodeURIComponent(projectDir)}${selected}`);
+}
+
+function enrichProjectResponse(response, identity, projectDir) {
+  const state = response?.state ?? response?.workbench ?? response;
+  if (!state?.overview) return response;
+  Object.assign(state.overview, {
+    projectId: identity.projectId,
+    projectName: identity.projectName,
+    designId: identity.designId,
+    designName: identity.designName,
+    designs: identity.designs,
+    documentId: identity.designId,
+    projectRootDir: projectDir,
+    managedUnsaved: isManagedUnsavedProject(projectDir),
+  });
+  return response;
+}
+
+async function enrichedProjectResponse(responsePromise, projectDir) {
+  const response = await responsePromise;
+  const state = response?.state ?? response?.workbench ?? response;
+  const selectedDesignId = state?.overview?.documentId ?? state?.overview?.document_id;
+  return enrichProjectResponse(
+    response,
+    await projectIdentity(projectDir, selectedDesignId),
+    projectDir,
+  );
+}
+
+async function activateDesign(projectDir, projectId, designId) {
+  return enrichedProjectResponse(
+    callApi('/projects/designs/activate', {
+      method: 'POST',
+      body: JSON.stringify({ projectDir, projectId, designId }),
+    }),
+    projectDir,
+  );
+}
+
+async function openProjectPackage(payload) {
+  const opened = await enrichedProjectResponse(
+    callApi('/projects/open', { method: 'POST', body: JSON.stringify(payload) }),
+    payload.projectDir,
+  );
+  const state = opened?.state ?? opened;
+  const designs = state?.overview?.designs ?? [];
+  const designStates = [state];
+  for (const design of designs.slice(1)) {
+    const activated = await activateDesign(
+      payload.projectDir,
+      state.overview.projectId,
+      design.designId,
+    );
+    designStates.push(activated?.state ?? activated);
+  }
+  return { ...opened, state, designStates };
 }
 
 function copyProjectToNewFolder(sourceDir, destinationDir) {
@@ -597,9 +665,11 @@ async function callApi(endpoint, options = {}) {
     ...options,
     headers,
   });
-  const body = await response.json().catch(() => ({}));
+  const responseText = await response.text();
+  let body = {};
+  try { body = responseText ? JSON.parse(responseText) : {}; } catch { body = {}; }
   if (!response.ok) {
-    throw new Error(body.error || `${response.status} ${response.statusText}`);
+    throw new Error(body.error || body.message || responseText || `${response.status} ${response.statusText}`);
   }
   return body;
 }
@@ -662,6 +732,15 @@ function startSidecar() {
     FRAIA_CONVERSATION_DB: process.env.FRAIA_CONVERSATION_DB
       || path.join(app.getPath('userData'), 'conversations.sqlite'),
   });
+  if (!app.isPackaged && process.env.FRAIA_FAKE_AI_RUNTIME === '1') {
+    sidecarEnv.FRAIA_FAKE_AI_RUNTIME = '1';
+  }
+  if (!app.isPackaged && /^\d+$/.test(process.env.FRAIA_TEST_ANALYSIS_DELAY_MS ?? '')) {
+    sidecarEnv.FRAIA_TEST_ANALYSIS_DELAY_MS = process.env.FRAIA_TEST_ANALYSIS_DELAY_MS;
+  }
+  if (!app.isPackaged && process.env.FRAIA_TEST_ANALYSIS_FAILURE === '1') {
+    sidecarEnv.FRAIA_TEST_ANALYSIS_FAILURE = '1';
+  }
   const launch = resolveSidecarLaunch({
     isPackaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
@@ -740,8 +819,8 @@ async function stopRuntimeServices() {
   aiRuntime = null;
   aiRuntimeReadyPromise = null;
   await Promise.all([
-    stopSidecarAndWait(),
-    runtime?.stop?.(),
+    stopSidecarAndWait().then(() => safeLog('[shutdown] Fraia app service stopped.')),
+    Promise.resolve(runtime?.stop?.()).then(() => safeLog('[shutdown] Fraia AI runtime stopped.')),
   ]);
 }
 
@@ -963,7 +1042,12 @@ ipcMain.handle('fraia:saveProject', async (_event, payload) => {
   const sourceDir = path.resolve(payload.projectDir);
   const saveAs = payload.saveAs === true;
   const unsaved = isManagedUnsavedProject(sourceDir);
-  if (!saveAs && !unsaved) return callApi(`/projects/state?projectDir=${encodeURIComponent(sourceDir)}`);
+  if (!saveAs && !unsaved) {
+    return enrichedProjectResponse(
+      callApi(`/projects/state?projectDir=${encodeURIComponent(sourceDir)}`),
+      sourceDir,
+    );
+  }
   const result = await dialog.showSaveDialog({
     title: saveAs ? 'Save Fraia Project As' : 'Save Fraia Project',
     buttonLabel: 'Save Project',
@@ -971,20 +1055,36 @@ ipcMain.handle('fraia:saveProject', async (_event, payload) => {
   });
   if (result.canceled || !result.filePath) return null;
   const destinationDir = path.resolve(result.filePath);
-  if (destinationDir === sourceDir) return callApi(`/projects/state?projectDir=${encodeURIComponent(sourceDir)}`);
+  if (destinationDir === sourceDir) {
+    return enrichedProjectResponse(
+      callApi(`/projects/state?projectDir=${encodeURIComponent(sourceDir)}`),
+      sourceDir,
+    );
+  }
   const destinationRelativeToSource = path.relative(sourceDir, destinationDir);
   if (destinationRelativeToSource !== '..' && !destinationRelativeToSource.startsWith(`..${path.sep}`) && !path.isAbsolute(destinationRelativeToSource)) {
     throw new Error('Save the Fraia project outside its current project folder.');
   }
-  await callApi('/conversations/unload', {
-    method: 'POST',
-    body: JSON.stringify({ projectId: payload.projectId }),
-  });
+  if (payload.projectName != null || payload.designName != null) {
+    await callApi('/projects/identity', {
+      method: 'POST',
+      body: JSON.stringify({
+        projectDir: sourceDir,
+        projectId: payload.projectId,
+        projectName: payload.projectName,
+        designId: payload.designId,
+        designName: payload.designName,
+      }),
+    });
+  }
+  for (const designId of payload.designIds ?? [payload.designId]) {
+    await callApi('/conversations/unload', {
+      method: 'POST',
+      body: JSON.stringify({ projectId: designId }),
+    });
+  }
   copyProjectToNewFolder(sourceDir, destinationDir);
-  const response = await callApi('/projects/open', {
-    method: 'POST',
-    body: JSON.stringify({ projectDir: destinationDir }),
-  });
+  const response = await openProjectPackage({ projectDir: destinationDir });
   if (unsaved) fs.rmSync(sourceDir, { recursive: true, force: true });
   return response;
 });
@@ -1004,23 +1104,148 @@ ipcMain.handle('fraia:pickProjectFile', async () => {
   }
   return projectDir;
 });
-ipcMain.handle('fraia:createProject', (_event, payload) =>
-  callApi('/projects/create', { method: 'POST', body: JSON.stringify(payload) })
-);
-ipcMain.handle('fraia:openProject', (_event, payload) =>
-  callApi('/projects/open', { method: 'POST', body: JSON.stringify(payload) })
-);
+ipcMain.handle('fraia:importSource', async (_event, payload) => {
+  const projectDir = path.resolve(payload.projectDir);
+  const result = await dialog.showOpenDialog({
+    title: 'Import project file',
+    properties: ['openFile'],
+    filters: [{
+      name: 'Engineering sources',
+      extensions: ['pdf', 'png', 'jpg', 'jpeg', 'tif', 'tiff', 'dxf', 'dwg', 'ifc', 'step', 'stp'],
+    }],
+  });
+  if (result.canceled || !result.filePaths[0]) return null;
+  _event.sender.send('fraia:sourceImportProgress', { state: 'uploading' });
+  try {
+    const grant = await callApi('/sources/selections/issue', {
+      method: 'POST',
+      body: JSON.stringify({ projectDir, selectedPath: result.filePaths[0] }),
+    });
+    _event.sender.send('fraia:sourceImportProgress', { state: 'processing' });
+    const imported = await callApi('/sources/import', {
+      method: 'POST',
+      body: JSON.stringify({ projectDir, selectionToken: grant.selectionToken }),
+    });
+    _event.sender.send('fraia:sourceImportProgress', { state: 'done' });
+    return imported;
+  } catch (error) {
+    safeError(`[sources] Native import failed: ${error?.message ?? error}`);
+    const message = 'Fraia could not import the selected source. The project was not changed.';
+    _event.sender.send('fraia:sourceImportProgress', { state: 'error', message });
+    throw new Error(message);
+  }
+});
+ipcMain.handle('fraia:listSources', (_event, payload) => callApi('/sources/list', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:inspectSource', (_event, payload) => callApi('/sources/inspect', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:indexPdfSource', (_event, payload) => callApi('/pdf/index', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:indexDxfSource', (_event, payload) => callApi('/dxf/index', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:prepareDxfSelection', (_event, payload) => callApi('/dxf/selections/prepare', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:inferPdfViewRole', (_event, payload) => callApi('/pdf/view-role/infer', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:recognizePdfOcr', async (_event, payload) => {
+  if (!payload || typeof payload !== 'object') throw new Error('OCR request is required.');
+  const imageBytes = Buffer.from(payload.imageBytes || []);
+  safeLog(`[ocr] Started page=${payload.pageNumber ?? 'unknown'} raster=${payload.rasterWidth ?? 'unknown'}x${payload.rasterHeight ?? 'unknown'} bytes=${imageBytes.length} rotation=${payload.ocrRotationRadians ?? 'unknown'}.`);
+  try {
+    const result = await recognizeOcr({ ...payload, imageBytes });
+    safeLog(`[ocr] Finished status=${result.status} candidates=${result.candidates?.length ?? 0} elapsedMillis=${result.elapsedMillis ?? 'unknown'}.`);
+    return result;
+  } catch (error) {
+    safeError(`[ocr] Failed: ${error?.message ?? error}`);
+    throw new Error('Fraia could not read this scanned drawing area. Choose the drawing view manually.');
+  }
+});
+ipcMain.handle('fraia:indexIfcSource', (_event, payload) => callApi('/ifc/index', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:prepareIfcSelection', (_event, payload) => callApi('/ifc/selections/prepare', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:startMeshIndex', (_event, payload) => callApi('/meshes/jobs/start', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:meshIndexStatus', (_event, payload) => callApi('/meshes/jobs/status', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:cancelMeshIndex', (_event, payload) => callApi('/meshes/jobs/cancel', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:prepareMeshSavedView', (_event, payload) => callApi('/meshes/saved-views/prepare', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:readMeshContent', async (_event, payload) => {
+  await ensureSidecar();
+  const response = await fetch(`${sidecarBaseUrl()}/meshes/content`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${sidecarToken}` }, body: JSON.stringify(payload) });
+  if (!response.ok) throw new Error((await response.text()) || `${response.status} ${response.statusText}`);
+  const bytes = await response.arrayBuffer();
+  return { sourceId: response.headers.get('x-fraia-source-id'), sourceSha256: response.headers.get('x-fraia-source-sha256'), mediaType: response.headers.get('content-type'), byteSize: Number(response.headers.get('x-fraia-byte-size')), bytes };
+});
+ipcMain.handle('fraia:readPdfSource', async (_event, payload) => {
+  const projectDir = path.resolve(payload.projectDir);
+  const details = await callApi('/sources/inspect', {
+    method: 'POST',
+    body: JSON.stringify({ projectDir, sourceId: payload.sourceId }),
+  });
+  const source = details.source;
+  if (source.detected_media_type !== 'pdf' || source.media_type !== 'application/pdf') {
+    throw new Error('The selected project file is not a PDF.');
+  }
+  if (!Number.isSafeInteger(source.byte_size) || source.byte_size < 1 || source.byte_size > 256 * 1024 * 1024) {
+    throw new Error('The managed PDF size is invalid or exceeds the 256 MB limit.');
+  }
+  const sourcesDir = path.join(projectDir, 'sources');
+  const relative = String(source.object_path ?? '');
+  if (!relative || path.isAbsolute(relative) || relative.split(/[\\/]+/).some((part) => !part || part === '.' || part === '..')) {
+    throw new Error('The managed PDF has an unsafe stored path.');
+  }
+  const objectPath = path.resolve(sourcesDir, relative);
+  const relativeObject = path.relative(sourcesDir, objectPath);
+  if (!relativeObject || relativeObject.startsWith('..') || path.isAbsolute(relativeObject)) {
+    throw new Error('The managed PDF is outside project file storage.');
+  }
+  const [realSourcesDir, realObjectPath] = await Promise.all([
+    fs.promises.realpath(sourcesDir),
+    fs.promises.realpath(objectPath),
+  ]);
+  const realRelative = path.relative(realSourcesDir, realObjectPath);
+  if (!realRelative || realRelative.startsWith('..') || path.isAbsolute(realRelative)) {
+    throw new Error('The managed PDF resolves outside project file storage.');
+  }
+  const bytes = await fs.promises.readFile(realObjectPath);
+  if (bytes.byteLength !== source.byte_size || createHash('sha256').update(bytes).digest('hex') !== source.sha256) {
+    throw new Error('The managed PDF no longer matches its imported project file record.');
+  }
+  return Uint8Array.from(bytes);
+});
+ipcMain.handle('fraia:removeSource', (_event, payload) => callApi('/sources/remove', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:listShelf', (_event, payload) => callApi('/shelves/list', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:upsertShelfItem', (_event, payload) => callApi('/shelves/upsert', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:removeShelfItem', (_event, payload) => callApi('/shelves/remove', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:listDrawingInterpretations', (_event, payload) => callApi('/interpretations/list', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:inspectDrawingInterpretation', (_event, payload) => callApi('/interpretations/inspect', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:createDrawingInterpretation', (_event, payload) => callApi('/interpretations/create', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:confirmDrawingObservations', (_event, payload) => callApi('/interpretations/confirm', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:correctDrawingObservation', (_event, payload) => callApi('/interpretations/correct', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:reconcileDrawingInterpretation', (_event, payload) => callApi('/interpretations/reconcile', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:resolveDrawingInterpretationConflict', (_event, payload) => callApi('/interpretations/conflicts/resolve', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:listDesignRuns', (_event, payload) => callApi('/design-runs/list', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:inspectDesignRun', (_event, payload) => callApi('/design-runs/inspect', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:listDesignRunStatuses', (_event, payload) => callApi('/design-runs/status', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:createProject', (_event, payload) => enrichedProjectResponse(
+  callApi('/projects/create', { method: 'POST', body: JSON.stringify(payload) }),
+  payload.projectDir,
+));
+ipcMain.handle('fraia:openProject', (_event, payload) => openProjectPackage(payload));
+ipcMain.handle('fraia:createDesign', (_event, payload) => enrichedProjectResponse(
+  callApi('/projects/designs', { method: 'POST', body: JSON.stringify(payload) }),
+  payload.projectDir,
+));
+ipcMain.handle('fraia:activateDesign', (_event, payload) => activateDesign(
+  payload.projectDir,
+  payload.projectId,
+  payload.designId,
+));
+ipcMain.handle('fraia:renameDesign', (_event, payload) => enrichedProjectResponse(
+  callApi('/projects/identity', { method: 'POST', body: JSON.stringify(payload) })
+    .then(() => callApi('/projects/designs/activate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })),
+  payload.projectDir,
+));
+ipcMain.handle('fraia:deleteDesign', (_event, payload) => callApi('/projects/designs/delete', {
+  method: 'POST',
+  body: JSON.stringify(payload),
+}));
 ipcMain.handle('fraia:savePlanningDraft', (_event, payload) =>
   callApi('/projects/planning-draft', { method: 'POST', body: JSON.stringify(payload) })
-);
-ipcMain.handle('fraia:materializePlanning', (_event, payload) =>
-  callApi('/projects/materialize-planning', { method: 'POST', body: JSON.stringify(payload) })
-);
-ipcMain.handle('fraia:analysePlanning', (_event, payload) =>
-  callApi('/projects/analyse', { method: 'POST', body: JSON.stringify(payload) })
-);
-ipcMain.handle('fraia:analyseDesignOptions', (_event, payload) =>
-  callApi('/projects/design-option-analysis', { method: 'POST', body: JSON.stringify(payload) })
 );
 ipcMain.handle('fraia:updateDesignOptionDecision', (_event, payload) =>
   callApi('/projects/design-options/decision', { method: 'POST', body: JSON.stringify(payload) })
@@ -1075,14 +1300,14 @@ ipcMain.handle('fraia:agentStartSession', (_event, payload) =>
 ipcMain.handle('fraia:agentRespondSession', (_event, payload) =>
   callApi('/agent/sessions/respond', { method: 'POST', body: JSON.stringify(payload) })
 );
+ipcMain.handle('fraia:conversationAgentRespond', (_event, payload) =>
+  callApi('/conversations/agent/respond', { method: 'POST', body: JSON.stringify(payload) })
+);
+ipcMain.handle('fraia:conversationCancelDesign', async (_event, payload) => ({
+  cancelled: aiRuntime ? await aiRuntime.cancelTurnsForScope(payload?.designId) : 0,
+}));
 ipcMain.handle('fraia:agentCancelSession', (_event, payload) =>
   callApi('/agent/sessions/cancel', { method: 'POST', body: JSON.stringify(payload) })
-);
-ipcMain.handle('fraia:applyReview', (_event, payload) =>
-  callApi('/agent/apply-review', { method: 'POST', body: JSON.stringify(payload) })
-);
-ipcMain.handle('fraia:editBaseModel', (_event, payload) =>
-  callApi('/projects/base-model/edit', { method: 'POST', body: JSON.stringify(payload) })
 );
 ipcMain.handle('fraia:conversationCreate', (_event, payload) =>
   callApi('/conversations/create', { method: 'POST', body: JSON.stringify(payload) })
@@ -1096,6 +1321,14 @@ ipcMain.handle('fraia:conversationFacts', (_event, payload) =>
 ipcMain.handle('fraia:conversationAnalyse', (_event, payload) =>
   callApi('/conversations/analyse', { method: 'POST', body: JSON.stringify(payload) })
 );
+ipcMain.handle('fraia:startAnalysisAttempt', async (_event, payload) => {
+  safeLog(`[analysis-attempt] start project=${payload?.projectId ?? 'missing'}`);
+  const response = await callApi('/analysis-attempts/start', { method: 'POST', body: JSON.stringify(payload) });
+  safeLog(`[analysis-attempt] started id=${response?.attemptId ?? 'missing'} status=${response?.status ?? 'missing'}`);
+  return response;
+});
+ipcMain.handle('fraia:analysisAttemptStatus', (_event, payload) => callApi('/analysis-attempts/status', { method: 'POST', body: JSON.stringify(payload) }));
+ipcMain.handle('fraia:cancelAnalysisAttempt', (_event, payload) => callApi('/analysis-attempts/cancel', { method: 'POST', body: JSON.stringify(payload) }));
 ipcMain.handle('fraia:conversationCompare', (_event, payload) =>
   callApi('/conversations/compare', { method: 'POST', body: JSON.stringify(payload) })
 );
@@ -1123,33 +1356,22 @@ ipcMain.handle('fraia:conversationWorkingCopyApply', (_event, payload) =>
 ipcMain.handle('fraia:conversationWorkingCopyCommit', (_event, payload) =>
   callApi('/conversations/working-copy/commit', { method: 'POST', body: JSON.stringify(payload) })
 );
-ipcMain.handle('fraia:refreshProject', (_event, projectDir) =>
-  callApi(`/projects/state?projectDir=${encodeURIComponent(projectDir)}`)
-);
+ipcMain.handle('fraia:refreshProject', (_event, projectDir) => enrichedProjectResponse(
+  callApi(`/projects/state?projectDir=${encodeURIComponent(projectDir)}`),
+  projectDir,
+));
 ipcMain.handle('fraia:refreshProjectIfExists', async (_event, projectDir) => {
   const projectFile = projectFilePath(projectDir);
   if (!fs.existsSync(projectFile)) {
     return null;
   }
-  return callApi(`/projects/state?projectDir=${encodeURIComponent(projectDir)}`);
+  return enrichedProjectResponse(
+    callApi(`/projects/state?projectDir=${encodeURIComponent(projectDir)}`),
+    projectDir,
+  );
 });
-ipcMain.handle('fraia:seedFrameDemo', (_event, payload) =>
-  callApi('/projects/seed-frame-demo', { method: 'POST', body: JSON.stringify(payload) })
-);
-ipcMain.handle('fraia:seedFrameReviewDemo', (_event, payload) =>
-  callApi('/projects/seed-frame-review-demo', { method: 'POST', body: JSON.stringify(payload) })
-);
-ipcMain.handle('fraia:seedBeamDemo', (_event, payload) =>
-  callApi('/projects/seed-beam-demo', { method: 'POST', body: JSON.stringify(payload) })
-);
 ipcMain.handle('fraia:sizeBeam', (_event, payload) =>
   callApi('/projects/beam-size', { method: 'POST', body: JSON.stringify(payload) })
-);
-ipcMain.handle('fraia:validateProject', (_event, payload) =>
-  callApi('/projects/validate', { method: 'POST', body: JSON.stringify(payload) })
-);
-ipcMain.handle('fraia:runFrameCalculix', (_event, payload) =>
-  callApi('/projects/frame-run-calculix', { method: 'POST', body: JSON.stringify(payload) })
 );
 ipcMain.handle('fraia:setThemeSource', (_event, themeSource) => {
   if (!['light', 'dark', 'system'].includes(themeSource)) {
@@ -1259,15 +1481,25 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', (event) => {
+function handleBeforeQuit(event) {
+  safeLog(`[shutdown] before-quit cleanupComplete=${quitCleanupComplete}.`);
   updateController?.stop?.();
   if (quitCleanupComplete) return;
+  if (mainWindow && !mainWindow.isDestroyed()) writeMainWindowState(mainWindow);
   event.preventDefault();
   if (quitCleanupPromise) return;
   quitCleanupPromise = stopRuntimeServices()
     .catch((error) => safeError(`[shutdown] Runtime cleanup failed: ${error}`))
     .finally(() => {
       quitCleanupComplete = true;
-      app.quit();
+      safeLog('[shutdown] Runtime cleanup complete; exiting application.');
+      app.removeListener('before-quit', handleBeforeQuit);
+      if (process.env.FRAIA_ELECTRON_TEST_RUNTIME === '1' && typeof process.reallyExit === 'function') {
+        process.reallyExit(0);
+      } else {
+        app.exit(0);
+      }
     });
-});
+}
+
+app.on('before-quit', handleBeforeQuit);
