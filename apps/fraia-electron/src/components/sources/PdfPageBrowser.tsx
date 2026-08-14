@@ -124,6 +124,18 @@ export function cachedInference(cache: Map<string, Promise<PdfViewRoleInference>
   return pending;
 }
 
+async function cleanupPdfDocument(document: PDFDocumentProxy) {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      await document.cleanup();
+      return;
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes('currently rendering')) return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+}
+
 function pageLabel(page: PdfPageIndex) {
   return `Page ${page.pageNumber}`;
 }
@@ -155,7 +167,15 @@ function CanvasPage({ page, scale, onPage, onCanvas, className }: { page: PDFPag
 
 function Thumbnail({ document, pageIndex, selected, onSelect }: { document: PDFDocumentProxy; pageIndex: PdfPageIndex; selected: boolean; onSelect: () => void }) {
   const [page, setPage] = useState<PDFPageProxy | null>(null);
-  useEffect(() => { void document.getPage(pageIndex.pageNumber).then(setPage); }, [document, pageIndex.pageNumber]);
+  useEffect(() => {
+    let cancelled = false;
+    void document.getPage(pageIndex.pageNumber).then((next) => {
+      if (!cancelled) setPage(next);
+    }).catch((error: unknown) => {
+      if (!cancelled) queueMicrotask(() => { throw error; });
+    });
+    return () => { cancelled = true; };
+  }, [document, pageIndex.pageNumber]);
   return (
     <Button variant={selected ? 'secondary' : 'outline'} className="h-auto w-full flex-col items-stretch p-2" onClick={onSelect} aria-label={`Open ${pageLabel(pageIndex)}`}>
       {page ? <CanvasPage page={page} scale={0.18} className="max-w-full self-center" /> : <Spinner />}
@@ -215,22 +235,29 @@ export function PdfPageBrowser({ open, projectDir, designName, source, index, in
       pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
       return pdfjs.getDocument({ data: bytes }).promise;
     }).then((next) => {
-      if (cancelled) void next.cleanup(); else setDocument(next);
-    }).catch((caught) => setError(caught?.message || 'Could not render this managed PDF.'));
+      if (cancelled) void cleanupPdfDocument(next); else setDocument(next);
+    }).catch((caught) => {
+      if (!cancelled) setError(caught?.message || 'Could not render this managed PDF.');
+    });
     return () => { cancelled = true; };
   }, [open, outdated, projectDir, source.id]);
   useEffect(() => {
     if (!document) return;
+    let cancelled = false;
     void document.getPage(activePageNumber).then((nextPage) => {
+      if (cancelled) return;
       const nextViewport = nextPage.getViewport({ scale: 1 });
       if (activeIndex && (Math.abs(nextViewport.width - activeIndex.widthPoints) > 0.02 || Math.abs(nextViewport.height - activeIndex.heightPoints) > 0.02)) {
         setError('The rendered PDF page dimensions do not match its persisted index. Re-index this project file before selecting areas.');
         return;
       }
       setPage(nextPage);
-    }).catch((caught) => setError(caught?.message || 'Could not open this PDF page.'));
+    }).catch((caught) => {
+      if (!cancelled) setError(caught?.message || 'Could not open this PDF page.');
+    });
+    return () => { cancelled = true; };
   }, [activePageNumber, document]);
-  useEffect(() => () => { if (document) void document.cleanup(); }, [document]);
+  useEffect(() => () => { if (document) void cleanupPdfDocument(document); }, [document]);
   useEffect(() => {
     if (!draft || !activeIndex || outdated) { setInference(null); return; }
     const xs = draft.sourcePoints.map((point) => point.x);

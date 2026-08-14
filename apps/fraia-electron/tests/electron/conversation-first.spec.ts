@@ -1,4 +1,5 @@
 import { expect, test, _electron as electron } from '@playwright/test';
+import type { Locator } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -56,19 +57,29 @@ test('desktop shell keeps blank conversation truthful and preserves project file
 
   try {
     let page = await electronApp.firstWindow();
+    async function scrollStable(locator: Locator) {
+      await expect.poll(async () => {
+        try {
+          await locator.scrollIntoViewIfNeeded({ timeout: 1_000 });
+          return true;
+        } catch {
+          return false;
+        }
+      }, { timeout: 5_000 }).toBe(true);
+    }
     async function captureVisualState(name: string) {
       for (const [sizeName, width, height] of [['minimum', 900, 600], ['default', 1152, 768], ['large', 1440, 960]] as const) {
         await electronApp.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setContentSize(size.width, size.height), { width, height });
         await expect.poll(() => page.evaluate(() => innerWidth)).toBe(width);
         await page.waitForTimeout(350);
-        if (name === 'pending-proposal') await page.getByTestId('conversation-proposal').scrollIntoViewIfNeeded();
-        if (name === 'analysis-result') await page.getByTestId('analysis-result-card').scrollIntoViewIfNeeded();
-        if (name.startsWith('analysis-attempt-')) await page.getByTestId('analysis-attempt').scrollIntoViewIfNeeded();
-        if (name === 'stale-analysis') await page.getByTestId('stale-evidence').scrollIntoViewIfNeeded();
-        if (name === 'dxf-content-selection') await page.getByRole('checkbox', { name: 'Select layer FRAME' }).scrollIntoViewIfNeeded();
-        if (name === 'dxf-explicit-relation') await page.getByRole('checkbox', { name: 'I checked the drawing view and scale.' }).scrollIntoViewIfNeeded();
-        if (name === 'dxf-interpretation-unconfirmed') await page.getByText('Fraia inferred').first().scrollIntoViewIfNeeded();
-        if (name === 'ifc-content-selection') await page.getByRole('checkbox', { name: 'Select storey Level 2' }).scrollIntoViewIfNeeded();
+        if (name === 'pending-proposal') await scrollStable(page.getByTestId('conversation-proposal'));
+        if (name === 'analysis-result') await scrollStable(page.getByTestId('analysis-result-card'));
+        if (name.startsWith('analysis-attempt-')) await scrollStable(page.getByTestId('analysis-attempt'));
+        if (name === 'stale-analysis') await scrollStable(page.getByTestId('stale-evidence'));
+        if (name === 'dxf-content-selection') await scrollStable(page.getByRole('checkbox', { name: 'Select layer FRAME' }));
+        if (name === 'dxf-explicit-relation') await scrollStable(page.getByRole('checkbox', { name: 'I checked the drawing view and scale.' }));
+        if (name === 'dxf-interpretation-unconfirmed') await scrollStable(page.getByText('Fraia inferred').first());
+        if (name === 'ifc-content-selection') await scrollStable(page.getByRole('checkbox', { name: 'Select storey Level 2' }));
         const layout = await page.evaluate(() => {
           const root = document.documentElement;
           const dialogs = [...document.querySelectorAll<HTMLElement>('[role="dialog"]')].filter((element) => element.offsetParent !== null).map((element) => {
