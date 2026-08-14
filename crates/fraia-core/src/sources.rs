@@ -1024,7 +1024,7 @@ fn open_selected_file(path: &Path) -> Result<(File, fs::Metadata), SourceLibrary
         }
         #[cfg(not(unix))]
         {
-            error.into()
+            SourceLibraryError::from(error)
         }
     })?;
     let opened = file.metadata()?;

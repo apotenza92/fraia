@@ -49,10 +49,13 @@ test('all importers have one reviewed offline package contract', () => {
 test('scanned OCR PDF fixture is raster-only and byte-deterministic', () => {
   const appRoot = path.join(__dirname, '..');
   const fixture = path.join(appRoot, 'tests', 'fixtures', 'scanned-architectural-drawing.pdf');
+  const raster = path.join(appRoot, 'tests', 'fixtures', 'scanned-architectural-drawing-raster.jpg');
   const generator = path.join(appRoot, 'tests', 'fixtures', 'generate-scanned-ocr-fixture.cjs');
   const expected = 'b6180dec6b6f33a323c36d6dc5215ebc6382d04e418a4ae7e87546d2786cd8ae';
+  const expectedRaster = '07e1fe0d5da5a7580614cdc2c33fcec7fa4cb911492345d227656141be1c13d5';
   const before = fs.readFileSync(fixture);
   assert.equal(createHash('sha256').update(before).digest('hex'), expected);
+  assert.equal(createHash('sha256').update(fs.readFileSync(raster)).digest('hex'), expectedRaster);
   assert.doesNotMatch(before.toString('latin1'), /CreationDate|Quartz|\/Font\b/);
   assert.match(before.toString('latin1'), /\/Subtype \/Image/);
   const generated = spawnSync(process.execPath, [generator], { encoding: 'utf8' });
@@ -164,6 +167,12 @@ test('packaged apps use only the exact bundled CalculiX runtime', () => {
     source: 'packaged-resource',
   });
   assert.doesNotMatch(JSON.stringify(runtime), /homebrew|user-data/);
+
+  const packagedHarness = fs.readFileSync(
+    path.join(__dirname, '..', 'scripts', 'run-packaged-e2e.cjs'),
+    'utf8',
+  );
+  assert.match(packagedHarness, /FRAIA_CCX_PATH: packagedCalculixPath\(layout\.resources\)/);
 });
 
 test('packaged apps fail closed when bundled CalculiX is absent', () => {

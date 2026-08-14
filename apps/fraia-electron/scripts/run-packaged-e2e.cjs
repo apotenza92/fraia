@@ -210,7 +210,14 @@ const result = spawnSync(process.execPath, [
   'tests/electron/packaged-app.spec.ts',
 ], {
   cwd: appRoot,
-  env: { ...process.env, FRAIA_PACKAGED_EXECUTABLE: layout.executable, FRAIA_DISABLE_UPDATES: '1' },
+  env: {
+    ...process.env,
+    FRAIA_PACKAGED_EXECUTABLE: layout.executable,
+    FRAIA_DISABLE_UPDATES: '1',
+    ...(process.env.FRAIA_REQUIRE_PACKAGED_CALCULIX === '1'
+      ? { FRAIA_CCX_PATH: packagedCalculixPath(layout.resources) }
+      : {}),
+  },
   stdio: 'inherit',
 });
 if (result.error) throw result.error;

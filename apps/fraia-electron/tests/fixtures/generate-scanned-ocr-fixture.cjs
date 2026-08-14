@@ -1,28 +1,11 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { createCanvas } = require('@napi-rs/canvas');
 
 const output = path.join(__dirname, 'scanned-architectural-drawing.pdf');
+const raster = path.join(__dirname, 'scanned-architectural-drawing-raster.jpg');
 const width = 1200;
 const height = 800;
-const canvas = createCanvas(width, height);
-const context = canvas.getContext('2d');
-context.fillStyle = 'white';
-context.fillRect(0, 0, width, height);
-context.strokeStyle = '#222';
-context.lineWidth = 6;
-context.strokeRect(60, 60, width - 120, height - 120);
-context.beginPath();
-context.moveTo(120, 250);
-context.lineTo(1080, 250);
-context.moveTo(300, 130);
-context.lineTo(300, 680);
-context.stroke();
-context.fillStyle = 'black';
-context.font = 'bold 74px sans-serif';
-context.fillText('NORTH ELEVATION', 120, 180);
-context.fillText('LEVEL 6000', 120, 330);
-const jpeg = canvas.toBuffer('image/jpeg', 94);
+const jpeg = fs.readFileSync(raster);
 const pageContent = 'q 1200 0 0 800 0 0 cm /Im0 Do Q';
 
 const objects = [
