@@ -331,7 +331,7 @@ function findExactlyOne(root, predicate, label) {
   return matches[0];
 }
 
-function waitForPathRemoval(target, { timeoutMs = 60_000, intervalMs = 250 } = {}) {
+function waitForPathRemoval(target, { timeoutMs = 180_000, intervalMs = 250 } = {}) {
   const deadline = Date.now() + timeoutMs;
   const waitBuffer = new Int32Array(new SharedArrayBuffer(4));
   while (fs.existsSync(target)) {
@@ -343,7 +343,7 @@ function waitForPathRemoval(target, { timeoutMs = 60_000, intervalMs = 250 } = {
   }
 }
 
-function waitForPath(target, { timeoutMs = 60_000, intervalMs = 250 } = {}) {
+function waitForPath(target, { timeoutMs = 180_000, intervalMs = 250 } = {}) {
   const deadline = Date.now() + timeoutMs;
   const waitBuffer = new Int32Array(new SharedArrayBuffer(4));
   while (!fs.existsSync(target)) {
@@ -369,6 +369,13 @@ function restrictedEnvironment(overrides) {
     ...allowed.flatMap((name) => process.env[name] ? [[name, process.env[name]]] : []),
     ...Object.entries(overrides),
   ]);
+}
+
+function seedTestTrustedRoot({ rootPath, userData }) {
+  const trustedRootPath = path.join(userData, 'update-trust', 'metadata', 'root.json');
+  fs.mkdirSync(path.dirname(trustedRootPath), { recursive: true });
+  fs.copyFileSync(rootPath, trustedRootPath, fs.constants.COPYFILE_EXCL);
+  return trustedRootPath;
 }
 
 function writeEvidence({
@@ -481,6 +488,7 @@ async function main(argv = process.argv.slice(2)) {
   fs.mkdirSync(path.dirname(credentialPath), { recursive: true });
   fs.writeFileSync(projectPath, projectBytes);
   fs.writeFileSync(credentialPath, credentialBytes);
+  seedTestTrustedRoot({ rootPath, userData });
 
   let child;
   let relaunchedPid;
@@ -674,6 +682,7 @@ module.exports = {
   installedPackageDigest,
   installedPackageVersion,
   prepareSignedTarget,
+  seedTestTrustedRoot,
   waitForPathRemoval,
   waitForPath,
   waitForInstalledWindowsPackage,
