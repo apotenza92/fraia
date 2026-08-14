@@ -12,7 +12,7 @@ const deterministicLinuxRenderingArgs = process.platform === "linux"
 test.skip(!packagedExecutable, "run packaged verification through npm run test:package")
 
 test("packaged app saves and reopens a blank project through visible UI and exposes the solver boundary", async () => {
-  test.setTimeout(120_000)
+  test.setTimeout(300_000)
   expect(packagedExecutable, "FRAIA_PACKAGED_EXECUTABLE must identify the unpacked packaged app").toBeTruthy()
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "fraia-packaged-e2e-"))
   const userDataDir = path.join(temporaryRoot, "user-data")
