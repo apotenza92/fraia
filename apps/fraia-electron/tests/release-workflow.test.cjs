@@ -432,7 +432,7 @@ test('native package checks pin the reviewed macOS icon toolchain and determinis
   assert.match(packagedE2e, /require\.resolve\('@playwright\/test\/cli'\)/);
   assert.match(packagedE2e, /spawnSync\(process\.execPath/);
   assert.match(packagedE2e, /assertMacosMinimumVersion/);
-  assert.match(packagedElectronTest, /test\.setTimeout\(120_000\)/);
+  assert.match(packagedElectronTest, /test\.setTimeout\(300_000\)/);
   assert.match(packagedElectronTest, /\[packaged-e2e\]/);
   assert.match(continuousIntegration, /AssetCatalogAgent-AssetRuntime/);
   assert.match(continuousIntegration, /Retrying once after a verified Xcode AssetCatalogAgent infrastructure crash/);
