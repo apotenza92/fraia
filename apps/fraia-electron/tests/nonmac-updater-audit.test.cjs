@@ -13,6 +13,7 @@ const {
   seedTestTrustedRoot,
   waitForPath,
   waitForPathRemoval,
+  windowsInstallDirectory,
   windowsUnpackedDirectoryName,
 } = require('../scripts/test-nonmac-update.cjs');
 const workflow = fs.readFileSync(
@@ -105,6 +106,17 @@ test('native updater audit resolves electron-builder unpacked directories for bo
   assert.equal(windowsUnpackedDirectoryName('x64'), 'win-unpacked');
   assert.equal(windowsUnpackedDirectoryName('arm64'), 'win-arm64-unpacked');
   assert.throws(() => windowsUnpackedDirectoryName('ia32'), /Unsupported Windows package architecture/);
+});
+
+test('native updater audit follows Electron Builder package-name install directories', () => {
+  assert.equal(
+    windowsInstallDirectory('C:\\Users\\runneradmin\\AppData\\Local', 'fraia-electron'),
+    'C:\\Users\\runneradmin\\AppData\\Local\\Programs\\fraia-electron',
+  );
+  assert.equal(
+    windowsInstallDirectory('C:\\Users\\runneradmin\\AppData\\Local', 'fraia-electron-beta'),
+    'C:\\Users\\runneradmin\\AppData\\Local\\Programs\\fraia-electron-beta',
+  );
 });
 
 test('native updater cleanup waits for confirmed uninstaller removal', () => {
@@ -209,7 +221,7 @@ test('native updater workflow performs real TUF-backed Windows and AppImage repl
   assert.match(auditScript, /normal user launch/);
   assert.match(auditScript, /waitForPathRemoval\(installDirectory\)/);
   assert.match(auditScript, /Installed candidate app\.asar SHA-256/);
-  assert.match(auditScript, /LOCALAPPDATA.*Programs.*contract\.productName/);
+  assert.match(auditScript, /windowsInstallDirectory\(process\.env\.LOCALAPPDATA, contract\.packageName\)/);
   assert.doesNotMatch(auditScript, /`\/D=\$\{installDirectory\}`/);
   assert.match(auditScript, /Updater changed existing project data/);
   assert.match(auditScript, /Updater changed existing AI data/);

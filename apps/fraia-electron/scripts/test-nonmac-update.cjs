@@ -207,6 +207,10 @@ function windowsUnpackedDirectoryName(arch) {
   return arch === 'x64' ? 'win-unpacked' : `win-${arch}-unpacked`;
 }
 
+function windowsInstallDirectory(localAppData, packageName) {
+  return path.win32.join(localAppData, 'Programs', packageName);
+}
+
 function windowsProcessIds(executable) {
   return windowsProcessIdsMatching(
     '$_.ExecutablePath -eq $env:FRAIA_AUDIT_EXECUTABLE',
@@ -500,7 +504,7 @@ async function main(argv = process.argv.slice(2)) {
   let failure;
   try {
     if (process.platform === 'win32') {
-      const installDirectory = path.join(process.env.LOCALAPPDATA, 'Programs', contract.productName);
+      const installDirectory = windowsInstallDirectory(process.env.LOCALAPPDATA, contract.packageName);
       if (fs.existsSync(installDirectory)) {
         throw new Error(`Native updater audit requires an unused Windows install directory: ${installDirectory}`);
       }
@@ -687,6 +691,7 @@ module.exports = {
   waitForPath,
   waitForInstalledWindowsPackage,
   windowsUnpackedDirectoryName,
+  windowsInstallDirectory,
   windowsProcessIds,
   windowsProcessIdsWithin,
 };
