@@ -16,6 +16,11 @@ on:
         required: true
         type: string
         default: 0.0.14
+      homebrew_resume_tag:
+        description: Existing published tag whose attested Homebrew bundle should be revalidated and dispatched without rebuilding the release
+        required: false
+        type: string
+        default: ''
 permissions:
   actions: read
   contents: read
@@ -170,6 +175,7 @@ jobs:
   resolve-macos-candidate:
     name: Resolve exact prebuilt macOS candidate
     needs: prepare
+    if: ${{ inputs.homebrew_resume_tag == '' }}
     runs-on: ubuntu-24.04
     outputs:
       reuse: ${{ steps.resolve.outputs.reuse }}
@@ -206,6 +212,7 @@ jobs:
   validate:
     name: Unprivileged release gate
     needs: prepare
+    if: ${{ inputs.homebrew_resume_tag == '' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -286,6 +293,7 @@ jobs:
   build-sidecar:
     name: Native sidecar ${{ matrix.platform }} ${{ matrix.arch }}
     needs: prepare
+    if: ${{ inputs.homebrew_resume_tag == '' }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -1397,7 +1405,10 @@ jobs:
       ${{
         always()
         && needs.prepare.result == 'success'
-        && needs.verify-publication.result == 'success'
+        && (
+          needs.verify-publication.result == 'success'
+          || inputs.homebrew_resume_tag != ''
+        )
       }}
     timeout-minutes: 20
     strategy:
@@ -1415,7 +1426,7 @@ jobs:
           set -euo pipefail
           for attempt in 1 2 3 4; do
             rm -f homebrew-publication.tar.gz
-            if gh release download "${{ github.ref_name }}" --repo "${{ github.repository }}" --pattern homebrew-publication.tar.gz &&
+            if gh release download "${{ inputs.homebrew_resume_tag != '' && inputs.homebrew_resume_tag || github.ref_name }}" --repo "${{ github.repository }}" --pattern homebrew-publication.tar.gz &&
               gh attestation verify homebrew-publication.tar.gz --repo "${{ github.repository }}"; then
               break
             fi
@@ -1451,6 +1462,7 @@ jobs:
           }
           cask_name="${{ matrix.channel == 'stable' && 'fraia.rb' || 'fraia@beta.rb' }}"
           application="${{ matrix.channel == 'stable' && 'Fraia.app' || 'Fraia Beta.app' }}"
+          executable="${{ matrix.channel == 'stable' && 'Fraia' || 'Fraia Beta' }}"
           tap_root="$(brew --repository)/Library/Taps/fraia-validation/homebrew-release"
           token="fraia-validation/release/${cask_name%.rb}"
           cleanup() {
@@ -1466,9 +1478,13 @@ jobs:
           app="/Applications/$application"
           test -d "$app"
           echo "Launching $app."
-          run_with_timeout 30 open -n "$app"
+          launch_log="$RUNNER_TEMP/fraia-homebrew-launch.log"
+          "$app/Contents/MacOS/$executable" >"$launch_log" 2>&1 &
           for _ in {1..30}; do pgrep -f "$app/Contents/MacOS/" >/dev/null && break; sleep 1; done
-          pgrep -f "$app/Contents/MacOS/" >/dev/null
+          if ! pgrep -f "$app/Contents/MacOS/" >/dev/null; then
+            cat "$launch_log" >&2
+            exit 1
+          fi
           echo "$application launched successfully."
 
   dispatch-homebrew-publication:
@@ -1502,9 +1518,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          correlation="${GITHUB_REPOSITORY}:${GITHUB_RUN_ID}:${GITHUB_RUN_ATTEMPT}:${GITHUB_REF_NAME}"
+          tag="${{ inputs.homebrew_resume_tag != '' && inputs.homebrew_resume_tag || github.ref_name }}"
+          release_commit="$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "refs/tags/$tag^{}" | cut -f1)"
+          test -n "$release_commit"
+          correlation="${GITHUB_REPOSITORY}:${GITHUB_RUN_ID}:${GITHUB_RUN_ATTEMPT}:${tag}"
           started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          jq -n --arg product fraia --arg tag "$GITHUB_REF_NAME" --arg release_commit "$GITHUB_SHA" \
+          jq -n --arg product fraia --arg tag "$tag" --arg release_commit "$release_commit" \
             --arg source_run_id "$GITHUB_RUN_ID" --arg source_run_attempt "$GITHUB_RUN_ATTEMPT" \
             --arg correlation_id "$correlation" \
             '{event_type:"publish-homebrew-v1",client_payload:{product:$product,tag:$tag,release_commit:$release_commit,source_run_id:$source_run_id,source_run_attempt:$source_run_attempt,correlation_id:$correlation_id}}' |
