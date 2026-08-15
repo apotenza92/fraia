@@ -435,6 +435,9 @@ test('publication revalidates the reviewed Homebrew auxiliary asset explicitly',
 
 test('Homebrew native validation installs the candidate from a disposable local tap', () => {
   const validation = jobSource('homebrew-native-validation');
+  const dispatch = jobSource('dispatch-homebrew-publication');
+  assert.match(workflow, /homebrew_resume_tag:/);
+  assert.match(validation, /inputs\.homebrew_resume_tag != ''/);
   assert.match(validation, /timeout-minutes: 20/);
   assert.match(validation, /for attempt in 1 2 3 4/);
   assert.match(validation, /gh release download[\s\S]*gh attestation verify/);
@@ -443,9 +446,13 @@ test('Homebrew native validation installs the candidate from a disposable local 
   assert.match(validation, /HOMEBREW_NO_AUTO_UPDATE/);
   assert.match(validation, /run_with_timeout 720 brew install --verbose --cask "\$token"/);
   assert.match(validation, /run_with_timeout 120 brew uninstall --cask "\$token"/);
+  assert.match(validation, /"\$app\/Contents\/MacOS\/\$executable" >"\$launch_log" 2>&1 &/);
+  assert.doesNotMatch(validation, /open -n "\$app"/);
   assert.match(validation, /trap cleanup EXIT/);
   assert.match(validation, /rm -rf "\$\(brew --repository\)\/Library\/Taps\/fraia-validation"/);
   assert.doesNotMatch(validation, /brew install --cask "\$cask"/);
+  assert.match(dispatch, /git ls-remote[\s\S]*refs\/tags\/\$tag\^\{\}/);
+  assert.match(dispatch, /--arg tag "\$tag" --arg release_commit "\$release_commit"/);
 });
 
 test('published TUF metadata refreshes on a trusted schedule without changing targets', () => {
