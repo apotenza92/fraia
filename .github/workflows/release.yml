@@ -1501,6 +1501,26 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Read exact provenance from the attested publication bundle
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.homebrew_resume_tag != '' && inputs.homebrew_resume_tag || github.ref_name }}"
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern homebrew-publication.tar.gz
+          gh attestation verify homebrew-publication.tar.gz --repo "$GITHUB_REPOSITORY"
+          manifest_path="$RUNNER_TEMP/fraia-homebrew-manifest.json"
+          tar -xOzf homebrew-publication.tar.gz manifest.json > "$manifest_path"
+          jq -e --arg tag "$tag" --arg repository "$GITHUB_REPOSITORY" \
+            '.release_tag == $tag and .source_repository == $repository' "$manifest_path" >/dev/null
+          {
+            printf 'tag=%s\n' "$tag"
+            printf 'release_commit=%s\n' "$(jq -r .release_commit "$manifest_path")"
+            printf 'run_id=%s\n' "$(jq -r .native_validation.workflow_run_id "$manifest_path")"
+            printf 'run_attempt=%s\n' "$(jq -r .native_validation.workflow_run_attempt "$manifest_path")"
+          } >> "$GITHUB_OUTPUT"
       - name: Mint dispatch-only tap token
         id: dispatcher
         uses: actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42 # v2
@@ -1518,13 +1538,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag="${{ inputs.homebrew_resume_tag != '' && inputs.homebrew_resume_tag || github.ref_name }}"
-          release_commit="$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "refs/tags/$tag^{}" | cut -f1)"
-          test -n "$release_commit"
+          tag="${{ steps.source.outputs.tag }}"
+          release_commit="${{ steps.source.outputs.release_commit }}"
+          source_run_id="${{ steps.source.outputs.run_id }}"
+          source_run_attempt="${{ steps.source.outputs.run_attempt }}"
           correlation="${GITHUB_REPOSITORY}:${GITHUB_RUN_ID}:${GITHUB_RUN_ATTEMPT}:${tag}"
           started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           jq -n --arg product fraia --arg tag "$tag" --arg release_commit "$release_commit" \
-            --arg source_run_id "$GITHUB_RUN_ID" --arg source_run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg source_run_id "$source_run_id" --arg source_run_attempt "$source_run_attempt" \
             --arg correlation_id "$correlation" \
             '{event_type:"publish-homebrew-v1",client_payload:{product:$product,tag:$tag,release_commit:$release_commit,source_run_id:$source_run_id,source_run_attempt:$source_run_attempt,correlation_id:$correlation_id}}' |
             gh api --method POST "repos/$TAP_REPOSITORY/dispatches" --input -
