@@ -221,6 +221,10 @@ test('routine updater qualification reuses exact candidates and public predecess
   assert.match(nonmacUpdaterAudit, /sha256sum --check --strict/);
   assert.match(nonmacUpdaterAudit, /if: \$\{\{ inputs\.candidate_artifact_name == '' \}\}/);
   assert.match(assemble, /always\(\)[\s\S]*needs\.macos-candidates-ready\.result == 'success'[\s\S]*needs\.test-macos-updater\.result == 'success'[\s\S]*needs\.test-nonmac-updater\.result == 'success'/);
+  assert.match(assemble, /for TARGET in darwin-arm64 darwin-x64 win32-arm64 win32-x64 linux-arm64 linux-x64/);
+  assert.match(assemble, /candidates\/fraia-\$CHANNEL-\$TARGET\/assets/);
+  assert.match(assemble, /candidates\/calculix-source\/assets/);
+  assert.doesNotMatch(assemble, /find candidates -type d -name assets/);
 });
 
 test('canonical Apple credentials are isolated from build and followed by credential-free verification', () => {

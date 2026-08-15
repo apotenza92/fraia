@@ -947,16 +947,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t INPUTS < <(find candidates -type d -name assets | LC_ALL=C sort)
           ARGS=()
-          for input in "${INPUTS[@]}"; do ARGS+=(--input "$input"); done
+          IFS=, read -r -a CHANNELS <<< "${{ needs.prepare.outputs.channels_csv }}"
+          for CHANNEL in "${CHANNELS[@]}"; do
+            for TARGET in darwin-arm64 darwin-x64 win32-arm64 win32-x64 linux-arm64 linux-x64; do
+              INPUT="candidates/fraia-$CHANNEL-$TARGET/assets"
+              test -d "$INPUT"
+              ARGS+=(--input "$INPUT")
+            done
+          done
+          ARGS+=(--input candidates/calculix-source/assets)
           node apps/fraia-electron/scripts/release-assets.cjs \
             --channels "${{ needs.prepare.outputs.channels_csv }}" \
             --output publish/assets \
             "${ARGS[@]}" > expected-assets.txt
           mkdir -p publish/feed
           while IFS= read -r feed_root; do cp -R "$feed_root/." publish/feed/; done < <(find candidates -type d -name feed | LC_ALL=C sort)
-          IFS=, read -r -a CHANNELS <<< "${{ needs.prepare.outputs.channels_csv }}"
           for CHANNEL in "${CHANNELS[@]}"; do
             test "$(find "publish/feed/$CHANNEL" -type f | wc -l | tr -d ' ')" = 6
           done
