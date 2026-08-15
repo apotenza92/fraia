@@ -208,6 +208,7 @@ test('manual release simulation reuses candidate qualification and cannot publis
 });
 
 test('routine updater qualification reuses exact candidates and public predecessors', () => {
+  const assemble = jobSource('assemble');
   const macosUpdater = jobSource('test-macos-updater');
   const nonmacUpdater = jobSource('test-nonmac-updater');
   assert.match(macosUpdater, /always\(\).*needs\.macos-candidates-ready\.result == 'success'/);
@@ -219,6 +220,7 @@ test('routine updater qualification reuses exact candidates and public predecess
   assert.match(nonmacUpdaterAudit, /gh release download "v\$\{\{ inputs\.previous_version \}\}"/);
   assert.match(nonmacUpdaterAudit, /sha256sum --check --strict/);
   assert.match(nonmacUpdaterAudit, /if: \$\{\{ inputs\.candidate_artifact_name == '' \}\}/);
+  assert.match(assemble, /always\(\)[\s\S]*needs\.macos-candidates-ready\.result == 'success'[\s\S]*needs\.test-macos-updater\.result == 'success'[\s\S]*needs\.test-nonmac-updater\.result == 'success'/);
 });
 
 test('canonical Apple credentials are isolated from build and followed by credential-free verification', () => {

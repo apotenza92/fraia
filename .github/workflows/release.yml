@@ -898,6 +898,17 @@ jobs:
   assemble:
     name: Assemble exact release bundle
     needs: [prepare, macos-candidates-ready, package-windows, package-linux, test-macos-updater, test-nonmac-updater]
+    if: >-
+      ${{
+        always()
+        && needs.prepare.result == 'success'
+        && needs.prepare.outputs.simulation != 'true'
+        && needs.macos-candidates-ready.result == 'success'
+        && needs.package-windows.result == 'success'
+        && needs.package-linux.result == 'success'
+        && needs.test-macos-updater.result == 'success'
+        && needs.test-nonmac-updater.result == 'success'
+      }}
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
