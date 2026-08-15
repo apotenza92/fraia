@@ -8,7 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const YAML = require('yaml');
 const { releaseContract } = require('../release-contract.cjs');
-const { extractedZip, normalizeFingerprint, verifyApp } = require('./verify-macos-package.cjs');
+const { extractedZip, inspectSigningExpectations, verifyApp } = require('./verify-macos-package.cjs');
 
 function option(argv, name, fallback = null) {
   const index = argv.indexOf(name);
@@ -283,19 +283,19 @@ async function main(argv = process.argv.slice(2)) {
   run('gh', ['attestation', 'verify', previousZip, '--repo', repository]);
 
   const contract = releaseContract({ channel, platform: 'darwin', arch });
-  const currentExpectations = {
-    fingerprint: normalizeFingerprint(process.env.APPLE_SIGNING_CERTIFICATE_SHA256),
-    identity: process.env.APPLE_SIGNING_IDENTITY?.trim(),
-    teamId: process.env.APPLE_TEAM_ID?.trim(),
-  };
-  const priorExpectations = {
-    ...currentExpectations,
-    fingerprint: normalizeFingerprint(
-      process.env.APPLE_PRIOR_SIGNING_CERTIFICATE_SHA256
-        || process.env.APPLE_SIGNING_CERTIFICATE_SHA256,
-    ),
-  };
-  if (!currentExpectations.identity || !currentExpectations.teamId) throw new Error('Updater verification requires signing identity variables.');
+  const candidateZip = path.join(candidateDirectory, `${contract.artifactPrefix}-macOS-${arch}.zip`);
+  const currentExpectations = extractedZip(candidateZip, (directory) => (
+    inspectSigningExpectations(path.join(directory, contract.appName))
+  ));
+  const priorExpectations = extractedZip(previousZip, (directory) => (
+    inspectSigningExpectations(path.join(directory, contract.appName))
+  ));
+  if (
+    priorExpectations.teamId !== currentExpectations.teamId
+    || priorExpectations.identity !== currentExpectations.identity
+  ) {
+    throw new Error('The previous and candidate packages do not share the same Developer ID application identity.');
+  }
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-updater-'));
   let child;
   let executable;
