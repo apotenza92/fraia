@@ -255,13 +255,15 @@ function windowsProcessIdsMatching(predicate, environment) {
 }
 
 async function waitForInstalledWindowsPackage({
-  candidateArchive,
+  expectedDigest,
   eventPath,
   executable,
   version,
   timeoutMs = 180_000,
 }) {
-  const expectedDigest = digest(candidateArchive, 'sha256', 'hex');
+  if (!/^[a-f0-9]{64}$/.test(expectedDigest)) {
+    throw new Error('Candidate Windows app.asar SHA-256 is invalid.');
+  }
   const deadline = Date.now() + timeoutMs;
   let lastDigest = '<unreadable>';
   let lastVersion = '<unreadable>';
@@ -460,6 +462,10 @@ async function main(argv = process.argv.slice(2)) {
   const previousArtifact = path.resolve(option(argv, '--previous-artifact'));
   const candidateDirectory = path.resolve(option(argv, '--candidate-directory'));
   const candidateMetadata = path.resolve(option(argv, '--candidate-metadata'));
+  const candidateAsarChecksumOption = option(argv, '--candidate-asar-checksum');
+  const candidateAsarChecksum = candidateAsarChecksumOption
+    ? path.resolve(candidateAsarChecksumOption)
+    : null;
   const evidenceDirectory = path.resolve(option(argv, '--evidence'));
   const privateKeyPath = path.resolve(option(argv, '--private-key'));
   const rootPath = path.resolve(option(argv, '--root'));
@@ -554,17 +560,12 @@ async function main(argv = process.argv.slice(2)) {
       if (event.currentVersion === server.version) {
         throw new Error('Windows updater audit did not start from the previous version.');
       }
-      const candidateArchive = path.join(
-        candidateDirectory,
-        windowsUnpackedDirectoryName(arch),
-        'resources',
-        'app.asar',
-      );
-      if (!fs.existsSync(candidateArchive)) {
-        throw new Error('Candidate Windows ASAR is missing from the package output.');
-      }
+      const candidateArchive = path.join(candidateDirectory, windowsUnpackedDirectoryName(arch), 'resources', 'app.asar');
+      const expectedDigest = candidateAsarChecksum
+        ? fs.readFileSync(candidateAsarChecksum, 'utf8').trim()
+        : digest(candidateArchive, 'sha256', 'hex');
       installedCandidateDigest = await waitForInstalledWindowsPackage({
-        candidateArchive,
+        expectedDigest,
         eventPath,
         executable: installedExecutable,
         version: server.version,

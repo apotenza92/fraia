@@ -223,6 +223,7 @@ jobs:
               --previous-artifact "$previous_root/$prefix-Windows-${arch}-Setup.exe" \
               --candidate-directory "$candidate_assets_root" \
               --candidate-metadata "$candidate_metadata" \
+              ${{ inputs.candidate_artifact_name != '' && '--candidate-asar-checksum "$GITHUB_WORKSPACE/candidate/audit/app.asar.sha256"' || '' }} \
               --root build/update-trust/root.json \
               --private-key '${{ runner.temp }}/fraia-updater-trust/private-key.pem' \
               --evidence '${{ runner.temp }}/fraia-updater-evidence'
