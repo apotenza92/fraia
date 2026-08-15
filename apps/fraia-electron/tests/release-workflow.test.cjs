@@ -451,7 +451,10 @@ test('Homebrew native validation installs the candidate from a disposable local 
   assert.match(validation, /trap cleanup EXIT/);
   assert.match(validation, /rm -rf "\$\(brew --repository\)\/Library\/Taps\/fraia-validation"/);
   assert.doesNotMatch(validation, /brew install --cask "\$cask"/);
-  assert.match(dispatch, /git ls-remote[\s\S]*refs\/tags\/\$tag\^\{\}/);
+  assert.match(dispatch, /gh attestation verify homebrew-publication\.tar\.gz/);
+  assert.match(dispatch, /native_validation\.workflow_run_id/);
+  assert.match(dispatch, /native_validation\.workflow_run_attempt/);
+  assert.match(dispatch, /steps\.source\.outputs\.run_id/);
   assert.match(dispatch, /--arg tag "\$tag" --arg release_commit "\$release_commit"/);
 });
 
