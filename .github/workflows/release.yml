@@ -1006,6 +1006,7 @@ jobs:
   attest:
     name: Attest release bundle
     needs: assemble
+    if: ${{ always() && needs.assemble.result == 'success' }}
     runs-on: ubuntu-24.04
     permissions:
       artifact-metadata: write
@@ -1027,7 +1028,13 @@ jobs:
   seal-tuf:
     name: Sign Windows and Linux update repositories
     needs: [prepare, assemble]
-    if: ${{ needs.prepare.outputs.simulation != 'true' }}
+    if: >-
+      ${{
+        always()
+        && needs.prepare.result == 'success'
+        && needs.assemble.result == 'success'
+        && needs.prepare.outputs.simulation != 'true'
+      }}
     runs-on: ubuntu-24.04
     environment: update-signing
     permissions:
@@ -1324,6 +1331,12 @@ jobs:
   verify-publication:
     name: Verify public release and feeds
     needs: [prepare, publish]
+    if: >-
+      ${{
+        always()
+        && needs.prepare.result == 'success'
+        && needs.publish.result == 'success'
+      }}
     runs-on: ubuntu-24.04
     steps:
       - name: Download expected sealed updater feeds
@@ -1380,6 +1393,12 @@ jobs:
   homebrew-native-validation:
     name: Homebrew ${{ matrix.channel }} (${{ matrix.architecture }})
     needs: [prepare, verify-publication]
+    if: >-
+      ${{
+        always()
+        && needs.prepare.result == 'success'
+        && needs.verify-publication.result == 'success'
+      }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -1455,6 +1474,12 @@ jobs:
   dispatch-homebrew-publication:
     name: Dispatch and await tap-owned Homebrew publication
     needs: [prepare, homebrew-native-validation]
+    if: >-
+      ${{
+        always()
+        && needs.prepare.result == 'success'
+        && needs.homebrew-native-validation.result == 'success'
+      }}
     runs-on: ubuntu-24.04
     environment: homebrew-dispatch
     permissions:

@@ -227,6 +227,14 @@ test('routine updater qualification reuses exact candidates and public predecess
   assert.doesNotMatch(assemble, /find candidates -type d -name assets/);
 });
 
+test('publication jobs explicitly continue after successful gates with skipped alternate paths', () => {
+  assert.match(jobSource('attest'), /always\(\)[\s\S]*needs\.assemble\.result == 'success'/);
+  assert.match(jobSource('seal-tuf'), /always\(\)[\s\S]*needs\.prepare\.result == 'success'[\s\S]*needs\.assemble\.result == 'success'/);
+  assert.match(jobSource('verify-publication'), /always\(\)[\s\S]*needs\.prepare\.result == 'success'[\s\S]*needs\.publish\.result == 'success'/);
+  assert.match(jobSource('homebrew-native-validation'), /always\(\)[\s\S]*needs\.prepare\.result == 'success'[\s\S]*needs\.verify-publication\.result == 'success'/);
+  assert.match(jobSource('dispatch-homebrew-publication'), /always\(\)[\s\S]*needs\.prepare\.result == 'success'[\s\S]*needs\.homebrew-native-validation\.result == 'success'/);
+});
+
 test('canonical Apple credentials are isolated from build and followed by credential-free verification', () => {
   for (const name of [
     'APPLE_SIGNING_CERTIFICATE_P12_BASE64', 'APPLE_SIGNING_CERTIFICATE_PASSWORD',
