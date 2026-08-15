@@ -664,6 +664,10 @@ jobs:
           PREFIX=$(node -p "require('./release-contract.cjs').releaseContract({channel: '$CHANNEL', platform: 'win32', arch: '${{ matrix.arch }}'}).artifactPrefix")
           STEM="$PREFIX-Windows-${{ matrix.arch }}-Setup.exe"
           cp "$OUTPUT/$STEM" "$OUTPUT/$STEM.blockmap" ci-output/assets/
+          mkdir -p ci-output/audit
+          UNPACKED='${{ matrix.arch == 'x64' && 'win-unpacked' || 'win-arm64-unpacked' }}'
+          node -e "const fs=require('node:fs');const crypto=require('node:crypto');const file=process.argv[1];process.stdout.write(crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')+'\\n')" \
+            "$OUTPUT/$UNPACKED/resources/app.asar" > ci-output/audit/app.asar.sha256
 
       - name: Upload Windows candidate
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

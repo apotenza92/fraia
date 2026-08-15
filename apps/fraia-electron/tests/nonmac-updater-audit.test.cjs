@@ -24,6 +24,10 @@ const continuousIntegration = fs.readFileSync(
   path.resolve(__dirname, '..', '..', '..', '.github', 'workflows', 'ci.yml'),
   'utf8',
 );
+const releaseWorkflow = fs.readFileSync(
+  path.resolve(__dirname, '..', '..', '..', '.github', 'workflows', 'release.yml'),
+  'utf8',
+);
 const auditScript = fs.readFileSync(
   path.resolve(__dirname, '..', 'scripts', 'test-nonmac-update.cjs'),
   'utf8',
@@ -214,7 +218,9 @@ test('native updater workflow performs real TUF-backed Windows and AppImage repl
   assert.match(auditScript, /installedPackageVersion/);
   assert.match(auditScript, /waitForInstalledWindowsPackage/);
   assert.match(auditScript, /installedPackageDigest/);
-  assert.match(auditScript, /candidateDirectory.*windowsUnpackedDirectoryName\(arch\).*resources.*app\.asar/s);
+  assert.match(auditScript, /--candidate-asar-checksum/);
+  assert.match(auditScript, /Candidate Windows app\.asar SHA-256 is invalid/);
+  assert.match(releaseWorkflow, /ci-output\/audit\/app\.asar\.sha256/);
   assert.match(auditScript, /Get-CimInstance Win32_Process/);
   assert.match(auditScript, /StringComparison.*OrdinalIgnoreCase/);
   assert.match(auditScript, /taskkill\.exe/);
