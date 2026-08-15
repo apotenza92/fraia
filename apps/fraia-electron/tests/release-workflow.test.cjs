@@ -340,7 +340,9 @@ test('large release assets bypass updater-feed signing and public feed compariso
 test('each publication atomically advances only higher-SemVer identity-isolated updater feeds', () => {
   assert.match(workflow, /EXPECTED_PREVIOUS_VERSION/);
   assert.match(workflow, /expectedTag = `v\$\{process\.env\.EXPECTED_PREVIOUS_VERSION\}`/);
-  assert.match(workflow, /APPLE_PRIOR_SIGNING_CERTIFICATE_SHA256/);
+  assert.doesNotMatch(jobSource('test-macos-updater'), /APPLE_(?:PRIOR_)?SIGNING_CERTIFICATE_SHA256|APPLE_SIGNING_IDENTITY|APPLE_TEAM_ID/);
+  assert.match(updaterTest, /inspectSigningExpectations/);
+  assert.match(updaterTest, /same Developer ID application identity/);
   assert.match(updaterTest, /priorExpectations/);
   assert.match(workflow, /needs: \[prepare, seal-tuf, attest\]/);
   assert.match(workflow, /environment: update-signing/);

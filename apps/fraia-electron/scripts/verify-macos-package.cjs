@@ -130,6 +130,25 @@ function validateSignature(target, expectations, certificateRoot, index, validat
   }
 }
 
+function inspectSigningExpectations(target) {
+  run('codesign', ['--verify', '--strict', '--verbose=2', target]);
+  const details = run('codesign', ['-d', '--verbose=4', target]);
+  const combined = `${details.stdout || ''}${details.stderr || ''}`;
+  const teamId = combined.match(/^TeamIdentifier=([^\r\n]+)$/m)?.[1]?.trim();
+  const identity = combined.match(/^Authority=(Developer ID Application:[^\r\n]+)$/m)?.[1]?.trim();
+  if (!teamId || !identity) throw new Error(`${target} does not expose a Developer ID application identity.`);
+  const certificateRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fraia-signing-expectations-'));
+  try {
+    const prefix = path.join(certificateRoot, 'cert-');
+    run('codesign', ['-d', `--extract-certificates=${prefix}`, target]);
+    const leaf = `${prefix}0`;
+    if (!fs.existsSync(leaf)) throw new Error(`${target} did not expose its leaf certificate.`);
+    return { fingerprint: hashFile(leaf), identity, teamId };
+  } finally {
+    fs.rmSync(certificateRoot, { recursive: true, force: true });
+  }
+}
+
 function extractPackageMetadata(appPath) {
   const archive = path.join(appPath, 'Contents', 'Resources', 'app.asar');
   if (!fs.existsSync(archive)) throw new Error(`Packaged asar is missing: ${archive}`);
@@ -296,6 +315,7 @@ if (require.main === module) main();
 module.exports = {
   extractPackageMetadata,
   extractedZip,
+  inspectSigningExpectations,
   isValidChannelVersion,
   normalizeFingerprint,
   verifyApp,
