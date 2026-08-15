@@ -794,7 +794,7 @@ jobs:
   test-macos-updater:
     name: macOS updater ${{ matrix.channel }} ${{ matrix.scenario }} ${{ matrix.arch }}
     needs: [prepare, macos-candidates-ready]
-    if: ${{ needs.prepare.outputs.simulation != 'true' }}
+    if: ${{ always() && needs.prepare.outputs.simulation != 'true' && needs.macos-candidates-ready.result == 'success' }}
     runs-on: ${{ matrix.arch == 'arm64' && 'macos-15' || 'macos-15-intel' }}
     environment:
       name: ${{ matrix.channel }}-updater-verification

@@ -210,6 +210,7 @@ test('manual release simulation reuses candidate qualification and cannot publis
 test('routine updater qualification reuses exact candidates and public predecessors', () => {
   const macosUpdater = jobSource('test-macos-updater');
   const nonmacUpdater = jobSource('test-nonmac-updater');
+  assert.match(macosUpdater, /always\(\).*needs\.macos-candidates-ready\.result == 'success'/);
   assert.match(macosUpdater, /scenario: \[valid\]/);
   assert.doesNotMatch(macosUpdater, /corrupt|signature/);
   assert.match(nonmacUpdater, /needs: \[prepare, package-windows, package-linux\]/);
