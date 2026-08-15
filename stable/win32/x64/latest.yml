@@ -1,16 +1,44 @@
-version: 0.0.14
+version: 0.0.15
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Windows-x64-Setup.exe
-    sha512: L2Wo0mVH2ArLjlUfAh1JQcnr9uEK0y18BwKxHomc4JxdujewgGzrxUBQmnJ/4zGv8VSvRtx/ML0p+5ejoMqiyg==
-    size: 120413894
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Windows-x64-Setup.exe
-sha512: L2Wo0mVH2ArLjlUfAh1JQcnr9uEK0y18BwKxHomc4JxdujewgGzrxUBQmnJ/4zGv8VSvRtx/ML0p+5ejoMqiyg==
-releaseName: Fraia 0.0.14
-releaseNotes: "### Fixed\r
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.15/Fraia-Windows-x64-Setup.exe
+    sha512: ouh66qYVFZTh5TqksFOJfztLisz6N04HyxdiE9v+aDScoxKiY4CxRtG9gV9L66AHsncV/KT9NA5B4K0gUmGFzw==
+    size: 138374028
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.15/Fraia-Windows-x64-Setup.exe
+sha512: ouh66qYVFZTh5TqksFOJfztLisz6N04HyxdiE9v+aDScoxKiY4CxRtG9gV9L66AHsncV/KT9NA5B4K0gUmGFzw==
+releaseName: Fraia 0.0.15
+releaseNotes: "### Added\r
 
   \r
 
-  - Wait for the development sidecar health signal before the real Electron conversation test creates a model.\r
+  - New blank models now open immediately as untitled projects in Fraia-managed recovery storage.\r
 
-  - Allow slow source builds more startup time without weakening packaged-app startup checks."
-releaseDate: 2026-08-13T07:29:06.975Z
+  - Save and Save As create one dedicated, inspectable project folder on macOS, Windows, and Linux.\r
+
+  - The File menu now provides Save and Save As with standard cross-platform keyboard shortcuts.\r
+
+  \r
+
+  ### Changed\r
+
+  \r
+
+  - Release jobs now build each native sidecar once, reuse reviewed renderer and sidecar artefacts, and split large application assets from updater-feed signing transfers.\r
+
+  \r
+
+  ### Fixed\r
+
+  \r
+
+  - Creating a blank model no longer asks the user to select an existing folder or places Fraia files beside unrelated files.\r
+
+  - Saving releases the Rust-owned SQLite workspace before moving project data, so the folder workflow remains safe on Windows.\r
+
+  \r
+
+  ### Updating\r
+
+  \r
+
+  - Stable and Beta installations update to separately packaged `0.0.15` application identities on their existing channels."
+releaseDate: 2026-08-15T06:18:33.509Z

@@ -1,17 +1,31 @@
-version: 0.0.14
+version: 0.0.15
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Beta-macOS-arm64.zip
-    sha512: f6Ox4sJtvuvTgAm6tVJ/VxcNbqQnw1O01f3DN5P1aRf61QOuz2q+mgCOiaD6PlhbJAsrDqGEVMITb5AE9jAQkg==
-    size: 131065293
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Beta-macOS-arm64.dmg
-    sha512: cZ46AKo2qOQ5FQAbNVQFjeQtOgHzbwMPs37flSnsVXMpeU9+VVAZnmD79Vdgk/onTLnkAwubwoUnG014/+tA1g==
-    size: 122685187
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Beta-macOS-arm64.zip
-sha512: f6Ox4sJtvuvTgAm6tVJ/VxcNbqQnw1O01f3DN5P1aRf61QOuz2q+mgCOiaD6PlhbJAsrDqGEVMITb5AE9jAQkg==
-releaseName: Fraia Beta 0.0.14
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.15/Fraia-Beta-macOS-arm64.zip
+    sha512: XzxQbFnYAZpzQ+eGixl+zLlPN+PazKVzafGZ/Gok0s8+6FMLH2Irc5juPaCGQ/ULCVv2NFt7IQMYvBgCJKtQIA==
+    size: 154159154
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.15/Fraia-Beta-macOS-arm64.dmg
+    sha512: RD/dnv/t3CDJ5kSYXWieQyq01XwAv5A5UTMQbYYHLGw9DjlIsvu4yRDx+VXgmhszSUNTGSSAZ4EXZKVTCfAwPg==
+    size: 144525537
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.15/Fraia-Beta-macOS-arm64.zip
+sha512: XzxQbFnYAZpzQ+eGixl+zLlPN+PazKVzafGZ/Gok0s8+6FMLH2Irc5juPaCGQ/ULCVv2NFt7IQMYvBgCJKtQIA==
+releaseName: Fraia Beta 0.0.15
 releaseNotes: |-
+  ### Added
+
+  - New blank models now open immediately as untitled projects in Fraia-managed recovery storage.
+  - Save and Save As create one dedicated, inspectable project folder on macOS, Windows, and Linux.
+  - The File menu now provides Save and Save As with standard cross-platform keyboard shortcuts.
+
+  ### Changed
+
+  - Release jobs now build each native sidecar once, reuse reviewed renderer and sidecar artefacts, and split large application assets from updater-feed signing transfers.
+
   ### Fixed
 
-  - Wait for the development sidecar health signal before the real Electron conversation test creates a model.
-  - Allow slow source builds more startup time without weakening packaged-app startup checks.
-releaseDate: 2026-08-13T07:38:13.262Z
+  - Creating a blank model no longer asks the user to select an existing folder or places Fraia files beside unrelated files.
+  - Saving releases the Rust-owned SQLite workspace before moving project data, so the folder workflow remains safe on Windows.
+
+  ### Updating
+
+  - Stable and Beta installations update to separately packaged `0.0.15` application identities on their existing channels.
+releaseDate: 2026-08-15T06:30:54.238Z

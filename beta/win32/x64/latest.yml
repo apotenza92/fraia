@@ -1,16 +1,44 @@
-version: 0.0.14
+version: 0.0.15
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Beta-Windows-x64-Setup.exe
-    sha512: +osk6G1lw2KFJUOjPTlLAPYIoJqinohAuIE/y4AoDAYXQr6jItE368h8bw1CZdVtPgpPULMfe9fPgw1SrR4NDQ==
-    size: 120419339
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Beta-Windows-x64-Setup.exe
-sha512: +osk6G1lw2KFJUOjPTlLAPYIoJqinohAuIE/y4AoDAYXQr6jItE368h8bw1CZdVtPgpPULMfe9fPgw1SrR4NDQ==
-releaseName: Fraia Beta 0.0.14
-releaseNotes: "### Fixed\r
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.15/Fraia-Beta-Windows-x64-Setup.exe
+    sha512: 2HqXETh6N/VW/b0wHhMzajwhe58pC4WLTE48Mc0kHbXkQvlX6TsbvXGlI3ZmtBX2phYByEegx/yS19O/BYJ/BA==
+    size: 138379588
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.15/Fraia-Beta-Windows-x64-Setup.exe
+sha512: 2HqXETh6N/VW/b0wHhMzajwhe58pC4WLTE48Mc0kHbXkQvlX6TsbvXGlI3ZmtBX2phYByEegx/yS19O/BYJ/BA==
+releaseName: Fraia Beta 0.0.15
+releaseNotes: "### Added\r
 
   \r
 
-  - Wait for the development sidecar health signal before the real Electron conversation test creates a model.\r
+  - New blank models now open immediately as untitled projects in Fraia-managed recovery storage.\r
 
-  - Allow slow source builds more startup time without weakening packaged-app startup checks."
-releaseDate: 2026-08-13T07:29:00.895Z
+  - Save and Save As create one dedicated, inspectable project folder on macOS, Windows, and Linux.\r
+
+  - The File menu now provides Save and Save As with standard cross-platform keyboard shortcuts.\r
+
+  \r
+
+  ### Changed\r
+
+  \r
+
+  - Release jobs now build each native sidecar once, reuse reviewed renderer and sidecar artefacts, and split large application assets from updater-feed signing transfers.\r
+
+  \r
+
+  ### Fixed\r
+
+  \r
+
+  - Creating a blank model no longer asks the user to select an existing folder or places Fraia files beside unrelated files.\r
+
+  - Saving releases the Rust-owned SQLite workspace before moving project data, so the folder workflow remains safe on Windows.\r
+
+  \r
+
+  ### Updating\r
+
+  \r
+
+  - Stable and Beta installations update to separately packaged `0.0.15` application identities on their existing channels."
+releaseDate: 2026-08-15T06:18:19.224Z

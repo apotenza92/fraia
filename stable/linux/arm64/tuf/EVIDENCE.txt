@@ -2,13 +2,13 @@ Fraia production TUF repository
 Root version: 1
 Root SHA-256: db88d4445135c02065824de9d035803bfc0b2b7a6eb0e5bb2fc57556e39d478e
 Target: latest-linux-arm64.yml
-Target SHA-256: f2aa6f4101d63af26c55a3e54399b7cd169f4f9c71f094d00299be3852b4f699
-targets version: 10
-targets expires: 2027-08-13T08:50:48.000Z
+Target SHA-256: a117f6427578d27cb1ca5d8d5847d57fb24c94ca781616b4b1b4680a18926ae5
+targets version: 11
+targets expires: 2027-08-15T06:53:43.000Z
 targets key ID: 5891691c4bd4a5b708b6bce7d56d302bac748abca683c5575c5904bdce4f4936
-snapshot version: 10
-snapshot expires: 2027-02-09T08:50:48.000Z
+snapshot version: 11
+snapshot expires: 2027-02-11T06:53:43.000Z
 snapshot key ID: 1edd6a865f7f08098715d087545a12cab2b12f6f071466bbfde470cc801ca595
-timestamp version: 10
-timestamp expires: 2026-09-27T08:50:48.000Z
+timestamp version: 11
+timestamp expires: 2026-09-29T06:53:43.000Z
 timestamp key ID: 08b9ba818e587d78ffb0a2ea3b9ea246a7445ad1547e3d96bdba00de714380d0

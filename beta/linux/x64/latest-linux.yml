@@ -1,21 +1,35 @@
-version: 0.0.14
+version: 0.0.15
 files:
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Beta-Linux-x64.AppImage
-    sha512: gawW1X8ZZbahKNzfrUA/bLkffHv3KAgE/RmoAuMSS6SFRrORtOTOb4K8znrbb+s/Xrx+Q8y/hzpS3636zCqQjg==
-    size: 108379525
-    blockMapSize: 114073
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Beta-Linux-x64.deb
-    sha512: KpPqxJCiMK8kGUVBsGX/ip9MWfB0oGGXnu9v7yzr1//1C3HEDHnaGanjG/hJWiALO2+kNi3JzFKjYUO1e1JH2Q==
-    size: 107960644
-  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Beta-Linux-x64.rpm
-    sha512: ajL1yvmQHhM7p9zDbrnu7kikcKECrbq6P/63BTAMPmMqlVQBpQCD1KPh8Iyfw6vmJxQ9TJF+B63fjL5EaroBmA==
-    size: 94987093
-path: https://github.com/apotenza92/fraia/releases/download/v0.0.14/Fraia-Beta-Linux-x64.AppImage
-sha512: gawW1X8ZZbahKNzfrUA/bLkffHv3KAgE/RmoAuMSS6SFRrORtOTOb4K8znrbb+s/Xrx+Q8y/hzpS3636zCqQjg==
-releaseName: Fraia Beta 0.0.14
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.15/Fraia-Beta-Linux-x64.AppImage
+    sha512: YVAQ4oaVqT3XU7J1TJHSiJD501cCiZ31/z+MAjMcFnCm6zAm+uql2usXyTAD+DkfALDJp2S7fQrQeSzsCXZQIw==
+    size: 127071737
+    blockMapSize: 132621
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.15/Fraia-Beta-Linux-x64.deb
+    sha512: dy4rnpG4RT0GnkkjG2w6kvN7qdILgsZ3PHdIbigXxJVE7vhjdZjkTasDRnpU/4kNK8AbWAl7h658AEbRwafadA==
+    size: 127419332
+  - url: https://github.com/apotenza92/fraia/releases/download/v0.0.15/Fraia-Beta-Linux-x64.rpm
+    sha512: QqrBwXLem7bykoXDNvZX6ZiKU2TCSnU7NFhaL9AIREPa6yPVlZ52k+I90ig9CToQM4AqkGf0bEsnfu71KZ76XA==
+    size: 106885129
+path: https://github.com/apotenza92/fraia/releases/download/v0.0.15/Fraia-Beta-Linux-x64.AppImage
+sha512: YVAQ4oaVqT3XU7J1TJHSiJD501cCiZ31/z+MAjMcFnCm6zAm+uql2usXyTAD+DkfALDJp2S7fQrQeSzsCXZQIw==
+releaseName: Fraia Beta 0.0.15
 releaseNotes: |-
+  ### Added
+
+  - New blank models now open immediately as untitled projects in Fraia-managed recovery storage.
+  - Save and Save As create one dedicated, inspectable project folder on macOS, Windows, and Linux.
+  - The File menu now provides Save and Save As with standard cross-platform keyboard shortcuts.
+
+  ### Changed
+
+  - Release jobs now build each native sidecar once, reuse reviewed renderer and sidecar artefacts, and split large application assets from updater-feed signing transfers.
+
   ### Fixed
 
-  - Wait for the development sidecar health signal before the real Electron conversation test creates a model.
-  - Allow slow source builds more startup time without weakening packaged-app startup checks.
-releaseDate: 2026-08-13T07:29:40.088Z
+  - Creating a blank model no longer asks the user to select an existing folder or places Fraia files beside unrelated files.
+  - Saving releases the Rust-owned SQLite workspace before moving project data, so the folder workflow remains safe on Windows.
+
+  ### Updating
+
+  - Stable and Beta installations update to separately packaged `0.0.15` application identities on their existing channels.
+releaseDate: 2026-08-15T06:21:37.105Z
