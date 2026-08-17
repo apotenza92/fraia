@@ -3,12 +3,12 @@ Root version: 1
 Root SHA-256: db88d4445135c02065824de9d035803bfc0b2b7a6eb0e5bb2fc57556e39d478e
 Target: latest-linux.yml
 Target SHA-256: 99107da911176fde7929186c014bc778145b6479100fdaab24e5516e4506ef68
-targets version: 11
-targets expires: 2027-08-15T06:53:43.000Z
+targets version: 12
+targets expires: 2027-08-17T04:04:44.000Z
 targets key ID: 5891691c4bd4a5b708b6bce7d56d302bac748abca683c5575c5904bdce4f4936
-snapshot version: 11
-snapshot expires: 2027-02-11T06:53:43.000Z
+snapshot version: 12
+snapshot expires: 2027-02-13T04:04:44.000Z
 snapshot key ID: 1edd6a865f7f08098715d087545a12cab2b12f6f071466bbfde470cc801ca595
-timestamp version: 11
-timestamp expires: 2026-09-29T06:53:43.000Z
+timestamp version: 12
+timestamp expires: 2026-10-01T04:04:44.000Z
 timestamp key ID: 08b9ba818e587d78ffb0a2ea3b9ea246a7445ad1547e3d96bdba00de714380d0
