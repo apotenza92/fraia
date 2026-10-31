@@ -1473,6 +1473,8 @@ jobs:
           trap cleanup EXIT
           mkdir -p "$tap_root/Casks"
           cp "$PWD/publication/Casks/$cask_name" "$tap_root/Casks/$cask_name"
+          # Homebrew 7 refuses to load casks from untrusted third-party taps.
+          brew trust --tap fraia-validation/release
           echo "Installing $token with a 12-minute limit."
           run_with_timeout 720 brew install --verbose --cask "$token"
           app="/Applications/$application"
