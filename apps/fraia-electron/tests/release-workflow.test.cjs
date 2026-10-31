@@ -444,6 +444,7 @@ test('Homebrew native validation installs the candidate from a disposable local 
   assert.match(validation, /failed after \$attempt attempts/);
   assert.match(validation, /Library\/Taps\/fraia-validation\/homebrew-release/);
   assert.match(validation, /HOMEBREW_NO_AUTO_UPDATE/);
+  assert.match(validation, /brew trust --tap fraia-validation\/release/);
   assert.match(validation, /run_with_timeout 720 brew install --verbose --cask "\$token"/);
   assert.match(validation, /run_with_timeout 120 brew uninstall --cask "\$token"/);
   assert.match(validation, /"\$app\/Contents\/MacOS\/\$executable" >"\$launch_log" 2>&1 &/);
